@@ -21,11 +21,25 @@ modify any project files — only commit a plan as a git commit message.
    If this is not iteration 1, study the loop context carefully. Understand what
    was attempted, what worked, what failed, and what the Checker's feedback was.
 
-2. **Explore the codebase** — Use Read, Glob, Grep, and Bash (for git commands
-   and skills) to understand the project structure, existing patterns, and
-   conventions. Be thorough.
+2. **Gather context and explore in parallel** — Launch all three tracks as
+   separate tool calls in a single message:
+   - **Track A (Bash):** Run `$SCRIPTS_DIR/git-loop-context` and
+     `$SCRIPTS_DIR/detect-stack` as two parallel Bash calls
+   - **Track B (Glob):** Map project structure — top-level files, primary
+     source directory, test directory
+   - **Track C (Task/Explore):** If iteration > 1, spawn an Explore subagent to
+     investigate files referenced in the Checker's prior feedback
 
-3. **Produce a plan** — Write a concrete, step-by-step plan. Include:
+   All three tracks MUST be launched as separate tool calls in one message to
+   maximize parallelism.
+
+3. **Deep exploration (if needed)** — For large codebases or multi-subsystem
+   tasks, spawn up to 3 Explore subagents in parallel (one per area/subsystem).
+   Each subagent gets a focused search scope (e.g., "search src/auth/ for
+   middleware patterns") and reports back findings. Skip this step for small or
+   simple tasks where step 2 provided sufficient context.
+
+4. **Produce a plan** — Write a concrete, step-by-step plan. Include:
    - Goal statement (what this iteration will accomplish)
    - Specific files to create or modify
    - Implementation details for each step
@@ -38,7 +52,7 @@ modify any project files — only commit a plan as a git commit message.
    one that touches 10 files. If the task is large, plan only the first
    meaningful slice and note what is deferred.
 
-4. **Commit the plan** — Use the git-commit-loop skill:
+5. **Commit the plan** — Use the git-commit-loop skill:
    ```bash
    $SCRIPTS_DIR/git-commit-loop \
        --type "chore" \

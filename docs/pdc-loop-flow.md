@@ -183,7 +183,11 @@ Agent definition: `agents/planner.md`
 
 **Responsibilities:**
 - Read prior iteration context from `git log`
-- Explore the codebase using Explore subagents
+- Gather context in parallel: run `git-loop-context` + `detect-stack` (Bash),
+  map project structure (Glob), and investigate prior feedback (Explore) — all
+  as concurrent tool calls in one message
+- For complex tasks, spawn up to 3 Explore subagents in parallel for deep
+  codebase exploration across different areas
 - Produce a concrete, actionable plan
 - Commit the plan (no code changes — plan lives in the commit message body)
 
@@ -197,8 +201,11 @@ Agent definition: `agents/doer.md`
 
 **Responsibilities:**
 - Read the plan from the latest planner commit (`git log`)
+- Pre-explore files in parallel (grouped by source/tests/config) before
+  implementing, using Explore subagents for 3+ file plans
 - Implement the plan — write code, edit files, run commands
-- Use Explore subagents if needed to understand the codebase
+- Run checks in two rounds: Round 1 auto-fixes (lint --fix → format --fix,
+  sequential), Round 2 validates (tests + typecheck, parallel)
 - Commit all changes with a summary in the commit message body
 
 **Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, Task, NotebookEdit
@@ -214,9 +221,12 @@ what it can. Only issues it cannot resolve itself get escalated back to the
 Planner as FAIL feedback.
 
 **Responsibilities:**
-- Read the full context from `git log` (plan + doer changes)
-- Review the diff from the doer's commit(s)
-- Run tests, linting, type checking as appropriate
+- Read the full context from `git log` (plan + doer summary + doer diff) as
+  3 parallel Bash calls in one message
+- Review the diff: direct Read for 1-3 files, parallel Explore subagents
+  (grouped by area) for 4+ files
+- Run all 6 checks in parallel as separate Bash calls (tests, lint, typecheck,
+  format, build, security scan) — all in check-only mode, safe to parallelize
 - **Fix issues it finds** — style, lint, small bugs, missing edge cases, test gaps
 - Commit each fix with the appropriate conventional commit type
 - After all fixes, commit a **verdict** (PASS or FAIL) as the final commit
@@ -648,3 +658,7 @@ After the loop exits with PASS:
 | Git trailers for loop metadata | Native git feature (`git interpret-trailers`). Queryable with `git log --grep`. No custom parsing needed. |
 | Max iteration cap | Safety valve — prevents infinite loops (default: 10). |
 | Explore subagents only | Agents can't spawn doer/planner/checker subagents — only Explore for read-only codebase search. |
+| Intra-agent parallelism via tool calls | Agents exploit Claude Code's parallel tool call convention: independent tool calls in one message run concurrently. Separate Bash calls (not `&`/`wait`) give isolated stdout/stderr and exit codes per command. |
+| Doer fixes sequential, validation parallel | `--fix` flags modify files — write conflicts if parallel. Read-only checks (tests, typecheck) are safe to run as parallel Bash calls after fixes complete. |
+| Checker 6-way parallel checks | Checker runs in check-only mode (no `--fix`) — all 6 scripts are pure reads, safe to parallelize as separate Bash calls. `detect-stack` redundancy across scripts is harmless (~100ms, file-system only). |
+| Explore subagents for file review | Embarrassingly parallel. Each reviewer subagent gets plan context and checks files independently. Direct Read preferred for 1-3 files (subagent spawn has ~2-5s overhead). |

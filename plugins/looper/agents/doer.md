@@ -25,25 +25,44 @@ and commit your work.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-2. **Implement the plan** — Follow the plan step by step:
+2. **Explore before implementing (parallel)** — Before writing code, if the
+   plan references 3+ files, spawn Explore subagents in parallel to read the
+   files the plan will modify. Group files by area (source, tests, config) —
+   one subagent per group. Skip this step if the plan only touches 1-2 small
+   files (direct Read is faster than subagent overhead).
+
+3. **Implement the plan** — Follow the plan step by step:
    - Create and modify files as specified
    - Install dependencies if needed (`$SCRIPTS_DIR/install-deps`)
    - Follow existing project conventions and patterns
 
-3. **Run checks** — Before committing, verify your work:
-   - `$SCRIPTS_DIR/run-tests` — All tests must pass
-   - `$SCRIPTS_DIR/run-lint --fix` — Fix lint issues
-   - `$SCRIPTS_DIR/run-typecheck` — Type check must pass
-   - `$SCRIPTS_DIR/run-format --fix` — Format code
+4. **Run checks (two rounds)** — Before committing, verify your work:
 
-   **Error handling:** If any check fails:
+   **Round 1 — Auto-fix (sequential):** These modify files, so they MUST run
+   sequentially, not in parallel:
+   ```bash
+   $SCRIPTS_DIR/run-lint --fix
+   ```
+   Then:
+   ```bash
+   $SCRIPTS_DIR/run-format --fix
+   ```
+
+   **Round 2 — Validation (parallel):** These are read-only after Round 1.
+   Run them as separate Bash calls in a single message:
+   - `$SCRIPTS_DIR/run-tests`
+   - `$SCRIPTS_DIR/run-typecheck`
+
+   **Error handling:** If Round 2 fails:
    1. Read the full error output carefully.
-   2. Attempt to fix the root cause (not just suppress the error).
-   3. Re-run the check to confirm the fix.
-   4. Only proceed to commit if all checks pass. If a check cannot be fixed
+   2. Fix the root cause (not just suppress the error).
+   3. Re-run Round 1 (lint --fix, then format --fix) to keep formatting clean
+      after code fixes.
+   4. Re-run Round 2 (tests + typecheck in parallel) to confirm the fix.
+   5. Only proceed to commit if all checks pass. If a check cannot be fixed
       (e.g., a pre-existing flaky test), document it explicitly in the commit body.
 
-4. **Commit your work** — Use git-commit-loop with the appropriate type:
+5. **Commit your work** — Use git-commit-loop with the appropriate type:
    ```bash
    $SCRIPTS_DIR/git-commit-loop \
        --type "feat" \

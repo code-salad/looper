@@ -34,30 +34,43 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
    ```
    Then stop — do not proceed with the review.
 
-2. **Read context** — Understand what was planned and what was implemented:
+2. **Read context (parallel)** — Run all three git queries as separate Bash
+   tool calls in a single message:
+
+   **Call 1 — Get the plan:**
    ```bash
-   # Get the plan
    git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: $ITERATION" \
        --all-match --format="%B" -1
+   ```
 
-   # Get the doer's summary
+   **Call 2 — Get the doer's summary:**
+   ```bash
    git log --grep="Loop-Phase: do" --grep="Loop-Iteration: $ITERATION" \
        --all-match --format="%B" -1
+   ```
 
-   # Get the doer's diff
+   **Call 3 — Get the doer's diff (changed files + stats):**
+   ```bash
    git log --grep="Loop-Phase: do" --grep="Loop-Iteration: $ITERATION" \
        --all-match --format="%H" -1 | xargs git show --stat
    ```
 
+   All three MUST be launched as separate Bash tool calls in one message.
+
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Review the diff** — Read all changed files. Check for:
-   - Correctness — does the code do what the plan specified?
-   - Edge cases — missing null checks, error handling, boundary conditions
-   - Code quality — naming, structure, readability
-   - Test coverage — are the important paths tested?
-   - Convention compliance — does it match project patterns?
+3. **Review the diff (parallel for large diffs)** — Read all changed files
+   and check for: correctness, edge cases, code quality, test coverage, and
+   convention compliance.
+
+   **Strategy by diff size:**
+   - **1-3 changed files:** Read them directly with the Read tool (no subagent
+     overhead).
+   - **4+ changed files:** Group related files and spawn one Explore subagent
+     per group using the Task tool. Include the plan summary and acceptance
+     criteria in each subagent's prompt. Each subagent reports: issues found,
+     missing error handling, naming problems, and test gaps.
 
    **Quality rubric** — use these questions to guide your review:
    - Does the implementation meet the plan's stated acceptance criteria?
@@ -67,15 +80,31 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
    - Are there any hardcoded values that should be configurable?
    - Does the code introduce any new dependencies not in the plan?
 
-4. **Run all checks:**
+4. **Run all checks (6-way parallel):** Launch all six checks as separate
+   Bash tool calls in a single message. Since the Checker runs in check-only
+   mode (no `--fix` flags), all six are pure read operations — safe to
+   parallelize. Use the exit-code capture pattern for each:
+
    ```bash
-   $SCRIPTS_DIR/run-tests
-   $SCRIPTS_DIR/run-lint
-   $SCRIPTS_DIR/run-typecheck
-   $SCRIPTS_DIR/run-format
-   $SCRIPTS_DIR/run-build
-   $SCRIPTS_DIR/security-scan
+   $SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"
    ```
+   ```bash
+   $SCRIPTS_DIR/run-lint 2>&1; echo "EXIT_CODE=$?"
+   ```
+   ```bash
+   $SCRIPTS_DIR/run-typecheck 2>&1; echo "EXIT_CODE=$?"
+   ```
+   ```bash
+   $SCRIPTS_DIR/run-format 2>&1; echo "EXIT_CODE=$?"
+   ```
+   ```bash
+   $SCRIPTS_DIR/run-build 2>&1; echo "EXIT_CODE=$?"
+   ```
+   ```bash
+   $SCRIPTS_DIR/security-scan 2>&1; echo "EXIT_CODE=$?"
+   ```
+
+   All six MUST be launched as separate Bash tool calls in one message.
 
 5. **Fix what you can** — For each issue found:
    - Fix the code directly
