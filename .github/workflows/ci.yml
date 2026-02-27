@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint all bash scripts
+        run: |
+          shellcheck skills/loop/scripts/loop.sh
+          for script in skills/loop/scripts/detect-stack \
+                        skills/loop/scripts/run-tests \
+                        skills/loop/scripts/run-lint \
+                        skills/loop/scripts/run-typecheck \
+                        skills/loop/scripts/run-format \
+                        skills/loop/scripts/run-build \
+                        skills/loop/scripts/install-deps \
+                        skills/loop/scripts/security-scan \
+                        skills/loop/scripts/git-loop-context \
+                        skills/loop/scripts/git-commit-loop; do
+            shellcheck "$script"
+          done
+
+  validate:
+    name: Validate structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate plugin.json is valid JSON
+        run: jq empty .claude-plugin/plugin.json
+
+      - name: Check scripts are executable
+        run: |
+          status=0
+          for script in skills/loop/scripts/*; do
+            if [ ! -x "$script" ]; then
+              echo "ERROR: $script is not executable"
+              status=1
+            fi
+          done
+          exit $status
+
+      - name: Check required files exist
+        run: |
+          status=0
+          for file in agents/planner.md \
+                      agents/doer.md \
+                      agents/checker.md \
+                      skills/loop/SKILL.md \
+                      README.md \
+                      CLAUDE.md; do
+            if [ ! -f "$file" ]; then
+              echo "ERROR: $file is missing"
+              status=1
+            fi
+          done
+          exit $status
