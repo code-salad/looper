@@ -1,11 +1,11 @@
 {
-  "name": "looper",
-  "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
-  "version": "0.1.0",
-  "author": {
-    "name": "looper"
-  },
-  "repository": "https://github.com/anthropics/looper",
-  "license": "MIT",
-  "keywords": ["pdc", "loop", "agents", "plan-do-check", "ci"]
+    "name": "looper",
+    "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
+    "version": "0.2.0",
+    "author": {
+        "name": "looper"
+    },
+    "repository": "https://github.com/anthropics/looper",
+    "license": "MIT",
+    "keywords": ["pdc", "loop", "agents", "plan-do-check", "ci"]
 }

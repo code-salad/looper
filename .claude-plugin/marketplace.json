@@ -1,19 +1,19 @@
 {
-  "name": "vikyw89-looper",
-  "description": "Plan-Do-Check loop orchestrator for Claude Code",
-  "owner": {
-    "name": "looper"
-  },
-  "plugins": [
-    {
-      "name": "looper",
-      "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
-      "version": "0.1.0",
-      "author": {
+    "name": "vikyw89-looper",
+    "description": "Plan-Do-Check loop orchestrator for Claude Code",
+    "owner": {
         "name": "looper"
-      },
-      "source": "./plugins/looper",
-      "category": "development"
-    }
-  ]
+    },
+    "plugins": [
+        {
+            "name": "looper",
+            "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
+            "version": "0.2.0",
+            "author": {
+                "name": "looper"
+            },
+            "source": "./plugins/looper",
+            "category": "development"
+        }
+    ]
 }
