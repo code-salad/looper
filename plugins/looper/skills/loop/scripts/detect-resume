@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# detect-resume — Detect which iteration to start/resume from
+# Usage: detect-resume
+# Outputs a single integer (the start iteration) to stdout.
+# Info messages go to stderr.
+
+LAST_ITERATION=$(git log --grep="Loop-Iteration:" --format="%B" -1 2>/dev/null \
+    | grep -oE 'Loop-Iteration: [0-9]+' | sed 's/Loop-Iteration: //' || echo "0")
+
+LAST_VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" 2>/dev/null \
+    | grep -oE 'Loop-Verdict: (PASS|FAIL)' | sed 's/Loop-Verdict: //' || echo "")
+
+if [ "$LAST_VERDICT" = "FAIL" ]; then
+    START=$(( LAST_ITERATION + 1 ))
+    echo "[detect-resume] Resuming from iteration $START (last verdict: FAIL)" >&2
+elif [ "$LAST_ITERATION" -gt 0 ] 2>/dev/null; then
+    START=$LAST_ITERATION
+    echo "[detect-resume] Resuming mid-iteration $START" >&2
+else
+    START=1
+fi
+
+echo "$START"

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# setup-worktree — Create or resume a loop worktree
+# Usage: setup-worktree --task <name>
+# Outputs the absolute worktree path to stdout.
+# Warnings/info go to stderr.
+
+TASK=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --task) TASK="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [ -z "$TASK" ]; then
+    echo "Usage: setup-worktree --task <name>" >&2
+    exit 1
+fi
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+WORKTREE_DIR="$REPO_ROOT/.worktrees/$TASK"
+
+# Ensure .worktrees is gitignored
+GITIGNORE="$REPO_ROOT/.gitignore"
+if ! [ -f "$GITIGNORE" ] || ! grep -qxF '.worktrees' "$GITIGNORE"; then
+    echo '.worktrees' >> "$GITIGNORE"
+    git -C "$REPO_ROOT" add -- .gitignore
+    git -C "$REPO_ROOT" diff --cached --quiet || \
+        git -C "$REPO_ROOT" commit -m "chore: gitignore .worktrees"
+    echo "[setup-worktree] Added .worktrees to .gitignore" >&2
+fi
+
+# Create or reuse worktree
+BRANCH="loop/$TASK"
+if [ -d "$WORKTREE_DIR" ]; then
+    echo "[setup-worktree] Worktree already exists, resuming" >&2
+elif git show-ref --quiet "refs/heads/$BRANCH"; then
+    git worktree add "$WORKTREE_DIR" "$BRANCH" >/dev/null 2>&1
+    echo "[setup-worktree] Created worktree at $WORKTREE_DIR (existing branch $BRANCH)" >&2
+else
+    git worktree add -b "$BRANCH" "$WORKTREE_DIR" HEAD >/dev/null 2>&1
+    echo "[setup-worktree] Created worktree at $WORKTREE_DIR (new branch $BRANCH)" >&2
+fi
+
+# Warn about uncommitted changes
+if [ -n "$(git -C "$WORKTREE_DIR" status --porcelain 2>/dev/null)" ]; then
+    echo "[setup-worktree] Warning: worktree has uncommitted changes" >&2
+fi
+
+# Output the path for the caller to cd into
+echo "$WORKTREE_DIR"
