@@ -5,6 +5,7 @@ set -euo pipefail
 # Usage: run-tests [--file <path>] [--grep <pattern>]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/_helpers.sh"
 
 FILE=""
@@ -20,6 +21,7 @@ done
 
 STACK=$(load_stack)
 test_runner=$(echo "$STACK" | jq -r '.test_runner')
+# shellcheck disable=SC2034
 package_manager=$(echo "$STACK" | jq -r '.package_manager')
 
 case "$test_runner" in
