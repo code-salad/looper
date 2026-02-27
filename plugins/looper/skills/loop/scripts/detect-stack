@@ -172,7 +172,7 @@ elif [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "setup.cfg" ] || [ -f 
         test_runner="pytest"
     fi
     if [ "$linter" = "none" ]; then
-        if [ -f ".flake8" ] || [ -f "setup.cfg" ] && grep -q "flake8" "setup.cfg" 2>/dev/null; then
+        if [ -f ".flake8" ] || { [ -f "setup.cfg" ] && grep -q "flake8" "setup.cfg" 2>/dev/null; }; then
             linter="flake8"
         fi
     fi
@@ -224,7 +224,7 @@ elif [ -f "Cargo.toml" ]; then
     build_tool="cargo-build"
 
 # .NET
-elif compgen -G "*.csproj" >/dev/null || compgen -G "*.fsproj" >/dev/null || [ -f "*.sln" ]; then
+elif compgen -G "*.csproj" >/dev/null || compgen -G "*.fsproj" >/dev/null || compgen -G "*.sln" >/dev/null; then
     if compgen -G "*.fsproj" >/dev/null; then
         language="fsharp"
     else

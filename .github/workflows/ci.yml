@@ -18,17 +18,17 @@ jobs:
 
       - name: Lint all bash scripts
         run: |
-          shellcheck skills/loop/scripts/loop.sh
-          for script in skills/loop/scripts/detect-stack \
-                        skills/loop/scripts/run-tests \
-                        skills/loop/scripts/run-lint \
-                        skills/loop/scripts/run-typecheck \
-                        skills/loop/scripts/run-format \
-                        skills/loop/scripts/run-build \
-                        skills/loop/scripts/install-deps \
-                        skills/loop/scripts/security-scan \
-                        skills/loop/scripts/git-loop-context \
-                        skills/loop/scripts/git-commit-loop; do
+          shellcheck plugins/looper/skills/loop/scripts/loop.sh
+          for script in plugins/looper/skills/loop/scripts/detect-stack \
+                        plugins/looper/skills/loop/scripts/run-tests \
+                        plugins/looper/skills/loop/scripts/run-lint \
+                        plugins/looper/skills/loop/scripts/run-typecheck \
+                        plugins/looper/skills/loop/scripts/run-format \
+                        plugins/looper/skills/loop/scripts/run-build \
+                        plugins/looper/skills/loop/scripts/install-deps \
+                        plugins/looper/skills/loop/scripts/security-scan \
+                        plugins/looper/skills/loop/scripts/git-loop-context \
+                        plugins/looper/skills/loop/scripts/git-commit-loop; do
             shellcheck "$script"
           done
 
@@ -44,7 +44,7 @@ jobs:
       - name: Check scripts are executable
         run: |
           status=0
-          for script in skills/loop/scripts/*; do
+          for script in plugins/looper/skills/loop/scripts/*; do
             if [ ! -x "$script" ]; then
               echo "ERROR: $script is not executable"
               status=1
@@ -55,10 +55,10 @@ jobs:
       - name: Check required files exist
         run: |
           status=0
-          for file in agents/planner.md \
-                      agents/doer.md \
-                      agents/checker.md \
-                      skills/loop/SKILL.md \
+          for file in plugins/looper/agents/planner.md \
+                      plugins/looper/agents/doer.md \
+                      plugins/looper/agents/checker.md \
+                      plugins/looper/skills/loop/SKILL.md \
                       README.md \
                       CLAUDE.md; do
             if [ ! -f "$file" ]; then

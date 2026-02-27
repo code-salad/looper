@@ -75,7 +75,7 @@ if [ -z "$TASK_NAME" ] || [ -z "$TASK_PROMPT" ]; then
 fi
 
 # ──────────────────────────────────────────────
-# Dependency checks
+# Dependency checks (after arg parsing so PHASE_TIMEOUT is available)
 # ──────────────────────────────────────────────
 check_deps() {
     local missing=()
@@ -84,6 +84,9 @@ check_deps() {
             missing+=("$cmd")
         fi
     done
+    if [ -n "$PHASE_TIMEOUT" ] && ! command -v timeout &>/dev/null; then
+        missing+=("timeout")
+    fi
     if [ ${#missing[@]} -gt 0 ]; then
         echo "Error: Missing required dependencies: ${missing[*]}" >&2
         exit 1
@@ -304,9 +307,7 @@ run_phase() {
         --append-system-prompt-file "$context_file"
         "You are the ${phase} agent for task '${TASK_NAME}', iteration ${ITERATION}. Execute your instructions.")
 
-    if [ "$VERBOSE" = true ]; then
-        debug "Command: ${claude_cmd[*]}"
-    fi
+    debug "Command: ${claude_cmd[*]}"
 
     # Temp file for stderr capture
     local stderr_file
@@ -352,11 +353,14 @@ detect_resume_iteration() {
     local last_iteration
     last_iteration=$(git log --grep="Loop-Phase:" --grep="Loop-Iteration:" \
         --all-match --format="%B" -1 2>/dev/null \
-        | grep -oP 'Loop-Iteration: \K[0-9]+' || echo "0")
+        | sed -n 's/^Loop-Iteration: \([0-9]*\)$/\1/p' | head -1)
+    last_iteration="${last_iteration:-0}"
 
     local last_verdict
-    last_verdict=$(git log --grep="Loop-Verdict:" -1 --format="%B" 2>/dev/null \
-        | grep -oP 'Loop-Verdict: \K(PASS|FAIL)' || echo "")
+    last_verdict=$(git log --grep="Loop-Verdict:" --grep="Loop-Iteration: ${last_iteration}" \
+        --all-match --format="%B" -1 2>/dev/null \
+        | sed -n 's/^Loop-Verdict: \(PASS\|FAIL\)$/\1/p' | head -1)
+    last_verdict="${last_verdict:-}"
 
     if [ "$last_verdict" = "FAIL" ]; then
         echo $((last_iteration + 1))
@@ -375,7 +379,7 @@ cleanup() {
     echo ""
     echo "Interrupted at iteration ${ITERATION:-?}. State preserved in git log."
     echo "Re-run the same command to resume."
-    rm -f /tmp/pdc-context-$$-*.md /tmp/pdc-stderr-$$-*.md /tmp/pdc-pipe-$$-*
+    rm -f /tmp/pdc-context-$$-*.md /tmp/pdc-stderr-$$-*
     print_summary "INTERRUPTED"
     exit 130
 }
@@ -389,11 +393,9 @@ echo "║  PDC Loop — ${TASK_NAME}                                "
 echo "║  Model: ${MODEL} | Max iterations: ${MAX_ITERATIONS}    "
 echo "╚══════════════════════════════════════════════════════════╝"
 
-if [ "$VERBOSE" = true ]; then
-    debug "Verbose mode enabled"
-    debug "Timeout per phase: ${PHASE_TIMEOUT:-none}"
-    debug "Interactive mode: ${INTERACTIVE}"
-fi
+debug "Verbose mode enabled"
+debug "Timeout per phase: ${PHASE_TIMEOUT:-none}"
+debug "Interactive mode: ${INTERACTIVE}"
 
 # Collect project context once
 PROJECT_CONTEXT=$(build_project_context)
@@ -412,20 +414,22 @@ for (( ITERATION=START_ITERATION; ITERATION<=MAX_ITERATIONS; ITERATION++ )); do
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # ── PLAN PHASE ──
-    run_phase "planner" "planner"
+    run_phase "planner" "planner" || true
     PHASE_TIMES_PLAN+=("$LAST_PHASE_DURATION")
 
     # ── DO PHASE ──
-    run_phase "doer" "doer"
+    run_phase "doer" "doer" || true
     PHASE_TIMES_DO+=("$LAST_PHASE_DURATION")
 
     # ── CHECK PHASE ──
-    run_phase "checker" "checker"
+    run_phase "checker" "checker" || true
     PHASE_TIMES_CHECK+=("$LAST_PHASE_DURATION")
 
     # ── EVALUATE VERDICT ──
-    VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \
-        | grep -oP 'Loop-Verdict: \K(PASS|FAIL)' || echo "")
+    VERDICT=$(git log --grep="Loop-Verdict:" --grep="Loop-Iteration: ${ITERATION}" \
+        --all-match --format="%B" -1 2>/dev/null \
+        | sed -n 's/^Loop-Verdict: \(PASS\|FAIL\)$/\1/p' | head -1)
+    VERDICT="${VERDICT:-}"
 
     # ── INTERACTIVE CHECKPOINT ──
     if [ "$INTERACTIVE" = true ]; then
