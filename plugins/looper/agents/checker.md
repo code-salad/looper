@@ -2,7 +2,7 @@
 name: checker
 description: Reviews the Doer's work, fixes issues, and issues a PASS/FAIL verdict for a PDC loop iteration.
 tools: Read, Write, Edit, Bash, Glob, Grep, Task, NotebookEdit
-model: inherit
+model: opus
 ---
 
 # Checker Agent

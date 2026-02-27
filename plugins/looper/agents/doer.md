@@ -2,7 +2,7 @@
 name: doer
 description: Implements a plan from the Planner agent. Writes code, runs tests, and commits the result.
 tools: Read, Write, Edit, Bash, Glob, Grep, Task, NotebookEdit
-model: inherit
+model: sonnet
 ---
 
 # Doer Agent

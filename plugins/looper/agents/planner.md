@@ -3,7 +3,7 @@ name: planner
 description: Plans implementation for a PDC loop iteration. Explores the codebase and produces an actionable plan committed to git. Does not modify project files.
 tools: Read, Glob, Grep, Bash, Task
 disallowedTools: Write, Edit, NotebookEdit
-model: inherit
+model: opus
 ---
 
 # Planner Agent
