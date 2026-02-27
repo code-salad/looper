@@ -54,7 +54,7 @@ COMMIT_MSG="$SUBJECT"
 if [ -n "$BODY" ]; then
     # Interpret \n as newlines in body
     COMMIT_MSG+=$'\n\n'
-    COMMIT_MSG+=$(echo -e "$BODY")
+    COMMIT_MSG+=$(printf '%b' "$BODY")
 fi
 
 # Add trailers
@@ -71,8 +71,9 @@ if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null || 
     git add -A
 fi
 
-# Commit (allow empty for plan phase which may have no file changes)
-if [ "$PHASE" = "plan" ]; then
+# Commit (allow empty for plan/check phases — plan has no file changes,
+# check verdict commits may have no file changes when everything passed)
+if [ "$PHASE" = "plan" ] || [ "$PHASE" = "check" ]; then
     git commit --allow-empty -m "$COMMIT_MSG"
 else
     git commit -m "$COMMIT_MSG"

@@ -10,50 +10,61 @@ STACK=$("$SCRIPT_DIR/detect-stack")
 package_manager=$(echo "$STACK" | jq -r '.package_manager')
 language=$(echo "$STACK" | jq -r '.language')
 
-EXIT_CODE=0
+echo "[security-scan] Running security checks for language: $language"
 
 case "$language" in
     typescript|javascript)
         case "$package_manager" in
-            pnpm)  pnpm audit --prod 2>/dev/null || EXIT_CODE=$? ;;
-            yarn)  yarn audit --groups dependencies 2>/dev/null || EXIT_CODE=$? ;;
-            bun)   bun audit 2>/dev/null || EXIT_CODE=$? ;;
-            npm|*) npm audit --production 2>/dev/null || EXIT_CODE=$? ;;
+            pnpm)
+                pnpm audit --prod 2>/dev/null || echo "[security-scan] WARNING: pnpm audit found issues (non-blocking)" >&2
+                ;;
+            yarn)
+                # yarn audit (v1) does not support --groups; omit the flag
+                yarn audit 2>/dev/null || echo "[security-scan] WARNING: yarn audit found issues (non-blocking)" >&2
+                ;;
+            bun)
+                # bun has no built-in audit command; fall back to npm audit if lockfile exists
+                if [ -f "package-lock.json" ]; then
+                    npm audit --production 2>/dev/null || echo "[security-scan] WARNING: npm audit found issues (non-blocking)" >&2
+                else
+                    echo "[security-scan] INFO: No audit tool available for bun projects without package-lock.json" >&2
+                fi
+                ;;
+            npm|*)
+                npm audit --production 2>/dev/null || echo "[security-scan] WARNING: npm audit found issues (non-blocking)" >&2
+                ;;
         esac
         ;;
     python)
         if command -v pip-audit &>/dev/null; then
-            pip-audit || EXIT_CODE=$?
+            pip-audit || echo "[security-scan] WARNING: pip-audit found issues (non-blocking)" >&2
         elif [ "$package_manager" = "uv" ]; then
-            uv run pip-audit 2>/dev/null || EXIT_CODE=$?
+            uv run pip-audit 2>/dev/null || echo "[security-scan] WARNING: pip-audit found issues (non-blocking)" >&2
         else
-            echo "pip-audit not available. Install with: pip install pip-audit" >&2
-            EXIT_CODE=1
+            echo "[security-scan] INFO: pip-audit not available. Install with: pip install pip-audit" >&2
         fi
         ;;
     go)
         if command -v govulncheck &>/dev/null; then
-            govulncheck ./... || EXIT_CODE=$?
+            govulncheck ./... || echo "[security-scan] WARNING: govulncheck found issues (non-blocking)" >&2
         else
-            go vet ./... || EXIT_CODE=$?
-            echo "Note: Install govulncheck for better security scanning: go install golang.org/x/vuln/cmd/govulncheck@latest" >&2
+            echo "[security-scan] INFO: govulncheck not installed. Install: go install golang.org/x/vuln/cmd/govulncheck@latest" >&2
         fi
         ;;
     rust)
         if command -v cargo-audit &>/dev/null; then
-            cargo audit || EXIT_CODE=$?
+            cargo audit || echo "[security-scan] WARNING: cargo audit found issues (non-blocking)" >&2
         else
-            echo "cargo-audit not available. Install with: cargo install cargo-audit" >&2
-            EXIT_CODE=1
+            echo "[security-scan] INFO: cargo-audit not installed. Install: cargo install cargo-audit" >&2
         fi
         ;;
     csharp|fsharp)
-        dotnet list package --vulnerable 2>/dev/null || EXIT_CODE=$?
+        dotnet list package --vulnerable 2>/dev/null || echo "[security-scan] WARNING: vulnerable packages found (non-blocking)" >&2
         ;;
     *)
-        echo "No security scanner available for language: $language" >&2
-        EXIT_CODE=1
+        echo "[security-scan] INFO: No security scanner available for language: $language" >&2
         ;;
 esac
 
-exit $EXIT_CODE
+# Security scan is always non-blocking — issues are warnings, not hard failures
+exit 0

@@ -59,7 +59,7 @@ for (( i=1; i<ITERATION; i++ )); do
     verdict_body=$(git log --grep="Loop-Phase: check" --grep="Loop-Iteration: ${i}" \
         --grep="Loop-Verdict:" --all-match --format="%B" -1 2>/dev/null || true)
     if [ -n "$verdict_body" ]; then
-        verdict=$(echo "$verdict_body" | grep -oP 'Loop-Verdict: \K(PASS|FAIL)' || echo "UNKNOWN")
+        verdict=$(echo "$verdict_body" | grep -oE 'Loop-Verdict: (PASS|FAIL)' | head -1 | sed 's/Loop-Verdict: //' || echo "UNKNOWN")
         echo "#### Verdict: ${verdict}"
         echo ""
         echo "$verdict_body" | sed '/^Loop-Phase:/d; /^Loop-Iteration:/d; /^Loop-Verdict:/d'

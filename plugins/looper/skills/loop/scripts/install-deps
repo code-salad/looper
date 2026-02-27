@@ -32,12 +32,15 @@ case "$package_manager" in
         pipenv install
         ;;
     pip)
+        # Use python -m pip to respect the active venv
         if [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt
-        elif [ -f "requirements-dev.txt" ]; then
-            pip install -r requirements-dev.txt
-        else
-            pip install -e .
+            python -m pip install -r requirements.txt
+        fi
+        if [ -f "requirements-dev.txt" ]; then
+            python -m pip install -r requirements-dev.txt
+        fi
+        if [ ! -f "requirements.txt" ] && [ ! -f "requirements-dev.txt" ]; then
+            python -m pip install -e .
         fi
         ;;
     go-modules)

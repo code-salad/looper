@@ -224,7 +224,7 @@ elif [ -f "Cargo.toml" ]; then
     build_tool="cargo-build"
 
 # .NET
-elif compgen -G "*.csproj" >/dev/null || compgen -G "*.fsproj" >/dev/null || [ -f "*.sln" ]; then
+elif compgen -G "*.csproj" >/dev/null || compgen -G "*.fsproj" >/dev/null || compgen -G "*.sln" >/dev/null; then
     if compgen -G "*.fsproj" >/dev/null; then
         language="fsharp"
     else
@@ -239,6 +239,49 @@ elif compgen -G "*.csproj" >/dev/null || compgen -G "*.fsproj" >/dev/null || [ -
     build_tool="dotnet-build"
 fi
 
+# --- Detect monorepo ecosystems ---
+# Scan root and one level of subdirectories for stack indicators.
+ecosystems=""
+
+_add_ecosystem() {
+    local eco="$1"
+    if [ -z "$ecosystems" ]; then
+        ecosystems="$eco"
+    elif ! echo "$ecosystems" | grep -qF "$eco"; then
+        ecosystems="${ecosystems},${eco}"
+    fi
+}
+
+[ -f "package.json" ]     && _add_ecosystem "node"
+[ -f "go.mod" ]           && _add_ecosystem "go"
+[ -f "Cargo.toml" ]       && _add_ecosystem "rust"
+{ [ -f "pyproject.toml" ] || [ -f "requirements.txt" ]; } && _add_ecosystem "python"
+compgen -G "*.csproj" >/dev/null 2>&1 && _add_ecosystem "dotnet"
+
+for subdir in */; do
+    [ -d "$subdir" ] || continue
+    [ -f "${subdir}package.json" ]   && _add_ecosystem "node:${subdir%/}"
+    [ -f "${subdir}go.mod" ]         && _add_ecosystem "go:${subdir%/}"
+    [ -f "${subdir}Cargo.toml" ]     && _add_ecosystem "rust:${subdir%/}"
+    [ -f "${subdir}pyproject.toml" ] && _add_ecosystem "python:${subdir%/}"
+done
+
+# Build ecosystems JSON array
+ecosystems_json="["
+if [ -n "$ecosystems" ]; then
+    IFS=',' read -ra eco_arr <<< "$ecosystems"
+    first=true
+    for eco in "${eco_arr[@]}"; do
+        if [ "$first" = true ]; then
+            ecosystems_json+="\"${eco}\""
+            first=false
+        else
+            ecosystems_json+=",\"${eco}\""
+        fi
+    done
+fi
+ecosystems_json+="]"
+
 # --- Output JSON ---
 cat <<EOF
 {
@@ -251,6 +294,7 @@ cat <<EOF
   "type_checker": "${type_checker}",
   "build_tool": "${build_tool}",
   "framework": "${framework}",
-  "ci": "${ci}"
+  "ci": "${ci}",
+  "ecosystems": ${ecosystems_json}
 }
 EOF

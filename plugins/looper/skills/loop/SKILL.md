@@ -24,6 +24,17 @@ git rev-parse --is-inside-work-tree
 
 **Gate:** Abort if not in a git repo.
 
+Check that `gh` CLI is available and authenticated (needed for PR creation at the end):
+
+```bash
+gh auth status
+```
+
+If `gh auth status` fails, warn the user:
+> "Warning: `gh` is not authenticated. The loop will run but PR creation will fail at the end. Run `gh auth login` to fix this."
+
+Continue anyway — do not abort. The user may want to create the PR manually.
+
 ### 2. Validate argument
 
 If `$ARGUMENTS` is empty, ask the user for a task description. Do not proceed without one.
@@ -66,6 +77,17 @@ directly. Use the task name as the worktree name.
    ```bash
    cd "$REPO_ROOT/.worktrees/$TASK_NAME"
    ```
+
+4. **Check for uncommitted changes:**
+
+   ```bash
+   git status --porcelain
+   ```
+
+   If there are uncommitted changes in the worktree (inherited from the parent
+   branch), warn: "Warning: worktree has uncommitted changes from the parent
+   branch. These will be visible to agents but were not part of any commit."
+   Do not abort — continue.
 
 ### 5. Build project context
 
@@ -112,11 +134,11 @@ Query git log for prior loop iterations to detect whether to resume:
 # Find the last iteration number
 LAST_ITERATION=$(git log --grep="Loop-Phase:" --grep="Loop-Iteration:" \
     --all-match --format="%B" -1 2>/dev/null \
-    | grep -oP 'Loop-Iteration: \K[0-9]+' || echo "0")
+    | grep -oE 'Loop-Iteration: [0-9]+' | sed 's/Loop-Iteration: //' || echo "0")
 
 # Find the last verdict
 LAST_VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" 2>/dev/null \
-    | grep -oP 'Loop-Verdict: \K(PASS|FAIL)' || echo "")
+    | grep -oE 'Loop-Verdict: (PASS|FAIL)' | sed 's/Loop-Verdict: //' || echo "")
 ```
 
 Determine the start iteration:
@@ -128,7 +150,13 @@ If resuming (start > 1), report: "Resuming from iteration N (prior iterations fo
 
 ### 7. Run the PDC loop
 
-Set `MAX_ITERATIONS=10`. For each iteration from `START_ITERATION` to `MAX_ITERATIONS`:
+Set `MAX_ITERATIONS` from the environment, defaulting to 10:
+
+```bash
+MAX_ITERATIONS="${LOOPER_MAX_ITERATIONS:-10}"
+```
+
+For each iteration from `START_ITERATION` to `MAX_ITERATIONS`:
 
 #### 7a. Get loop context
 
@@ -170,6 +198,10 @@ Where `TASK_PROMPT` is the original `$ARGUMENTS` text from the user.
 
 #### 7c. Spawn Planner
 
+Print a progress header so the user knows what's happening:
+
+> `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
+
 Spawn the planner agent using the Task tool:
 
 ```
@@ -180,6 +212,10 @@ Wait for it to complete before proceeding.
 
 #### 7d. Spawn Doer
 
+Print a progress header:
+
+> `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase ===`
+
 Spawn the doer agent using the Task tool:
 
 ```
@@ -189,6 +225,10 @@ Task(subagent_type="looper:doer", prompt=<context from 7b>)
 Wait for it to complete before proceeding.
 
 #### 7e. Spawn Checker
+
+Print a progress header:
+
+> `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`
 
 Spawn the checker agent using the Task tool:
 
@@ -204,7 +244,7 @@ After the checker completes, read the verdict from git log:
 
 ```bash
 VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \
-    | grep -oP 'Loop-Verdict: \K(PASS|FAIL)' || echo "")
+    | grep -oE 'Loop-Verdict: (PASS|FAIL)' | sed 's/Loop-Verdict: //' || echo "")
 ```
 
 - If `VERDICT` is `PASS`: break out of the loop, proceed to step 8.
@@ -217,6 +257,12 @@ After the loop exits, check the final state:
 
 - **PASS:** Report success. Show the number of iterations it took.
   Automatically create a PR by invoking `/create-github-pr`.
+  After the PR is created, clean up the worktree:
+  ```bash
+  cd "$REPO_ROOT"
+  git worktree remove "$REPO_ROOT/.worktrees/$TASK_NAME" --force
+  ```
+  Report: "Worktree cleaned up."
 - **FAIL (max iterations):** Report that max iterations were reached without PASS.
   Show the last checker verdict:
   ```bash
@@ -250,9 +296,10 @@ All executable scripts live in `skills/loop/scripts/`:
 | `run-format` | Run formatter (`--fix`) |
 | `run-build` | Build the project |
 | `install-deps` | Install project dependencies |
-| `security-scan` | Run security vulnerability scan |
+| `security-scan` | Run security vulnerability scan (non-blocking) |
 | `git-loop-context` | Read prior loop iterations from git log |
 | `git-commit-loop` | Create conventional commits with loop trailers |
+| `detect-issue-template` | Detect GitHub issue template for bug reports |
 
 The utility scripts auto-detect the project's tech stack via `detect-stack`
 and dispatch to the right tool. Agents receive the `$SCRIPTS_DIR` path in

@@ -30,7 +30,13 @@ modify any project files — only commit a plan as a git commit message.
    - Specific files to create or modify
    - Implementation details for each step
    - Expected test approach
+   - Acceptance criteria (how the Checker will know the task is done)
    - Any risks or considerations
+
+   **Scope discipline:** Prefer the smallest change that satisfies the task.
+   A plan that touches 3 files and has clear acceptance criteria is better than
+   one that touches 10 files. If the task is large, plan only the first
+   meaningful slice and note what is deferred.
 
 4. **Commit the plan** — Use the git-commit-loop skill:
    ```bash
@@ -62,3 +68,5 @@ The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.
 - Your ONLY output artifact is a git commit containing the plan
 - Be specific — vague plans lead to bad implementations
 - If prior iterations failed, address the specific feedback from the Checker
+- Scope tightly — do not gold-plate. One iteration should be completable by the Doer in a single commit
+- State explicit acceptance criteria so the Checker can issue PASS with confidence

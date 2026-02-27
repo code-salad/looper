@@ -18,16 +18,7 @@ jobs:
 
       - name: Lint all bash scripts
         run: |
-          for script in plugins/looper/skills/loop/scripts/detect-stack \
-                        plugins/looper/skills/loop/scripts/run-tests \
-                        plugins/looper/skills/loop/scripts/run-lint \
-                        plugins/looper/skills/loop/scripts/run-typecheck \
-                        plugins/looper/skills/loop/scripts/run-format \
-                        plugins/looper/skills/loop/scripts/run-build \
-                        plugins/looper/skills/loop/scripts/install-deps \
-                        plugins/looper/skills/loop/scripts/security-scan \
-                        plugins/looper/skills/loop/scripts/git-loop-context \
-                        plugins/looper/skills/loop/scripts/git-commit-loop; do
+          for script in plugins/looper/skills/loop/scripts/*; do
             shellcheck "$script"
           done
 
@@ -39,6 +30,9 @@ jobs:
 
       - name: Validate plugin.json is valid JSON
         run: jq empty .claude-plugin/plugin.json
+
+      - name: Validate marketplace.json is valid JSON
+        run: jq empty .claude-plugin/marketplace.json
 
       - name: Check scripts are executable
         run: |

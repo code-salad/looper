@@ -16,7 +16,25 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
 
 ## Instructions
 
-1. **Read context** — Understand what was planned and what was implemented:
+1. **Verify Doer committed work** — Before reviewing, confirm a doer commit exists:
+   ```bash
+   doer_hash=$(git log --grep="Loop-Phase: do" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1)
+   ```
+   If `doer_hash` is empty, the Doer did not commit. Issue a FAIL verdict immediately:
+   ```bash
+   $SCRIPTS_DIR/git-commit-loop \
+       --type "test" \
+       --scope "$TASK_NAME" \
+       --message "check iteration $ITERATION — FAIL (no doer commit)" \
+       --body "Doer did not produce a commit for this iteration.\n\n## Action items for next iteration\n1. Doer must commit work before the Checker can review." \
+       --phase "check" \
+       --iteration $ITERATION \
+       --verdict "FAIL"
+   ```
+   Then stop — do not proceed with the review.
+
+2. **Read context** — Understand what was planned and what was implemented:
    ```bash
    # Get the plan
    git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: $ITERATION" \
@@ -34,14 +52,22 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-2. **Review the diff** — Read all changed files. Check for:
+3. **Review the diff** — Read all changed files. Check for:
    - Correctness — does the code do what the plan specified?
    - Edge cases — missing null checks, error handling, boundary conditions
    - Code quality — naming, structure, readability
    - Test coverage — are the important paths tested?
    - Convention compliance — does it match project patterns?
 
-3. **Run all checks:**
+   **Quality rubric** — use these questions to guide your review:
+   - Does the implementation meet the plan's stated acceptance criteria?
+   - Are error paths handled (null checks, missing files, network failures)?
+   - Are new functions/methods testable in isolation?
+   - Do test names describe the behavior being tested (not just the function name)?
+   - Are there any hardcoded values that should be configurable?
+   - Does the code introduce any new dependencies not in the plan?
+
+4. **Run all checks:**
    ```bash
    $SCRIPTS_DIR/run-tests
    $SCRIPTS_DIR/run-lint
@@ -51,7 +77,7 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
    $SCRIPTS_DIR/security-scan
    ```
 
-4. **Fix what you can** — For each issue found:
+5. **Fix what you can** — For each issue found:
    - Fix the code directly
    - Commit each fix separately with the appropriate type:
      ```bash
@@ -66,7 +92,9 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
    - Use `fix` for bugs, `style` for formatting, `refactor` for structure,
      `test` for missing tests
 
-5. **Issue verdict** — After all fixes, commit the verdict as your FINAL commit:
+6. **Issue verdict** — After all fixes, commit the verdict as your FINAL commit:
+
+   If all checks pass and the task is complete:
    ```bash
    $SCRIPTS_DIR/git-commit-loop \
        --type "test" \
@@ -76,6 +104,18 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
        --phase "check" \
        --iteration $ITERATION \
        --verdict "PASS"
+   ```
+
+   If issues remain that you could not fix:
+   ```bash
+   $SCRIPTS_DIR/git-commit-loop \
+       --type "test" \
+       --scope "$TASK_NAME" \
+       --message "check iteration $ITERATION — FAIL" \
+       --body "<structured verdict with action items>" \
+       --phase "check" \
+       --iteration $ITERATION \
+       --verdict "FAIL"
    ```
 
 ## Verdict Body Format
@@ -97,8 +137,10 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
 ## PASS vs FAIL
 
 - **PASS** = The task is complete. All checks pass. Code is correct and follows
-  conventions. Any issues found were fixed in-place during this review.
-- **FAIL** = Issues remain that you could not resolve yourself. The commit body
+  conventions. The plan's acceptance criteria are met. Any issues found were
+  fixed in-place during this review.
+- **FAIL** = Issues remain that you could not resolve yourself, OR the
+  implementation does not satisfy the plan's acceptance criteria. The commit body
   MUST contain specific, actionable feedback for the next iteration's Planner.
 
 ## Available Skills

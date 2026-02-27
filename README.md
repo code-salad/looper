@@ -1,12 +1,15 @@
 # Looper
 
-A Plan-Do-Check loop orchestrator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Three agents — Planner, Doer, Checker — iterate in a loop until the Checker issues a PASS verdict. The loop controller is a bash script that drives `claude -p` subprocesses, sidestepping the constraint that Claude Code subagents cannot spawn subagents.
+A Plan-Do-Check loop orchestrator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Three agents — Planner, Doer, Checker — iterate in a loop until the Checker issues a PASS verdict, then automatically create a PR.
 
 ## Installation
 
 Install as a Claude Code plugin:
 
 ```bash
+# From GitHub
+claude plugin install vikyw89/looper
+
 # From a local checkout
 claude plugin install /path/to/looper
 ```
@@ -19,42 +22,38 @@ Once installed, invoke the loop skill from any Claude Code session:
 /looper:loop "add input validation to the login endpoint"
 ```
 
-Or run the orchestrator script directly:
-
-```bash
-./skills/loop/scripts/loop.sh \
-    --task "add-input-validation" \
-    --prompt "Add input validation to the login endpoint"
-```
+The loop runs entirely through Claude Code's skill system. It creates a git
+worktree for isolation, iterates Plan-Do-Check until PASS, then creates a PR.
 
 ### Options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--task` | *(required)* | Kebab-case task name (used as commit scope) |
-| `--prompt` | *(required)* | Task description for agents |
-| `--context` | | Extra context (e.g., CI failure details) |
-| `--model` | `sonnet` | Claude model to use |
-| `--max-iterations` | `10` | Max PDC loop iterations |
-| `--max-turns` | `50` | Max turns per agent phase |
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `LOOPER_MAX_ITERATIONS` | `10` | Maximum PDC loop iterations before giving up |
+
+To override max iterations:
+
+```bash
+LOOPER_MAX_ITERATIONS=5 claude
+```
 
 ## How It Works
 
 ```
-User invokes /loop
+User invokes /looper:loop
        │
        ▼
-    loop.sh  (bash orchestrator)
+  SKILL.md orchestrator
        │
-       ├── Planner agent (claude -p) → reads codebase, commits a plan
-       ├── Doer agent    (claude -p) → implements the plan, commits code
-       └── Checker agent (claude -p) → reviews, fixes, issues PASS/FAIL
+       ├── Planner agent (Task subagent) → reads codebase, commits a plan
+       ├── Doer agent    (Task subagent) → implements the plan, commits code
+       └── Checker agent (Task subagent) → reviews, fixes, issues PASS/FAIL
        │
        ▼
-  PASS? → exit    FAIL? → next iteration
+  PASS? → create PR    FAIL? → next iteration
 ```
 
-Each agent runs as an independent `claude -p` subprocess. State is passed between iterations via git commits with structured trailers (`Loop-Phase`, `Loop-Iteration`, `Loop-Verdict`).
+Each agent runs as a Task subagent. State is passed between iterations via git commits with structured trailers (`Loop-Phase`, `Loop-Iteration`, `Loop-Verdict`).
 
 ## Components
 
@@ -79,7 +78,6 @@ Each agent runs as an independent `claude -p` subprocess. State is passed betwee
 
 | Script | Purpose |
 |--------|---------|
-| `loop.sh` | Main PDC loop orchestrator |
 | `detect-stack` | Auto-detect project tech stack (JSON output) |
 | `run-tests` | Run test suite |
 | `run-lint` | Run linter |

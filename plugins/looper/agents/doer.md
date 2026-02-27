@@ -36,6 +36,13 @@ and commit your work.
    - `$SCRIPTS_DIR/run-typecheck` — Type check must pass
    - `$SCRIPTS_DIR/run-format --fix` — Format code
 
+   **Error handling:** If any check fails:
+   1. Read the full error output carefully.
+   2. Attempt to fix the root cause (not just suppress the error).
+   3. Re-run the check to confirm the fix.
+   4. Only proceed to commit if all checks pass. If a check cannot be fixed
+      (e.g., a pre-existing flaky test), document it explicitly in the commit body.
+
 4. **Commit your work** — Use git-commit-loop with the appropriate type:
    ```bash
    $SCRIPTS_DIR/git-commit-loop \
@@ -72,3 +79,5 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - If you cannot complete part of the plan, still commit what you have and
   document what's incomplete in the commit body
 - Use existing project patterns — don't introduce new conventions
+- Never suppress errors silently — if something fails, document it in the commit body
+- If `install-deps` fails, try to understand why before continuing
