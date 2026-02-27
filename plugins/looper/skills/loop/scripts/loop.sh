@@ -19,15 +19,21 @@ SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERBOSE=false
 PHASE_TIMEOUT=""        # empty = no timeout
 INTERACTIVE=false
+STATUS_FILE=""          # JSON status file path (--status-file)
+LOG_FILE=""             # Log file path (--log-file)
 
 # Metrics tracking
 declare -a PHASE_TIMES_PLAN=()
 declare -a PHASE_TIMES_DO=()
 declare -a PHASE_TIMES_CHECK=()
+declare -a ITER_DURATIONS=()
 TOTAL_TOKENS_IN=0
 TOTAL_TOKENS_OUT=0
+LAST_PHASE_TOKENS_IN=0
+LAST_PHASE_TOKENS_OUT=0
 LOOP_START_SECONDS=$SECONDS
 LAST_PHASE_DURATION=0
+TICKER_PID=""
 
 # ──────────────────────────────────────────────
 # Parse arguments
@@ -48,6 +54,8 @@ Options:
   --verbose         Enable detailed debug logging to stderr
   --timeout         Seconds per phase (wraps claude -p with timeout command)
   --interactive     Pause after each Checker phase for user confirmation
+  --status-file     Write JSON status snapshot after each phase (for monitoring)
+  --log-file        Tee all output to a file (for tail -f from another terminal)
   -h, --help        Show this help
 EOF
     exit 1
@@ -64,6 +72,8 @@ while [[ $# -gt 0 ]]; do
         --verbose) VERBOSE=true; shift ;;
         --timeout) PHASE_TIMEOUT="$2"; shift 2 ;;
         --interactive) INTERACTIVE=true; shift ;;
+        --status-file) STATUS_FILE="$2"; shift 2 ;;
+        --log-file) LOG_FILE="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1" >&2; usage ;;
     esac
@@ -98,6 +108,63 @@ debug() {
     if [ "$VERBOSE" = true ]; then
         echo "[DEBUG $(date +%T)] $*" >&2
     fi
+}
+
+# ──────────────────────────────────────────────
+# Format duration as human-readable string
+# ──────────────────────────────────────────────
+format_duration() {
+    local secs=$1
+    if [ "$secs" -ge 60 ]; then
+        printf '%dm %ds' $((secs / 60)) $((secs % 60))
+    else
+        printf '%ds' "$secs"
+    fi
+}
+
+# ──────────────────────────────────────────────
+# Heartbeat ticker — prints periodic status during long agent runs
+# ──────────────────────────────────────────────
+start_heartbeat() {
+    local phase="$1"
+    local start=$SECONDS
+    (
+        while true; do
+            sleep 30
+            local elapsed=$(( SECONDS - start ))
+            echo "  [$(date +%H:%M:%S)] ${phase^^} still running... $(format_duration $elapsed) elapsed" >&2
+        done
+    ) &
+    TICKER_PID=$!
+}
+
+stop_heartbeat() {
+    if [ -n "$TICKER_PID" ]; then
+        kill "$TICKER_PID" 2>/dev/null || true
+        wait "$TICKER_PID" 2>/dev/null || true
+        TICKER_PID=""
+    fi
+}
+
+# ──────────────────────────────────────────────
+# Write JSON status file (if --status-file is set)
+# ──────────────────────────────────────────────
+update_status() {
+    [ -n "$STATUS_FILE" ] || return 0
+    local phase="${1:-unknown}"
+    local state="${2:-running}"
+    local elapsed=$(( SECONDS - LOOP_START_SECONDS ))
+    jq -n \
+        --arg task "$TASK_NAME" \
+        --argjson iteration "${ITERATION:-0}" \
+        --argjson maxIterations "$MAX_ITERATIONS" \
+        --arg phase "$phase" \
+        --arg state "$state" \
+        --argjson elapsed "$elapsed" \
+        --argjson tokensIn "$TOTAL_TOKENS_IN" \
+        --argjson tokensOut "$TOTAL_TOKENS_OUT" \
+        '{task: $task, iteration: $iteration, maxIterations: $maxIterations, phase: $phase, state: $state, elapsedSeconds: $elapsed, tokensIn: $tokensIn, tokensOut: $tokensOut}' \
+        > "$STATUS_FILE"
 }
 
 # ──────────────────────────────────────────────
@@ -220,10 +287,12 @@ parse_tokens() {
     output_tok=$(grep -oE '"output_tokens"[[:space:]]*:[[:space:]]*[0-9]+' "$file" \
         | grep -oE '[0-9]+$' | awk '{s+=$1} END{print s+0}')
 
-    TOTAL_TOKENS_IN=$(( TOTAL_TOKENS_IN + ${input_tok:-0} ))
-    TOTAL_TOKENS_OUT=$(( TOTAL_TOKENS_OUT + ${output_tok:-0} ))
+    LAST_PHASE_TOKENS_IN=${input_tok:-0}
+    LAST_PHASE_TOKENS_OUT=${output_tok:-0}
+    TOTAL_TOKENS_IN=$(( TOTAL_TOKENS_IN + LAST_PHASE_TOKENS_IN ))
+    TOTAL_TOKENS_OUT=$(( TOTAL_TOKENS_OUT + LAST_PHASE_TOKENS_OUT ))
 
-    debug "Tokens for ${phase} phase: in=${input_tok:-0}, out=${output_tok:-0}"
+    debug "Tokens for ${phase} phase: in=${LAST_PHASE_TOKENS_IN}, out=${LAST_PHASE_TOKENS_OUT}"
 }
 
 # ──────────────────────────────────────────────
@@ -277,9 +346,12 @@ run_phase() {
 
     echo ""
     echo "════════════════════════════════════════════════════════"
-    echo "  ${phase^^} PHASE — Iteration ${ITERATION}"
+    echo "  ${phase^^} PHASE — Iteration ${ITERATION} | Started: $(date +%H:%M:%S)"
     echo "════════════════════════════════════════════════════════"
     echo ""
+
+    # Update status file
+    update_status "$phase" "running"
 
     # Record start time
     local phase_start=$SECONDS
@@ -312,6 +384,9 @@ run_phase() {
     local stderr_file
     stderr_file=$(mktemp "/tmp/pdc-stderr-$$-${phase}.XXXXXX")
 
+    # Start heartbeat so users know the agent is still alive
+    start_heartbeat "$phase"
+
     # Run command, capturing stderr for token parsing; stdout streams live
     local exit_code=0
     if [ -n "$PHASE_TIMEOUT" ]; then
@@ -321,12 +396,14 @@ run_phase() {
         "${claude_cmd[@]}" 2>"$stderr_file" || exit_code=$?
     fi
 
+    # Stop heartbeat
+    stop_heartbeat
+
     # Forward captured stderr to terminal
     cat "$stderr_file" >&2
 
     # Record timing
     LAST_PHASE_DURATION=$(( SECONDS - phase_start ))
-    debug "Phase ${phase} completed in ${LAST_PHASE_DURATION}s, exit code ${exit_code}"
 
     # Parse token usage
     parse_tokens "$stderr_file" "$phase"
@@ -334,15 +411,28 @@ run_phase() {
     # Cleanup temp files
     rm -f "$stderr_file" "$context_file"
 
+    # Always print phase completion line (not gated behind --verbose)
+    local token_info=""
+    if [ "$LAST_PHASE_TOKENS_IN" -gt 0 ] || [ "$LAST_PHASE_TOKENS_OUT" -gt 0 ]; then
+        token_info=" | tokens: in=$(printf '%d' "$LAST_PHASE_TOKENS_IN") out=$(printf '%d' "$LAST_PHASE_TOKENS_OUT")"
+    fi
+    echo ""
+    echo "  ✓ ${phase^^} done in $(format_duration $LAST_PHASE_DURATION)${token_info}"
+
     if [ $exit_code -ne 0 ]; then
         if [ -n "$PHASE_TIMEOUT" ] && [ $exit_code -eq 124 ]; then
-            echo "Warning: ${phase} agent timed out after ${PHASE_TIMEOUT}s" >&2
+            echo "  ⚠ ${phase} agent timed out after ${PHASE_TIMEOUT}s" >&2
         else
-            echo "Warning: ${phase} agent exited with code ${exit_code}" >&2
+            echo "  ⚠ ${phase} agent exited with code ${exit_code}" >&2
         fi
     fi
 
-    return $exit_code
+    # Update status file with completion
+    update_status "$phase" "done"
+
+    # Always return 0 — agent exit codes are non-fatal (e.g. max-turns reached).
+    # The checker verdict in git log is what determines pass/fail.
+    return 0
 }
 
 # ──────────────────────────────────────────────
@@ -372,10 +462,12 @@ detect_resume_iteration() {
 # SIGINT trap — preserve state and print summary
 # ──────────────────────────────────────────────
 cleanup() {
+    stop_heartbeat
     echo ""
     echo "Interrupted at iteration ${ITERATION:-?}. State preserved in git log."
     echo "Re-run the same command to resume."
     rm -f /tmp/pdc-context-$$-*.md /tmp/pdc-stderr-$$-*.md /tmp/pdc-pipe-$$-*
+    update_status "interrupted" "stopped"
     print_summary "INTERRUPTED"
     exit 130
 }
@@ -395,6 +487,12 @@ if [ "$VERBOSE" = true ]; then
     debug "Interactive mode: ${INTERACTIVE}"
 fi
 
+# Set up log file tee if requested
+if [ -n "$LOG_FILE" ]; then
+    exec > >(tee -a "$LOG_FILE") 2>&1
+    echo "Logging output to: ${LOG_FILE}"
+fi
+
 # Collect project context once
 PROJECT_CONTEXT=$(build_project_context)
 
@@ -405,10 +503,29 @@ if [ "$START_ITERATION" -gt 1 ]; then
     echo "Resuming from iteration ${START_ITERATION} (prior iterations found in git log)"
 fi
 
+if [ -n "$STATUS_FILE" ]; then
+    echo "Status file: ${STATUS_FILE} (use 'watch cat ${STATUS_FILE}' to monitor)"
+fi
+
 for (( ITERATION=START_ITERATION; ITERATION<=MAX_ITERATIONS; ITERATION++ )); do
+    iter_start=$SECONDS
+
+    # Build iteration header with elapsed time + ETA
+    elapsed=$(( SECONDS - LOOP_START_SECONDS ))
+    header="ITERATION ${ITERATION} of ${MAX_ITERATIONS} | Elapsed: $(format_duration $elapsed)"
+
+    if [ ${#ITER_DURATIONS[@]} -gt 0 ]; then
+        sum=0
+        for d in "${ITER_DURATIONS[@]}"; do sum=$(( sum + d )); done
+        avg=$(( sum / ${#ITER_DURATIONS[@]} ))
+        remaining_iters=$(( MAX_ITERATIONS - ITERATION + 1 ))
+        eta=$(( avg * remaining_iters ))
+        header+=" | Avg: $(format_duration $avg)/iter | ETA: ~$(format_duration $eta)"
+    fi
+
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  ITERATION ${ITERATION} of ${MAX_ITERATIONS}"
+    echo "  ${header}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # ── PLAN PHASE ──
@@ -422,6 +539,9 @@ for (( ITERATION=START_ITERATION; ITERATION<=MAX_ITERATIONS; ITERATION++ )); do
     # ── CHECK PHASE ──
     run_phase "checker" "checker"
     PHASE_TIMES_CHECK+=("$LAST_PHASE_DURATION")
+
+    # Track iteration duration for ETA calculation
+    ITER_DURATIONS+=("$(( SECONDS - iter_start ))")
 
     # ── EVALUATE VERDICT ──
     VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \
@@ -455,6 +575,7 @@ for (( ITERATION=START_ITERATION; ITERATION<=MAX_ITERATIONS; ITERATION++ )); do
         echo "╔══════════════════════════════════════════════════════════╗"
         echo "║  PASS — Task complete after ${ITERATION} iteration(s)   "
         echo "╚══════════════════════════════════════════════════════════╝"
+        update_status "complete" "PASS"
         print_summary "PASS"
         exit 0
     elif [ "$VERDICT" = "FAIL" ]; then
@@ -470,5 +591,6 @@ echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║  FAIL — Max iterations (${MAX_ITERATIONS}) reached      "
 echo "╚══════════════════════════════════════════════════════════╝"
+update_status "complete" "FAIL"
 print_summary "FAIL (max iterations reached)"
 exit 1
