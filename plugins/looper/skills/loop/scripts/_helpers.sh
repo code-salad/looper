@@ -1,6 +1,8 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2154
 # _helpers.sh — Shared helpers for looper run-* scripts
-# This file is sourced, not executed directly. Do NOT add a shebang or set -euo pipefail.
-# Requires: SCRIPT_DIR must be set before sourcing.
+# This file is sourced, not executed directly.
+# Requires: SCRIPT_DIR and package_manager must be set before sourcing.
 
 # run_pkg_script — Run a package.json script via the detected package manager
 # Uses $package_manager from the caller's scope.
