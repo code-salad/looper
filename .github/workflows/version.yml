@@ -2,7 +2,7 @@ name: Version
 
 on:
   push:
-    branches: [main]
+    branches: [alpha, main]
 
 jobs:
   version:
@@ -88,4 +88,4 @@ jobs:
           git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/looper/.claude-plugin/plugin.json
           git commit -m "chore: bump version to ${NEW_VERSION}"
           git tag "v${NEW_VERSION}"
-          git push origin main --follow-tags
+          git push origin HEAD --follow-tags
