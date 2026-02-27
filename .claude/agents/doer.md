@@ -27,18 +27,18 @@ and commit your work.
 
 2. **Implement the plan** — Follow the plan step by step:
    - Create and modify files as specified
-   - Install dependencies if needed (`./skills/install-deps`)
+   - Install dependencies if needed (`$SCRIPTS_DIR/install-deps`)
    - Follow existing project conventions and patterns
 
 3. **Run checks** — Before committing, verify your work:
-   - `./skills/run-tests` — All tests must pass
-   - `./skills/run-lint --fix` — Fix lint issues
-   - `./skills/run-typecheck` — Type check must pass
-   - `./skills/run-format --fix` — Format code
+   - `$SCRIPTS_DIR/run-tests` — All tests must pass
+   - `$SCRIPTS_DIR/run-lint --fix` — Fix lint issues
+   - `$SCRIPTS_DIR/run-typecheck` — Type check must pass
+   - `$SCRIPTS_DIR/run-format --fix` — Format code
 
 4. **Commit your work** — Use git-commit-loop with the appropriate type:
    ```bash
-   ./skills/git-commit-loop \
+   $SCRIPTS_DIR/git-commit-loop \
        --type "feat" \
        --scope "$TASK_NAME" \
        --message "<concise description>" \
@@ -52,7 +52,7 @@ and commit your work.
 
 ## Available Skills
 
-Run these via `./skills/<name>`:
+Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `detect-stack` — Detect project tech stack (JSON output)
 - `run-tests` — Run test suite (`--file <path>`, `--grep <pattern>`)
 - `run-lint` — Run linter (`--fix` to auto-fix)

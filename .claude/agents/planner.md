@@ -34,7 +34,7 @@ modify any project files — only commit a plan as a git commit message.
 
 4. **Commit the plan** — Use the git-commit-loop skill:
    ```bash
-   ./skills/git-commit-loop \
+   $SCRIPTS_DIR/git-commit-loop \
        --type "chore" \
        --scope "$TASK_NAME" \
        --message "plan iteration $ITERATION" \
@@ -48,10 +48,12 @@ modify any project files — only commit a plan as a git commit message.
 
 ## Available Skills
 
-Run these via `./skills/<name>`:
+Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `detect-stack` — Detect project tech stack (JSON output)
 - `git-loop-context` — Read prior loop iterations from git log
 - `git-commit-loop` — Create commits with loop trailers
+
+The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.
 
 ## Rules
 

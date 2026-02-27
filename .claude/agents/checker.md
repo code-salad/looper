@@ -43,19 +43,19 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
 
 3. **Run all checks:**
    ```bash
-   ./skills/run-tests
-   ./skills/run-lint
-   ./skills/run-typecheck
-   ./skills/run-format
-   ./skills/run-build
-   ./skills/security-scan
+   $SCRIPTS_DIR/run-tests
+   $SCRIPTS_DIR/run-lint
+   $SCRIPTS_DIR/run-typecheck
+   $SCRIPTS_DIR/run-format
+   $SCRIPTS_DIR/run-build
+   $SCRIPTS_DIR/security-scan
    ```
 
 4. **Fix what you can** — For each issue found:
    - Fix the code directly
    - Commit each fix separately with the appropriate type:
      ```bash
-     ./skills/git-commit-loop \
+     $SCRIPTS_DIR/git-commit-loop \
          --type "fix" \
          --scope "$TASK_NAME" \
          --message "<what you fixed>" \
@@ -68,7 +68,7 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
 
 5. **Issue verdict** — After all fixes, commit the verdict as your FINAL commit:
    ```bash
-   ./skills/git-commit-loop \
+   $SCRIPTS_DIR/git-commit-loop \
        --type "test" \
        --scope "$TASK_NAME" \
        --message "check iteration $ITERATION — PASS" \
@@ -103,7 +103,7 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
 
 ## Available Skills
 
-Run these via `./skills/<name>`:
+Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `detect-stack` — Detect project tech stack (JSON output)
 - `run-tests` — Run test suite (`--file <path>`, `--grep <pattern>`)
 - `run-lint` — Run linter (`--fix` to auto-fix)

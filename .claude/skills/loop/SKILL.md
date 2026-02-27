@@ -52,20 +52,14 @@ a conventional commit scope:
 
 Example: "Add User Authentication Flow" → "add-user-authentication-flow"
 
-### 4. Find loop.sh
+### 4. Execute the loop
 
-Locate `loop.sh` relative to this skill. It should be at the repository root.
+`loop.sh` lives in the `scripts/` subdirectory alongside the other utility scripts.
 
 ```bash
 REPO_ROOT=$(git rev-parse --show-toplevel)
-LOOP_SCRIPT="${REPO_ROOT}/loop.sh"
-```
+LOOP_SCRIPT="${REPO_ROOT}/.claude/skills/loop/scripts/loop.sh"
 
-**Gate:** Abort if `loop.sh` is not found.
-
-### 5. Execute the loop
-
-```bash
 bash "$LOOP_SCRIPT" \
     --task "$TASK_NAME" \
     --prompt "$ARGUMENTS"
@@ -86,6 +80,40 @@ After `loop.sh` exits:
   ```
 - **Exit code 130 (interrupted):** Report that the loop was interrupted and can
   be resumed by running `/loop` again with the same task.
+
+## Components
+
+This skill orchestrates the following components:
+
+### Agents (`.claude/agents/`)
+
+| Agent | File | Role |
+|-------|------|------|
+| `planner` | `.claude/agents/planner.md` | Explores codebase, produces plan (read-only) |
+| `doer` | `.claude/agents/doer.md` | Implements the plan, commits changes |
+| `checker` | `.claude/agents/checker.md` | Reviews work, fixes issues, issues PASS/FAIL verdict |
+
+### Scripts (`scripts/`)
+
+All executable scripts live in `.claude/skills/loop/scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| `loop.sh` | Main PDC loop orchestrator |
+| `detect-stack` | Auto-detect project tech stack (JSON output) |
+| `run-tests` | Run test suite (`--file`, `--grep`) |
+| `run-lint` | Run linter (`--fix`) |
+| `run-typecheck` | Run type checker |
+| `run-format` | Run formatter (`--fix`) |
+| `run-build` | Build the project |
+| `install-deps` | Install project dependencies |
+| `security-scan` | Run security vulnerability scan |
+| `git-loop-context` | Read prior loop iterations from git log |
+| `git-commit-loop` | Create conventional commits with loop trailers |
+
+The utility scripts auto-detect the project's tech stack via `detect-stack`
+and dispatch to the right tool. Agents receive the `$SCRIPTS_DIR` path in
+their dynamic context.
 
 ## Error Handling
 

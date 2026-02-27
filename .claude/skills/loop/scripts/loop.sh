@@ -14,7 +14,7 @@ EXTRA_CONTEXT=""
 MODEL="sonnet"
 MAX_ITERATIONS=10
 MAX_TURNS=50
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ──────────────────────────────────────────────
 # Parse arguments
@@ -141,7 +141,7 @@ build_context_file() {
 
     # Get loop context from prior iterations
     local loop_context
-    loop_context=$("$SCRIPT_DIR/skills/git-loop-context" \
+    loop_context=$("$SCRIPTS_DIR/git-loop-context" \
         --task "$TASK_NAME" --iteration "$ITERATION" 2>/dev/null || echo "No prior context.")
 
     cat > "$context_file" <<CTX_EOF
@@ -159,6 +159,7 @@ Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
 - **TASK_NAME:** ${TASK_NAME}
 - **ITERATION:** ${ITERATION}
 - **TASK_PROMPT:** ${TASK_PROMPT}
+- **SCRIPTS_DIR:** ${SCRIPTS_DIR}
 
 ## Prior Loop Context
 

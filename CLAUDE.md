@@ -9,11 +9,23 @@ Checker issues a PASS verdict.
 ## Project Structure
 
 ```
-skills/            Bash scripts that abstract tech-stack operations
-loop.sh            Main orchestrator — runs the PDC loop
-docs/              Design docs and flow diagrams
-.claude/agents/    Agent definitions (planner, doer, checker)
-.claude/skills/    Claude Code user-invocable skills
+.claude/
+├── agents/                Agent definitions (planner, doer, checker)
+└── skills/loop/           The loop skill
+    ├── SKILL.md           User-invocable entry point (/loop)
+    └── scripts/           All executable scripts
+        ├── loop.sh        Main PDC loop orchestrator
+        ├── detect-stack   Auto-detect project tech stack
+        ├── run-tests      Run test suite
+        ├── run-lint       Run linter
+        ├── run-typecheck  Run type checker
+        ├── run-format     Run formatter
+        ├── run-build      Build project
+        ├── install-deps   Install dependencies
+        ├── security-scan  Security vulnerability scan
+        ├── git-loop-context  Read loop history from git
+        └── git-commit-loop   Commit with loop trailers
+docs/                      Design docs and flow diagrams
 ```
 
 ## Key Conventions
