@@ -224,27 +224,31 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     ITERATION=$((ITERATION + 1))
 
     # --- PLAN PHASE ---
+    # --agent planner loads .claude/agents/planner.md (static instructions)
     # --setting-sources user,project loads CLAUDE.md (not auto-loaded in -p mode)
+    # --append-system-prompt-file injects dynamic per-iteration context
     # --max-turns 50 is a per-phase safety valve
-    claude -p "..." --setting-sources user,project \
+    claude -p "..." --agent planner \
+        --setting-sources user,project \
         --dangerously-skip-permissions --max-turns 50 \
-        --append-system-prompt-file /tmp/planner-prompt.md \
-        --disallowedTools "Write" "Edit"
+        --append-system-prompt-file /tmp/pdc-context-planner.md
     # Agent commits with: chore(task): plan iteration N
 
     # --- DO PHASE ---
-    claude -p "..." --setting-sources user,project \
+    claude -p "..." --agent doer \
+        --setting-sources user,project \
         --dangerously-skip-permissions --max-turns 50 \
-        --append-system-prompt-file /tmp/doer-prompt.md
+        --append-system-prompt-file /tmp/pdc-context-doer.md
     # Agent commits with: feat(task): implement ... (iteration N)
 
     # --- CHECK PHASE ---
     # Checker may produce multiple commits:
     #   0+ fix/style/refactor commits (review fixes)
     #   1  verdict commit (always last): test(task): check iteration N — PASS/FAIL
-    claude -p "..." --setting-sources user,project \
+    claude -p "..." --agent checker \
+        --setting-sources user,project \
         --dangerously-skip-permissions --max-turns 50 \
-        --append-system-prompt-file /tmp/checker-prompt.md
+        --append-system-prompt-file /tmp/pdc-context-checker.md
 
     # --- EVALUATE VERDICT ---
     # Verdict is always the last commit made by the checker
@@ -261,7 +265,9 @@ exit 1
 
 ### 3. Planner Agent
 
-Invoked as `claude -p '<planner prompt>'`.
+Invoked as `claude -p --agent planner`.
+
+Agent definition: `.claude/agents/planner.md`
 
 **Responsibilities:**
 - Read prior iteration context from `git log`
@@ -269,11 +275,13 @@ Invoked as `claude -p '<planner prompt>'`.
 - Produce a concrete, actionable plan
 - Commit the plan (no code changes — plan lives in the commit message body)
 
-**Allowed tools:** Read, Glob, Grep, Task (Explore subagents only), Bash (git only)
+**Allowed tools:** Read, Glob, Grep, Task, Bash (Write/Edit/NotebookEdit disallowed)
 
 ### 4. Doer Agent
 
-Invoked as `claude -p '<doer prompt>'`.
+Invoked as `claude -p --agent doer`.
+
+Agent definition: `.claude/agents/doer.md`
 
 **Responsibilities:**
 - Read the plan from the latest planner commit (`git log`)
@@ -281,11 +289,13 @@ Invoked as `claude -p '<doer prompt>'`.
 - Use Explore subagents if needed to understand the codebase
 - Commit all changes with a summary in the commit message body
 
-**Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, Task (Explore subagents only)
+**Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, Task, NotebookEdit
 
 ### 5. Checker Agent (also: Reviewer)
 
-Invoked as `claude -p '<checker prompt>'`.
+Invoked as `claude -p --agent checker`.
+
+Agent definition: `.claude/agents/checker.md`
 
 The checker doubles as a **code reviewer**. It doesn't just evaluate — it fixes
 what it can. Only issues it cannot resolve itself get escalated back to the
@@ -302,7 +312,7 @@ Planner as FAIL feedback.
 - FAIL = issues remain that the checker couldn't resolve itself; commit body
   contains actionable feedback for the next Planner iteration
 
-**Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, Task (Explore subagents only)
+**Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, Task, NotebookEdit
 
 ---
 

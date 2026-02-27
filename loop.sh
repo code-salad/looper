@@ -3,6 +3,7 @@ set -euo pipefail
 
 # loop.sh — PDC Loop Orchestrator
 # Runs Plan → Do → Check agents in a loop until PASS or max iterations.
+# Agents are defined in .claude/agents/{planner,doer,checker}.md
 
 # ──────────────────────────────────────────────
 # Defaults
@@ -131,60 +132,19 @@ $(cat Cargo.toml)
 }
 
 # ──────────────────────────────────────────────
-# Template rendering
+# Build dynamic context file for a phase
 # ──────────────────────────────────────────────
-render_template() {
-    local template_file="$1"
-    local loop_context="$2"
-    local extra_ctx="$3"
-
-    local content
-    content=$(cat "$template_file")
-
-    # Replace placeholders
-    content="${content//\{\{TASK_NAME\}\}/$TASK_NAME}"
-    content="${content//\{\{ITERATION\}\}/$ITERATION}"
-    content="${content//\{\{TASK_PROMPT\}\}/$TASK_PROMPT}"
-    content="${content//\{\{LOOP_CONTEXT\}\}/$loop_context}"
-
-    if [ -n "$extra_ctx" ]; then
-        content="${content//\{\{EXTRA_CONTEXT\}\}/## Additional Context
-$extra_ctx}"
-    else
-        content="${content//\{\{EXTRA_CONTEXT\}\}/}"
-    fi
-
-    echo "$content"
-}
-
-# ──────────────────────────────────────────────
-# Run a single agent phase
-# ──────────────────────────────────────────────
-run_phase() {
+build_context_file() {
     local phase="$1"
-    local template_file="$2"
-    local extra_flags=("${@:3}")
+    local context_file
+    context_file=$(mktemp "/tmp/pdc-context-$$-${phase}.XXXXXX.md")
 
-    echo ""
-    echo "════════════════════════════════════════════════════════"
-    echo "  ${phase^^} PHASE — Iteration ${ITERATION}"
-    echo "════════════════════════════════════════════════════════"
-    echo ""
-
-    # Get loop context
+    # Get loop context from prior iterations
     local loop_context
     loop_context=$("$SCRIPT_DIR/skills/git-loop-context" \
         --task "$TASK_NAME" --iteration "$ITERATION" 2>/dev/null || echo "No prior context.")
 
-    # Render the prompt template
-    local rendered
-    rendered=$(render_template "$template_file" "$loop_context" "$EXTRA_CONTEXT")
-
-    # Build the system prompt file with project context + rendered prompt
-    local prompt_file
-    prompt_file=$(mktemp "/tmp/pdc-prompt-$$-${phase}.XXXXXX.md")
-
-    cat > "$prompt_file" <<PROMPT_EOF
+    cat > "$context_file" <<CTX_EOF
 <project-context>
 ${PROJECT_CONTEXT}
 </project-context>
@@ -194,23 +154,60 @@ Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
 
 ---
 
-${rendered}
-PROMPT_EOF
+## Task Variables
 
-    # Run claude -p
+- **TASK_NAME:** ${TASK_NAME}
+- **ITERATION:** ${ITERATION}
+- **TASK_PROMPT:** ${TASK_PROMPT}
+
+## Prior Loop Context
+
+${loop_context}
+CTX_EOF
+
+    if [ -n "$EXTRA_CONTEXT" ]; then
+        cat >> "$context_file" <<CTX_EXTRA
+
+## Additional Context
+
+${EXTRA_CONTEXT}
+CTX_EXTRA
+    fi
+
+    echo "$context_file"
+}
+
+# ──────────────────────────────────────────────
+# Run a single agent phase
+# ──────────────────────────────────────────────
+run_phase() {
+    local phase="$1"
+    local agent="$2"
+
+    echo ""
+    echo "════════════════════════════════════════════════════════"
+    echo "  ${phase^^} PHASE — Iteration ${ITERATION}"
+    echo "════════════════════════════════════════════════════════"
+    echo ""
+
+    # Build dynamic context file
+    local context_file
+    context_file=$(build_context_file "$phase")
+
+    # Run claude -p with --agent
     local exit_code=0
     claude -p \
+        --agent "$agent" \
         --model "$MODEL" \
         --setting-sources user,project \
         --dangerously-skip-permissions \
         --max-turns "$MAX_TURNS" \
-        --append-system-prompt-file "$prompt_file" \
-        "${extra_flags[@]}" \
-        "You are the ${phase} agent. Execute your instructions." \
+        --append-system-prompt-file "$context_file" \
+        "You are the ${phase} agent for task '${TASK_NAME}', iteration ${ITERATION}. Execute your instructions." \
         || exit_code=$?
 
     # Cleanup temp file
-    rm -f "$prompt_file"
+    rm -f "$context_file"
 
     if [ $exit_code -ne 0 ]; then
         echo "Warning: ${phase} agent exited with code ${exit_code}" >&2
@@ -249,7 +246,7 @@ cleanup() {
     echo ""
     echo "Interrupted at iteration ${ITERATION:-?}. State preserved in git log."
     echo "Re-run the same command to resume."
-    rm -f /tmp/pdc-prompt-$$-*.md
+    rm -f /tmp/pdc-context-$$-*.md
     exit 130
 }
 trap cleanup SIGINT SIGTERM
@@ -279,14 +276,13 @@ for (( ITERATION=START_ITERATION; ITERATION<=MAX_ITERATIONS; ITERATION++ )); do
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # ── PLAN PHASE ──
-    run_phase "planner" "$SCRIPT_DIR/prompts/planner.md" \
-        --disallowedTools "Write" "Edit" "NotebookEdit"
+    run_phase "planner" "planner"
 
     # ── DO PHASE ──
-    run_phase "doer" "$SCRIPT_DIR/prompts/doer.md"
+    run_phase "doer" "doer"
 
     # ── CHECK PHASE ──
-    run_phase "checker" "$SCRIPT_DIR/prompts/checker.md"
+    run_phase "checker" "checker"
 
     # ── EVALUATE VERDICT ──
     VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \

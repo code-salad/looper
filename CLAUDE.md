@@ -9,11 +9,11 @@ Checker issues a PASS verdict.
 ## Project Structure
 
 ```
-skills/           Bash scripts that abstract tech-stack operations
-prompts/          Markdown templates for agent prompts (planner, doer, checker)
-loop.sh           Main orchestrator — runs the PDC loop
-docs/             Design docs and flow diagrams
-.claude/skills/   Claude Code user-invocable skills
+skills/            Bash scripts that abstract tech-stack operations
+loop.sh            Main orchestrator — runs the PDC loop
+docs/              Design docs and flow diagrams
+.claude/agents/    Agent definitions (planner, doer, checker)
+.claude/skills/    Claude Code user-invocable skills
 ```
 
 ## Key Conventions
