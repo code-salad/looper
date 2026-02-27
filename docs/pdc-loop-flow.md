@@ -1,8 +1,8 @@
 # PDC Loop — Plan, Do, Check
 
 An orchestrated agent loop that iterates through three phases (Plan → Do → Check)
-until the Checker agent returns PASS. Designed for Claude Code's constraint that
-subagents cannot spawn subagents — the loop controller is a bash script.
+until the Checker agent returns PASS. The SKILL.md entry point acts as the loop
+controller, spawning Task subagents directly from the main Claude Code session.
 
 ---
 
@@ -13,24 +13,16 @@ subagents cannot spawn subagents — the loop controller is a bash script.
 │  Main Agent (user's Claude Code session)                │
 │                                                         │
 │  1. User invokes /loop skill                            │
-│  2. Skill generates prompt + context                    │
-│  3. Skill executes loop.sh                              │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│  loop.sh  (Bash orchestrator)                           │
-│                                                         │
-│  - Runs PDC loop until PASS                             │
-│  - Reads verdict from git log                           │
-│  - Exits with status code                               │
+│  2. SKILL.md builds project context                     │
+│  3. SKILL.md runs PDC loop via Task subagents           │
+│  4. Reads verdict from git log after each iteration     │
 └────────────────────┬────────────────────────────────────┘
                      │
           ┌──────────┼──────────┐
           ▼          ▼          ▼
        Planner    Doer      Checker
        Agent      Agent      Agent
-     (claude -p) (claude -p) (claude -p)
+     (Task)      (Task)     (Task)
 ```
 
 ---
@@ -39,15 +31,14 @@ subagents cannot spawn subagents — the loop controller is a bash script.
 
 ```mermaid
 flowchart TD
-    A["Main Agent"] -->|"Invokes /loop skill"| B["Skill: loop"]
-    B -->|"Executes"| C["loop.sh"]
-    C --> P
+    A["Main Agent"] -->|"Invokes /loop skill"| B["SKILL.md orchestrator"]
+    B --> P
 
-    subgraph LOOP ["PDC Loop"]
+    subgraph LOOP ["PDC Loop (managed by SKILL.md)"]
         direction TB
-        P["Planner Agent"]
-        P -->|"chore(task): plan ..."| D["Doer Agent"]
-        D -->|"feat/fix(task): ..."| CH["Checker Agent"]
+        P["Planner Agent (Task subagent)"]
+        P -->|"chore(task): plan ..."| D["Doer Agent (Task subagent)"]
+        D -->|"feat/fix(task): ..."| CH["Checker Agent (Task subagent)"]
         CH -->|"fix/refactor(task): review fixes"| V["Verdict Commit"]
         V -->|"test(task): check — PASS/FAIL"| DECIDE{Verdict?}
         DECIDE -->|"FAIL"| P
@@ -57,7 +48,7 @@ flowchart TD
     EXIT --> PR["Main Agent: Create PR"]
     PR --> CI{CI checks pass?}
     CI -->|"Yes"| DONE["Done"]
-    CI -->|"No"| RESUME["Re-enter loop.sh with CI failure context"]
+    CI -->|"No"| RESUME["Re-run /loop with CI failure context"]
     RESUME --> P
 ```
 
@@ -65,17 +56,13 @@ flowchart TD
 
 ## Project Context Bootstrap
 
-**Important:** `claude -p` does NOT auto-load `CLAUDE.md`. You must pass
-`--setting-sources user,project` to load it. It does auto-inject
-`.claude/settings.json`.
+Task subagents inherit settings from the main session, but project docs that
+agents routinely ignore — `CONTRIBUTING.md`, `README.md`, etc. — contain
+critical information (how to build, test, lint, commit, file structure
+conventions) that agents need to follow.
 
-What `claude -p` does **not** inject are project docs that agents routinely
-ignore: `CONTRIBUTING.md`, `README.md`, etc. These contain critical information —
-how to build, test, lint, commit, file structure conventions — that agents
-need to follow but never bother to read.
-
-The bash orchestrator collects these **once at startup** and injects them
-into every agent prompt as a preamble.
+The SKILL.md orchestrator collects these **once before the loop starts** and
+injects them into every subagent prompt as a preamble.
 
 ### What gets collected
 
@@ -93,60 +80,14 @@ Only files that `claude -p` does NOT already handle:
 | `pyproject.toml` | Linter/formatter/build config |
 | `Cargo.toml` → `[workspace]` | Workspace structure |
 
-### Collection script (`build_project_context`)
+### What gets collected
 
-```bash
-build_project_context() {
-    local ctx=""
-
-    # Project docs that claude -p does NOT auto-inject
-    for file in CONTRIBUTING.md AGENTS.md README.md \
-                .github/PULL_REQUEST_TEMPLATE.md .editorconfig; do
-        if [ -f "$file" ]; then
-            ctx+="
----
-## File: ${file}
-
-$(cat "$file")
-"
-        fi
-    done
-
-    # Build/script config (extract relevant sections only)
-    if [ -f "package.json" ]; then
-        ctx+="
----
-## Project scripts (from package.json)
-
-$(node -e "const p=require('./package.json'); console.log(JSON.stringify(p.scripts||{},null,2))")
-"
-    fi
-
-    if [ -f "Makefile" ]; then
-        ctx+="
----
-## Makefile targets
-
-$(grep -E '^[a-zA-Z_-]+:' Makefile | sed 's/:.*//')
-"
-    fi
-
-    if [ -f "pyproject.toml" ]; then
-        ctx+="
----
-## Python project config (from pyproject.toml)
-
-$(cat pyproject.toml)
-"
-    fi
-
-    echo "$ctx"
-}
-```
+The SKILL.md orchestrator reads each file with the Read tool and assembles
+the context. See SKILL.md step 5 for the full list.
 
 ### How it's injected
 
-The `PROJECT_CONTEXT` is prepended to every agent prompt:
+The `PROJECT_CONTEXT` is passed to every Task subagent in its prompt:
 
 ```
 <project-context>
@@ -158,10 +99,19 @@ Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
 
 ---
 
-<your actual phase prompt here>
+## Task Variables
+
+- **TASK_NAME:** ...
+- **ITERATION:** ...
+- **TASK_PROMPT:** ...
+- **SCRIPTS_DIR:** ...
+
+## Prior Loop Context
+
+<output from git-loop-context>
 ```
 
-`CLAUDE.md` is injected by `claude -p --setting-sources user,project` — no duplication.
+`CLAUDE.md` is inherited by Task subagents from the main session.
 
 ### Checker verification against project context
 
@@ -181,91 +131,53 @@ If any convention is violated, fix it or flag it in your verdict.
 
 ## Components
 
-### 1. Skill Entry Point (`/loop`)
+### 1. Skill Entry Point & Orchestrator (`/loop` → SKILL.md)
 
-The skill is invoked from the main Claude Code session. It:
+The SKILL.md file serves as both the entry point and the loop orchestrator.
+When invoked from the main Claude Code session, it:
 
 - Accepts the user's task description
 - Generates a sanitized task name (used as scope in commits)
-- Produces a reference `loop.sh` invocation with all required arguments
-- Main agent executes the bash script via Bash tool
-
-### 2. Bash Orchestrator (`loop.sh`)
-
-The bash script is the **loop controller**. It owns the iteration logic so that
-no agent needs to spawn another agent.
-
-```
-Usage: loop.sh --task <task-name> --prompt <prompt>
-
-Arguments:
-  --task     Sanitized task name (used as conventional commit scope)
-  --prompt   The original user prompt / task description
-```
+- Creates a worktree for isolation
+- Builds project context by reading key project files
+- Detects resume point from git log
+- Runs the PDC loop by spawning Task subagents sequentially
+- Reads the verdict from git log after each iteration
 
 **Pseudocode:**
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
+```
+MAX_ITERATIONS = 10
+PROJECT_CONTEXT = read(CONTRIBUTING.md, README.md, package.json, ...)
+START_ITERATION = detect_resume_from_git_log()
 
-TASK_NAME="$1"
-PROMPT="$2"
-MAX_ITERATIONS=10
-ITERATION=0
-
-# --- BOOTSTRAP: Build project context ---
-# Collect project rules/conventions ONCE, inject into every agent prompt.
-# This ensures agents never ignore contributing guidelines, project conventions,
-# or setup instructions.
-PROJECT_CONTEXT=$(build_project_context)
-
-while [ $ITERATION -lt $MAX_ITERATIONS ]; do
-    ITERATION=$((ITERATION + 1))
+for ITERATION in START_ITERATION..MAX_ITERATIONS:
+    LOOP_CONTEXT = run("git-loop-context --task $TASK --iteration $ITERATION")
+    CONTEXT = format(PROJECT_CONTEXT, TASK_NAME, ITERATION, LOOP_CONTEXT)
 
     # --- PLAN PHASE ---
-    # --agent planner loads agents/planner.md (static instructions)
-    # --setting-sources user,project loads CLAUDE.md (not auto-loaded in -p mode)
-    # --append-system-prompt-file injects dynamic per-iteration context
-    # --max-turns 50 is a per-phase safety valve
-    claude -p "..." --agent planner \
-        --setting-sources user,project \
-        --dangerously-skip-permissions --max-turns 50 \
-        --append-system-prompt-file /tmp/pdc-context-planner.md
+    Task(subagent_type="looper:planner", prompt=CONTEXT)
     # Agent commits with: chore(task): plan iteration N
 
     # --- DO PHASE ---
-    claude -p "..." --agent doer \
-        --setting-sources user,project \
-        --dangerously-skip-permissions --max-turns 50 \
-        --append-system-prompt-file /tmp/pdc-context-doer.md
+    Task(subagent_type="looper:doer", prompt=CONTEXT)
     # Agent commits with: feat(task): implement ... (iteration N)
 
     # --- CHECK PHASE ---
-    # Checker may produce multiple commits:
-    #   0+ fix/style/refactor commits (review fixes)
-    #   1  verdict commit (always last): test(task): check iteration N — PASS/FAIL
-    claude -p "..." --agent checker \
-        --setting-sources user,project \
-        --dangerously-skip-permissions --max-turns 50 \
-        --append-system-prompt-file /tmp/pdc-context-checker.md
+    Task(subagent_type="looper:checker", prompt=CONTEXT)
+    # Checker may produce 0+ fix commits then 1 verdict commit
 
     # --- EVALUATE VERDICT ---
-    # Verdict is always the last commit made by the checker
-    VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" | grep -oP 'Loop-Verdict: \K(PASS|FAIL)')
-    if [ "$VERDICT" = "PASS" ]; then
-        echo "PASS — exiting loop"
-        exit 0
-    fi
-done
+    VERDICT = git log --grep="Loop-Verdict:" → PASS or FAIL
+    if VERDICT == "PASS": break
 
-echo "FAIL — max iterations reached"
-exit 1
+if VERDICT == "PASS": create PR
+else: report FAIL
 ```
 
-### 3. Planner Agent
+### 2. Planner Agent
 
-Invoked as `claude -p --agent planner`.
+Spawned as `Task(subagent_type="looper:planner")`.
 
 Agent definition: `agents/planner.md`
 
@@ -277,9 +189,9 @@ Agent definition: `agents/planner.md`
 
 **Allowed tools:** Read, Glob, Grep, Task, Bash (Write/Edit/NotebookEdit disallowed)
 
-### 4. Doer Agent
+### 3. Doer Agent
 
-Invoked as `claude -p --agent doer`.
+Spawned as `Task(subagent_type="looper:doer")`.
 
 Agent definition: `agents/doer.md`
 
@@ -291,9 +203,9 @@ Agent definition: `agents/doer.md`
 
 **Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, Task, NotebookEdit
 
-### 5. Checker Agent (also: Reviewer)
+### 4. Checker Agent (also: Reviewer)
 
-Invoked as `claude -p --agent checker`.
+Spawned as `Task(subagent_type="looper:checker")`.
 
 Agent definition: `agents/checker.md`
 
@@ -714,11 +626,8 @@ After the loop exits with PASS:
 2. **Main agent monitors CI** using `gh run watch` or `gh pr checks`
 3. **If CI fails:**
    - Extract the failure details
-   - Re-invoke `loop.sh` with additional context:
-     ```bash
-     loop.sh --task <task> --prompt "<original prompt>" \
-             --context "CI failed: <error details>"
-     ```
+   - Re-invoke `/loop` with the same task description
+   - The loop detects prior iterations via git log and resumes
    - The Planner receives the CI failure as prior context
    - Loop resumes until Checker passes again
 4. **If CI passes:** Done
@@ -729,8 +638,8 @@ After the loop exits with PASS:
 
 | Decision | Rationale |
 |---|---|
-| Bash script as orchestrator | Claude Code subagents can't spawn subagents. Bash owns the loop. |
-| `claude -p` per phase | Each agent gets a fresh context with only git log as shared state. |
+| SKILL.md as orchestrator | The main agent runs the loop directly, spawning Task subagents. No nested `claude -p` needed. |
+| Task subagent per phase | Each agent gets a fresh context with only git log as shared state. |
 | Git commits as progress log | No separate progress file — commits are atomically tied to code state. Impossible to desync. |
 | Conventional commits + trailers | Human-readable subject line + machine-queryable metadata. Works with existing tooling (changelogs, CI filters). |
 | Type reflects actual change | `feat`/`fix`/`refactor` for doer, `chore` for planner, `fix`/`style`/`refactor`/`test` for checker fixes, `test` for verdict — stays true to conventional commits semantics. |

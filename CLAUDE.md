@@ -3,7 +3,7 @@
 ## What This Is
 
 A Plan-Do-Check loop orchestrator for Claude Code, installable as a plugin.
-The bash script `loop.sh` drives three `claude -p` agents (Planner, Doer,
+The SKILL.md entry point drives three Task subagents (Planner, Doer,
 Checker) in a loop until the Checker issues a PASS verdict.
 
 ## Installation
@@ -32,9 +32,8 @@ plugins/
     agents/                Agent definitions (planner, doer, checker)
     skills/
       loop/                The loop skill
-        SKILL.md           User-invocable entry point (/loop)
-        scripts/           All executable scripts
-          loop.sh          Main PDC loop orchestrator
+        SKILL.md           User-invocable entry point (/loop) and loop orchestrator
+        scripts/           Helper scripts for agents
           detect-stack     Auto-detect project tech stack
           run-tests        Run test suite
           run-lint         Run linter
@@ -55,21 +54,21 @@ docs/                      Design docs and flow diagrams
 
 - **Commits** follow [Conventional Commits](https://www.conventionalcommits.org/)
   with `Loop-Phase`, `Loop-Iteration`, and optionally `Loop-Verdict` trailers.
-- **Skills** in `plugins/looper/skills/` are executable bash scripts. They auto-detect the
+- **Skills** in `plugins/looper/skills/` include helper bash scripts that auto-detect the
   project's tech stack via `detect-stack` and dispatch to the right tool.
-- **`claude -p` invocations** must include `--setting-sources user,project` to
-  load CLAUDE.md (it is NOT auto-loaded in `-p` mode).
+- **Loop orchestration** is handled by SKILL.md, which spawns Task subagents
+  (`looper:planner`, `looper:doer`, `looper:checker`) directly.
 
 ## Running the Loop
 
-```bash
-./plugins/looper/skills/loop/scripts/loop.sh --task <task-name> --prompt "description of what to do"
+```
+/loop "description of what to do"
 ```
 
-Optional flags: `--context <extra-context>`, `--model <model>`, `--max-iterations <N>`.
+The `/loop` skill handles worktree creation, context building, iteration
+management, and agent orchestration automatically.
 
 ## Dependencies
 
 - `claude` CLI (Claude Code)
-- `jq` (JSON processing)
 - `git`
