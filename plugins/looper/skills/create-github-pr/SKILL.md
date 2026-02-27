@@ -1,9 +1,7 @@
 ---
 name: create-github-pr
-description: Commits changes, pushes the branch, and creates a GitHub PR with architecture diagrams, problem context, and test results.
-argument-hint: "[optional: PR title or task description]"
-user-invocable: true
-allowed-tools: Bash(git,gh,npm,npx,bun,bunx,pnpm,yarn,uv,pytest,cargo,go,make,dotnet), Read, Grep, Glob, Edit, Write, Task
+description: Use this skill when the user wants to create a GitHub pull request. Commits changes, pushes the branch, and creates a PR with architecture diagrams, problem context, and test results.
+tools: Bash, Read, Grep, Glob, Edit, Write, Task
 ---
 
 # Create GitHub PR Skill

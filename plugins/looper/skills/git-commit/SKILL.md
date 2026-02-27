@@ -1,9 +1,7 @@
 ---
 name: git-commit
-description: Stages and commits changes using conventional commit format. Analyzes the diff to determine the correct type, scope, and message.
-argument-hint: "[optional: commit description or context]"
-user-invocable: true
-allowed-tools: Bash(git), Read, Grep, Glob
+description: Use this skill when the user wants to stage and commit changes using conventional commit format. Analyzes the diff to determine the correct type, scope, and message.
+tools: Bash, Read, Grep, Glob
 ---
 
 # Git Commit Skill

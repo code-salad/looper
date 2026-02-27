@@ -1,9 +1,7 @@
 ---
 name: initiate-worktree
-description: Creates a git worktree in .worktrees/<name>. Ensures .worktrees is gitignored and committed, then creates the worktree and changes into it.
-argument-hint: "<worktree-name>"
-user-invocable: true
-allowed-tools: Bash, Read, Edit, Write, Grep, Glob
+description: Use this skill when the user wants to create a git worktree. Creates a worktree in .worktrees/<name>, ensures .worktrees is gitignored and committed, then changes into it.
+tools: Bash, Read, Edit, Write, Grep, Glob
 ---
 
 # Worktree Skill

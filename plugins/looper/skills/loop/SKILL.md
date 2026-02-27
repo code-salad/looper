@@ -1,9 +1,7 @@
 ---
 name: loop
-description: Runs a Plan-Do-Check agent loop to implement a task iteratively. Three agents (Planner, Doer, Checker) cycle until the Checker passes the work.
-argument-hint: "<task description>"
-user-invocable: true
-allowed-tools: Bash, Read, Grep, Glob
+description: Use this skill when the user wants to run an iterative Plan-Do-Check agent loop. Three agents (Planner, Doer, Checker) cycle until the Checker passes the work. Triggered by "/loop" followed by a task description.
+tools: Bash, Read, Grep, Glob
 ---
 
 # PDC Loop Skill
