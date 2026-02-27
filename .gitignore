@@ -41,3 +41,4 @@ build/
 # Temp files
 /tmp/
 *.tmp
+.worktrees
