@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# run-tests — Run the project's test suite
+# Usage: run-tests [--file <path>] [--grep <pattern>]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FILE=""
+GREP_PATTERN=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --file) FILE="$2"; shift 2 ;;
+        --grep) GREP_PATTERN="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+STACK=$("$SCRIPT_DIR/detect-stack")
+test_runner=$(echo "$STACK" | jq -r '.test_runner')
+package_manager=$(echo "$STACK" | jq -r '.package_manager')
+
+# Helper: run via package.json script if available
+run_pkg_script() {
+    local script="$1"
+    shift
+    case "$package_manager" in
+        pnpm) pnpm run "$script" -- "$@" ;;
+        yarn) yarn run "$script" "$@" ;;
+        bun)  bun run "$script" "$@" ;;
+        npm|*) npm run "$script" -- "$@" ;;
+    esac
+}
+
+# Check if package.json has a test script
+has_test_script() {
+    [ -f "package.json" ] && jq -e '.scripts.test' package.json &>/dev/null
+}
+
+case "$test_runner" in
+    vitest)
+        args=("run")
+        [ -n "$FILE" ] && args+=("$FILE")
+        [ -n "$GREP_PATTERN" ] && args+=("--grep" "$GREP_PATTERN")
+        if has_test_script; then
+            run_pkg_script test "${args[@]}"
+        else
+            npx vitest "${args[@]}"
+        fi
+        ;;
+    jest)
+        args=()
+        [ -n "$FILE" ] && args+=("$FILE")
+        [ -n "$GREP_PATTERN" ] && args+=("--testNamePattern" "$GREP_PATTERN")
+        if has_test_script; then
+            run_pkg_script test "${args[@]}"
+        else
+            npx jest "${args[@]}"
+        fi
+        ;;
+    mocha)
+        args=()
+        [ -n "$FILE" ] && args+=("$FILE")
+        [ -n "$GREP_PATTERN" ] && args+=("--grep" "$GREP_PATTERN")
+        if has_test_script; then
+            run_pkg_script test "${args[@]}"
+        else
+            npx mocha "${args[@]}"
+        fi
+        ;;
+    pytest)
+        args=()
+        [ -n "$FILE" ] && args+=("$FILE")
+        [ -n "$GREP_PATTERN" ] && args+=("-k" "$GREP_PATTERN")
+        if [ "$package_manager" = "uv" ]; then
+            uv run pytest "${args[@]}"
+        elif [ "$package_manager" = "poetry" ]; then
+            poetry run pytest "${args[@]}"
+        else
+            python -m pytest "${args[@]}"
+        fi
+        ;;
+    go-test)
+        args=("./...")
+        [ -n "$FILE" ] && args=("$FILE")
+        [ -n "$GREP_PATTERN" ] && args+=("-run" "$GREP_PATTERN")
+        go test "${args[@]}"
+        ;;
+    cargo-test)
+        args=()
+        [ -n "$GREP_PATTERN" ] && args+=("$GREP_PATTERN")
+        cargo test "${args[@]}"
+        ;;
+    dotnet-test)
+        args=()
+        [ -n "$GREP_PATTERN" ] && args+=("--filter" "$GREP_PATTERN")
+        dotnet test "${args[@]}"
+        ;;
+    none)
+        echo "No test runner detected." >&2
+        exit 1
+        ;;
+    *)
+        echo "Unsupported test runner: $test_runner" >&2
+        exit 1
+        ;;
+esac

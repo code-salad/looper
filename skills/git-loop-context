@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# git-loop-context — Read loop history from git log
+# Usage: git-loop-context --task <name> --iteration <N>
+# Outputs structured markdown with plan, changes, and verdict per prior iteration.
+
+TASK=""
+ITERATION=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --task) TASK="$2"; shift 2 ;;
+        --iteration) ITERATION="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [ -z "$TASK" ] || [ -z "$ITERATION" ]; then
+    echo "Usage: git-loop-context --task <name> --iteration <N>" >&2
+    exit 1
+fi
+
+echo "## Loop Context: ${TASK}, Iteration ${ITERATION}"
+echo ""
+
+# Show context from all prior iterations
+for (( i=1; i<ITERATION; i++ )); do
+    echo "### Iteration ${i}"
+    echo ""
+
+    # Plan
+    plan_body=$(git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: ${i}" \
+        --all-match --format="%B" -1 2>/dev/null || true)
+    if [ -n "$plan_body" ]; then
+        echo "#### Plan"
+        echo ""
+        echo "$plan_body" | sed '/^Loop-Phase:/d; /^Loop-Iteration:/d; /^Loop-Verdict:/d'
+        echo ""
+    fi
+
+    # Doer changes
+    doer_hash=$(git log --grep="Loop-Phase: do" --grep="Loop-Iteration: ${i}" \
+        --all-match --format="%H" -1 2>/dev/null || true)
+    if [ -n "$doer_hash" ]; then
+        doer_body=$(git log --format="%B" -1 "$doer_hash" 2>/dev/null || true)
+        echo "#### Changes"
+        echo ""
+        echo "$doer_body" | sed '/^Loop-Phase:/d; /^Loop-Iteration:/d; /^Loop-Verdict:/d'
+        echo ""
+        echo "**Files changed:**"
+        echo '```'
+        git show --stat --format="" "$doer_hash" 2>/dev/null || true
+        echo '```'
+        echo ""
+    fi
+
+    # Verdict
+    verdict_body=$(git log --grep="Loop-Phase: check" --grep="Loop-Iteration: ${i}" \
+        --grep="Loop-Verdict:" --all-match --format="%B" -1 2>/dev/null || true)
+    if [ -n "$verdict_body" ]; then
+        verdict=$(echo "$verdict_body" | grep -oP 'Loop-Verdict: \K(PASS|FAIL)' || echo "UNKNOWN")
+        echo "#### Verdict: ${verdict}"
+        echo ""
+        echo "$verdict_body" | sed '/^Loop-Phase:/d; /^Loop-Iteration:/d; /^Loop-Verdict:/d'
+        echo ""
+    fi
+
+    echo "---"
+    echo ""
+done
+
+# If iteration 1, note that there's no prior context
+if [ "$ITERATION" -eq 1 ]; then
+    echo "This is the first iteration. No prior context available."
+    echo ""
+fi

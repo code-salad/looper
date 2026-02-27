@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# run-build — Build the project
+# Usage: run-build
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+STACK=$("$SCRIPT_DIR/detect-stack")
+build_tool=$(echo "$STACK" | jq -r '.build_tool')
+package_manager=$(echo "$STACK" | jq -r '.package_manager')
+
+run_pkg_script() {
+    local script="$1"
+    shift
+    case "$package_manager" in
+        pnpm) pnpm run "$script" "$@" ;;
+        yarn) yarn run "$script" "$@" ;;
+        bun)  bun run "$script" "$@" ;;
+        npm|*) npm run "$script" "$@" ;;
+    esac
+}
+
+has_build_script() {
+    [ -f "package.json" ] && jq -e '.scripts.build' package.json &>/dev/null
+}
+
+case "$build_tool" in
+    vite|webpack|esbuild|rollup|tsup|tsc)
+        if has_build_script; then
+            run_pkg_script build
+        else
+            case "$build_tool" in
+                vite)    npx vite build ;;
+                webpack) npx webpack ;;
+                esbuild) npx esbuild --bundle ;;
+                rollup)  npx rollup -c ;;
+                tsup)    npx tsup ;;
+                tsc)     npx tsc ;;
+            esac
+        fi
+        ;;
+    go-build)
+        go build ./...
+        ;;
+    cargo-build)
+        cargo build
+        ;;
+    dotnet-build)
+        dotnet build
+        ;;
+    none)
+        # Try package.json build script as last resort
+        if has_build_script; then
+            run_pkg_script build
+        elif [ -f "Makefile" ] && grep -q "^build:" Makefile; then
+            make build
+        else
+            echo "No build tool detected." >&2
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Unsupported build tool: $build_tool" >&2
+        exit 1
+        ;;
+esac

@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# detect-stack — Auto-detect project tech stack
+# Outputs JSON with: language, runtime, package_manager, test_runner,
+# linter, formatter, type_checker, build_tool, framework, ci
+
+language="none"
+runtime="none"
+package_manager="none"
+test_runner="none"
+linter="none"
+formatter="none"
+type_checker="none"
+build_tool="none"
+framework="none"
+ci="none"
+
+# --- Detect CI ---
+if [ -d ".github/workflows" ]; then
+    ci="github-actions"
+elif [ -f ".gitlab-ci.yml" ]; then
+    ci="gitlab-ci"
+elif [ -f "Jenkinsfile" ]; then
+    ci="jenkins"
+elif [ -f ".circleci/config.yml" ]; then
+    ci="circleci"
+fi
+
+# --- Detect by lock files / project files ---
+
+# Node.js / TypeScript
+if [ -f "package.json" ]; then
+    runtime="node"
+
+    # Detect package manager
+    if [ -f "pnpm-lock.yaml" ]; then
+        package_manager="pnpm"
+    elif [ -f "yarn.lock" ]; then
+        package_manager="yarn"
+    elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
+        package_manager="bun"
+        runtime="bun"
+    elif [ -f "package-lock.json" ]; then
+        package_manager="npm"
+    else
+        package_manager="npm"
+    fi
+
+    # Detect language (TS vs JS)
+    if [ -f "tsconfig.json" ]; then
+        language="typescript"
+        type_checker="tsc"
+    else
+        language="javascript"
+    fi
+
+    # Read package.json for tools (using jq)
+    if command -v jq &>/dev/null && [ -f "package.json" ]; then
+        local_deps=$(jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys[]' package.json 2>/dev/null || true)
+
+        # Test runner
+        if echo "$local_deps" | grep -qx "vitest"; then
+            test_runner="vitest"
+        elif echo "$local_deps" | grep -qx "jest"; then
+            test_runner="jest"
+        elif echo "$local_deps" | grep -qx "mocha"; then
+            test_runner="mocha"
+        fi
+
+        # Linter
+        if echo "$local_deps" | grep -qx "eslint"; then
+            linter="eslint"
+        elif echo "$local_deps" | grep -qx "biome" || echo "$local_deps" | grep -qx "@biomejs/biome"; then
+            linter="biome"
+        fi
+
+        # Formatter
+        if echo "$local_deps" | grep -qx "prettier"; then
+            formatter="prettier"
+        elif echo "$local_deps" | grep -qx "biome" || echo "$local_deps" | grep -qx "@biomejs/biome"; then
+            formatter="biome"
+        fi
+
+        # Build tool
+        if echo "$local_deps" | grep -qx "vite"; then
+            build_tool="vite"
+        elif echo "$local_deps" | grep -qx "webpack"; then
+            build_tool="webpack"
+        elif echo "$local_deps" | grep -qx "esbuild"; then
+            build_tool="esbuild"
+        elif echo "$local_deps" | grep -qx "rollup"; then
+            build_tool="rollup"
+        elif echo "$local_deps" | grep -qx "tsup"; then
+            build_tool="tsup"
+        elif [ "$language" = "typescript" ]; then
+            build_tool="tsc"
+        fi
+
+        # Framework
+        if echo "$local_deps" | grep -qx "next"; then
+            framework="next"
+        elif echo "$local_deps" | grep -qx "react"; then
+            framework="react"
+        elif echo "$local_deps" | grep -qx "vue"; then
+            framework="vue"
+        elif echo "$local_deps" | grep -qx "svelte"; then
+            framework="svelte"
+        elif echo "$local_deps" | grep -qx "@angular/core"; then
+            framework="angular"
+        elif echo "$local_deps" | grep -qx "express"; then
+            framework="express"
+        elif echo "$local_deps" | grep -qx "fastify"; then
+            framework="fastify"
+        elif echo "$local_deps" | grep -qx "hono"; then
+            framework="hono"
+        fi
+
+        # Check package.json scripts as fallback for test runner
+        if [ "$test_runner" = "none" ]; then
+            test_script=$(jq -r '.scripts.test // ""' package.json 2>/dev/null || true)
+            if echo "$test_script" | grep -q "vitest"; then
+                test_runner="vitest"
+            elif echo "$test_script" | grep -q "jest"; then
+                test_runner="jest"
+            elif echo "$test_script" | grep -q "mocha"; then
+                test_runner="mocha"
+            fi
+        fi
+    fi
+
+# Python
+elif [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "setup.cfg" ] || [ -f "requirements.txt" ]; then
+    language="python"
+    runtime="python"
+
+    # Package manager
+    if [ -f "uv.lock" ]; then
+        package_manager="uv"
+    elif [ -f "poetry.lock" ]; then
+        package_manager="poetry"
+    elif [ -f "Pipfile.lock" ]; then
+        package_manager="pipenv"
+    elif [ -f "requirements.txt" ]; then
+        package_manager="pip"
+    fi
+
+    # Tools from pyproject.toml
+    if [ -f "pyproject.toml" ]; then
+        toml_content=$(cat pyproject.toml)
+
+        if echo "$toml_content" | grep -q "\[tool\.pytest"; then
+            test_runner="pytest"
+        fi
+        if echo "$toml_content" | grep -q "\[tool\.ruff"; then
+            linter="ruff"
+            formatter="ruff"
+        fi
+        if echo "$toml_content" | grep -q "\[tool\.black"; then
+            formatter="black"
+        fi
+        if echo "$toml_content" | grep -q "\[tool\.mypy"; then
+            type_checker="mypy"
+        fi
+        if echo "$toml_content" | grep -q "\[tool\.pyright"; then
+            type_checker="pyright"
+        fi
+    fi
+
+    # Fallback detection
+    if [ "$test_runner" = "none" ] && [ -d "tests" ]; then
+        test_runner="pytest"
+    fi
+    if [ "$linter" = "none" ]; then
+        if [ -f ".flake8" ] || [ -f "setup.cfg" ] && grep -q "flake8" "setup.cfg" 2>/dev/null; then
+            linter="flake8"
+        fi
+    fi
+
+    # Framework
+    if [ -f "pyproject.toml" ]; then
+        if grep -q "django" pyproject.toml 2>/dev/null; then
+            framework="django"
+        elif grep -q "fastapi" pyproject.toml 2>/dev/null; then
+            framework="fastapi"
+        elif grep -q "flask" pyproject.toml 2>/dev/null; then
+            framework="flask"
+        fi
+    fi
+
+# Go
+elif [ -f "go.mod" ]; then
+    language="go"
+    runtime="go"
+    package_manager="go-modules"
+    test_runner="go-test"
+    linter="go-vet"
+    formatter="gofmt"
+    type_checker="go-vet"
+    build_tool="go-build"
+
+    if command -v golangci-lint &>/dev/null; then
+        linter="golangci-lint"
+    fi
+
+    # Framework
+    if grep -q "github.com/gin-gonic/gin" go.mod 2>/dev/null; then
+        framework="gin"
+    elif grep -q "github.com/labstack/echo" go.mod 2>/dev/null; then
+        framework="echo"
+    elif grep -q "github.com/gofiber/fiber" go.mod 2>/dev/null; then
+        framework="fiber"
+    fi
+
+# Rust
+elif [ -f "Cargo.toml" ]; then
+    language="rust"
+    runtime="rust"
+    package_manager="cargo"
+    test_runner="cargo-test"
+    linter="clippy"
+    formatter="rustfmt"
+    type_checker="cargo-check"
+    build_tool="cargo-build"
+
+# .NET
+elif compgen -G "*.csproj" >/dev/null || compgen -G "*.fsproj" >/dev/null || [ -f "*.sln" ]; then
+    if compgen -G "*.fsproj" >/dev/null; then
+        language="fsharp"
+    else
+        language="csharp"
+    fi
+    runtime="dotnet"
+    package_manager="nuget"
+    test_runner="dotnet-test"
+    linter="dotnet-format"
+    formatter="dotnet-format"
+    type_checker="dotnet-build"
+    build_tool="dotnet-build"
+fi
+
+# --- Output JSON ---
+cat <<EOF
+{
+  "language": "${language}",
+  "runtime": "${runtime}",
+  "package_manager": "${package_manager}",
+  "test_runner": "${test_runner}",
+  "linter": "${linter}",
+  "formatter": "${formatter}",
+  "type_checker": "${type_checker}",
+  "build_tool": "${build_tool}",
+  "framework": "${framework}",
+  "ci": "${ci}"
+}
+EOF

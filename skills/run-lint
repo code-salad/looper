@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# run-lint — Run the project's linter
+# Usage: run-lint [--fix]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FIX=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --fix) FIX=true; shift ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+STACK=$("$SCRIPT_DIR/detect-stack")
+linter=$(echo "$STACK" | jq -r '.linter')
+package_manager=$(echo "$STACK" | jq -r '.package_manager')
+
+run_pkg_script() {
+    local script="$1"
+    shift
+    case "$package_manager" in
+        pnpm) pnpm run "$script" -- "$@" ;;
+        yarn) yarn run "$script" "$@" ;;
+        bun)  bun run "$script" "$@" ;;
+        npm|*) npm run "$script" -- "$@" ;;
+    esac
+}
+
+has_lint_script() {
+    [ -f "package.json" ] && jq -e '.scripts.lint' package.json &>/dev/null
+}
+
+case "$linter" in
+    eslint)
+        args=(".")
+        [ "$FIX" = true ] && args+=("--fix")
+        if has_lint_script; then
+            if [ "$FIX" = true ]; then
+                run_pkg_script lint --fix
+            else
+                run_pkg_script lint
+            fi
+        else
+            npx eslint "${args[@]}"
+        fi
+        ;;
+    biome)
+        args=("lint" ".")
+        [ "$FIX" = true ] && args+=("--fix")
+        npx biome "${args[@]}"
+        ;;
+    ruff)
+        args=("check" ".")
+        [ "$FIX" = true ] && args+=("--fix")
+        if [ "$(echo "$STACK" | jq -r '.package_manager')" = "uv" ]; then
+            uv run ruff "${args[@]}"
+        else
+            python -m ruff "${args[@]}"
+        fi
+        ;;
+    flake8)
+        if [ "$(echo "$STACK" | jq -r '.package_manager')" = "uv" ]; then
+            uv run flake8 .
+        else
+            python -m flake8 .
+        fi
+        ;;
+    golangci-lint)
+        args=("run")
+        [ "$FIX" = true ] && args+=("--fix")
+        golangci-lint "${args[@]}"
+        ;;
+    go-vet)
+        go vet ./...
+        ;;
+    clippy)
+        cargo clippy -- -D warnings
+        ;;
+    dotnet-format)
+        args=("format" "--verify-no-changes")
+        [ "$FIX" = true ] && args=("format")
+        dotnet "${args[@]}"
+        ;;
+    none)
+        echo "No linter detected." >&2
+        exit 1
+        ;;
+    *)
+        echo "Unsupported linter: $linter" >&2
+        exit 1
+        ;;
+esac

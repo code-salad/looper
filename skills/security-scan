@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# security-scan — Run basic security checks
+# Usage: security-scan
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+STACK=$("$SCRIPT_DIR/detect-stack")
+package_manager=$(echo "$STACK" | jq -r '.package_manager')
+language=$(echo "$STACK" | jq -r '.language')
+
+EXIT_CODE=0
+
+case "$language" in
+    typescript|javascript)
+        case "$package_manager" in
+            pnpm)  pnpm audit --prod 2>/dev/null || EXIT_CODE=$? ;;
+            yarn)  yarn audit --groups dependencies 2>/dev/null || EXIT_CODE=$? ;;
+            bun)   bun audit 2>/dev/null || EXIT_CODE=$? ;;
+            npm|*) npm audit --production 2>/dev/null || EXIT_CODE=$? ;;
+        esac
+        ;;
+    python)
+        if command -v pip-audit &>/dev/null; then
+            pip-audit || EXIT_CODE=$?
+        elif [ "$package_manager" = "uv" ]; then
+            uv run pip-audit 2>/dev/null || EXIT_CODE=$?
+        else
+            echo "pip-audit not available. Install with: pip install pip-audit" >&2
+            EXIT_CODE=1
+        fi
+        ;;
+    go)
+        if command -v govulncheck &>/dev/null; then
+            govulncheck ./... || EXIT_CODE=$?
+        else
+            go vet ./... || EXIT_CODE=$?
+            echo "Note: Install govulncheck for better security scanning: go install golang.org/x/vuln/cmd/govulncheck@latest" >&2
+        fi
+        ;;
+    rust)
+        if command -v cargo-audit &>/dev/null; then
+            cargo audit || EXIT_CODE=$?
+        else
+            echo "cargo-audit not available. Install with: cargo install cargo-audit" >&2
+            EXIT_CODE=1
+        fi
+        ;;
+    csharp|fsharp)
+        dotnet list package --vulnerable 2>/dev/null || EXIT_CODE=$?
+        ;;
+    *)
+        echo "No security scanner available for language: $language" >&2
+        EXIT_CODE=1
+        ;;
+esac
+
+exit $EXIT_CODE

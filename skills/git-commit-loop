@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# git-commit-loop — Create a conventional commit with loop trailers
+# Usage: git-commit-loop --type <type> --scope <scope> --message <msg>
+#        --body <body> --phase <plan|do|check> --iteration <N> [--verdict <PASS|FAIL>]
+
+TYPE=""
+SCOPE=""
+MESSAGE=""
+BODY=""
+PHASE=""
+ITERATION=""
+VERDICT=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --type) TYPE="$2"; shift 2 ;;
+        --scope) SCOPE="$2"; shift 2 ;;
+        --message) MESSAGE="$2"; shift 2 ;;
+        --body) BODY="$2"; shift 2 ;;
+        --phase) PHASE="$2"; shift 2 ;;
+        --iteration) ITERATION="$2"; shift 2 ;;
+        --verdict) VERDICT="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# Validate required args
+if [ -z "$TYPE" ] || [ -z "$SCOPE" ] || [ -z "$MESSAGE" ] || [ -z "$PHASE" ] || [ -z "$ITERATION" ]; then
+    echo "Usage: git-commit-loop --type <type> --scope <scope> --message <msg> --phase <phase> --iteration <N>" >&2
+    echo "Optional: --body <body> --verdict <PASS|FAIL>" >&2
+    exit 1
+fi
+
+# Validate phase
+if [[ "$PHASE" != "plan" && "$PHASE" != "do" && "$PHASE" != "check" ]]; then
+    echo "Error: --phase must be plan, do, or check" >&2
+    exit 1
+fi
+
+# Validate verdict if provided
+if [ -n "$VERDICT" ] && [[ "$VERDICT" != "PASS" && "$VERDICT" != "FAIL" ]]; then
+    echo "Error: --verdict must be PASS or FAIL" >&2
+    exit 1
+fi
+
+# Build subject line
+SUBJECT="${TYPE}(${SCOPE}): ${MESSAGE}"
+
+# Build commit message
+COMMIT_MSG="$SUBJECT"
+
+if [ -n "$BODY" ]; then
+    # Interpret \n as newlines in body
+    COMMIT_MSG+=$'\n\n'
+    COMMIT_MSG+=$(echo -e "$BODY")
+fi
+
+# Add trailers
+COMMIT_MSG+=$'\n\n'
+COMMIT_MSG+="Loop-Phase: ${PHASE}"$'\n'
+COMMIT_MSG+="Loop-Iteration: ${ITERATION}"
+
+if [ -n "$VERDICT" ]; then
+    COMMIT_MSG+=$'\n'"Loop-Verdict: ${VERDICT}"
+fi
+
+# Stage all changes (if any)
+if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null || [ -n "$(git ls-files --others --exclude-standard 2>/dev/null)" ]; then
+    git add -A
+fi
+
+# Commit (allow empty for plan phase which may have no file changes)
+if [ "$PHASE" = "plan" ]; then
+    git commit --allow-empty -m "$COMMIT_MSG"
+else
+    git commit -m "$COMMIT_MSG"
+fi
+
+echo "Committed: $(git log --oneline -1)"
