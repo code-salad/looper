@@ -1,5 +1,4 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "vikyw89-looper",
   "description": "Plan-Do-Check loop orchestrator for Claude Code",
   "owner": {
