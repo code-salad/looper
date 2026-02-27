@@ -5,6 +5,9 @@ set -euo pipefail
 # Usage: run-lint [--fix]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
+
 FIX=false
 
 while [[ $# -gt 0 ]]; do
@@ -14,30 +17,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-STACK=$("$SCRIPT_DIR/detect-stack")
+STACK=$(load_stack)
 linter=$(echo "$STACK" | jq -r '.linter')
+# shellcheck disable=SC2034
 package_manager=$(echo "$STACK" | jq -r '.package_manager')
-
-run_pkg_script() {
-    local script="$1"
-    shift
-    case "$package_manager" in
-        pnpm) pnpm run "$script" -- "$@" ;;
-        yarn) yarn run "$script" "$@" ;;
-        bun)  bun run "$script" "$@" ;;
-        npm|*) npm run "$script" -- "$@" ;;
-    esac
-}
-
-has_lint_script() {
-    [ -f "package.json" ] && jq -e '.scripts.lint' package.json &>/dev/null
-}
 
 case "$linter" in
     eslint)
         args=(".")
         [ "$FIX" = true ] && args+=("--fix")
-        if has_lint_script; then
+        if has_pkg_script lint; then
             if [ "$FIX" = true ]; then
                 run_pkg_script lint --fix
             else
@@ -55,18 +44,10 @@ case "$linter" in
     ruff)
         args=("check" ".")
         [ "$FIX" = true ] && args+=("--fix")
-        if [ "$(echo "$STACK" | jq -r '.package_manager')" = "uv" ]; then
-            uv run ruff "${args[@]}"
-        else
-            python -m ruff "${args[@]}"
-        fi
+        run_python_tool ruff "${args[@]}"
         ;;
     flake8)
-        if [ "$(echo "$STACK" | jq -r '.package_manager')" = "uv" ]; then
-            uv run flake8 .
-        else
-            python -m flake8 .
-        fi
+        run_python_tool flake8 .
         ;;
     golangci-lint)
         args=("run")

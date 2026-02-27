@@ -5,6 +5,11 @@ set -euo pipefail
 # Outputs JSON with: language, runtime, package_manager, test_runner,
 # linter, formatter, type_checker, build_tool, framework, ci
 
+if ! command -v jq &>/dev/null; then
+    echo "Error: jq is required but not found. Install it: https://jqlang.github.io/jq/download/" >&2
+    exit 1
+fi
+
 language="none"
 runtime="none"
 package_manager="none"
@@ -241,15 +246,14 @@ fi
 
 # --- Detect monorepo ecosystems ---
 # Scan root and one level of subdirectories for stack indicators.
-ecosystems=""
+ecosystems=()
 
 _add_ecosystem() {
     local eco="$1"
-    if [ -z "$ecosystems" ]; then
-        ecosystems="$eco"
-    elif ! echo "$ecosystems" | grep -qF "$eco"; then
-        ecosystems="${ecosystems},${eco}"
-    fi
+    for e in "${ecosystems[@]+"${ecosystems[@]}"}"; do
+        [ "$e" = "$eco" ] && return
+    done
+    ecosystems+=("$eco")
 }
 
 [ -f "package.json" ]     && _add_ecosystem "node"
@@ -267,20 +271,12 @@ for subdir in */; do
 done
 
 # Build ecosystems JSON array
-ecosystems_json="["
-if [ -n "$ecosystems" ]; then
-    IFS=',' read -ra eco_arr <<< "$ecosystems"
-    first=true
-    for eco in "${eco_arr[@]}"; do
-        if [ "$first" = true ]; then
-            ecosystems_json+="\"${eco}\""
-            first=false
-        else
-            ecosystems_json+=",\"${eco}\""
-        fi
-    done
+if [ ${#ecosystems[@]} -eq 0 ]; then
+    ecosystems_json="[]"
+else
+    ecosystems_json=$(printf ',"%s"' "${ecosystems[@]}")
+    ecosystems_json="[${ecosystems_json:1}]"
 fi
-ecosystems_json+="]"
 
 # --- Output JSON ---
 cat <<EOF

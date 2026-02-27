@@ -5,29 +5,17 @@ set -euo pipefail
 # Usage: run-build
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
 
-STACK=$("$SCRIPT_DIR/detect-stack")
+STACK=$(load_stack)
 build_tool=$(echo "$STACK" | jq -r '.build_tool')
+# shellcheck disable=SC2034
 package_manager=$(echo "$STACK" | jq -r '.package_manager')
-
-run_pkg_script() {
-    local script="$1"
-    shift
-    case "$package_manager" in
-        pnpm) pnpm run "$script" "$@" ;;
-        yarn) yarn run "$script" "$@" ;;
-        bun)  bun run "$script" "$@" ;;
-        npm|*) npm run "$script" "$@" ;;
-    esac
-}
-
-has_build_script() {
-    [ -f "package.json" ] && jq -e '.scripts.build' package.json &>/dev/null
-}
 
 case "$build_tool" in
     vite|webpack|esbuild|rollup|tsup|tsc)
-        if has_build_script; then
+        if has_pkg_script build; then
             run_pkg_script build
         else
             case "$build_tool" in
@@ -51,7 +39,7 @@ case "$build_tool" in
         ;;
     none)
         # Try package.json build script as last resort
-        if has_build_script; then
+        if has_pkg_script build; then
             run_pkg_script build
         elif [ -f "Makefile" ] && grep -q "^build:" Makefile; then
             make build

@@ -5,22 +5,14 @@ set -euo pipefail
 # Usage: run-typecheck
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
 
-STACK=$("$SCRIPT_DIR/detect-stack")
+STACK=$(load_stack)
 type_checker=$(echo "$STACK" | jq -r '.type_checker')
 package_manager=$(echo "$STACK" | jq -r '.package_manager')
 
-run_pkg_script() {
-    local script="$1"
-    shift
-    case "$package_manager" in
-        pnpm) pnpm run "$script" "$@" ;;
-        yarn) yarn run "$script" "$@" ;;
-        bun)  bun run "$script" "$@" ;;
-        npm|*) npm run "$script" "$@" ;;
-    esac
-}
-
+# has_typecheck_script — Unique logic: checks typecheck, check, and type-check scripts
 has_typecheck_script() {
     [ -f "package.json" ] && jq -e '.scripts.typecheck // .scripts.check // .scripts["type-check"]' package.json &>/dev/null
 }
@@ -41,15 +33,10 @@ case "$type_checker" in
         fi
         ;;
     mypy)
-        if [ "$package_manager" = "uv" ]; then
-            uv run mypy .
-        elif [ "$package_manager" = "poetry" ]; then
-            poetry run mypy .
-        else
-            python -m mypy .
-        fi
+        run_python_tool mypy .
         ;;
     pyright)
+        # pyright falls back to npx, not python -m, so custom dispatch
         if [ "$package_manager" = "uv" ]; then
             uv run pyright
         elif [ "$package_manager" = "poetry" ]; then

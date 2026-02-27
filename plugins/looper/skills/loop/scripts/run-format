@@ -5,6 +5,9 @@ set -euo pipefail
 # Usage: run-format [--fix]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
+
 FIX=false
 
 while [[ $# -gt 0 ]]; do
@@ -14,24 +17,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-STACK=$("$SCRIPT_DIR/detect-stack")
+STACK=$(load_stack)
 formatter=$(echo "$STACK" | jq -r '.formatter')
+# shellcheck disable=SC2034
 package_manager=$(echo "$STACK" | jq -r '.package_manager')
-
-run_pkg_script() {
-    local script="$1"
-    shift
-    case "$package_manager" in
-        pnpm) pnpm run "$script" -- "$@" ;;
-        yarn) yarn run "$script" "$@" ;;
-        bun)  bun run "$script" "$@" ;;
-        npm|*) npm run "$script" -- "$@" ;;
-    esac
-}
-
-has_format_script() {
-    [ -f "package.json" ] && jq -e '.scripts.format' package.json &>/dev/null
-}
 
 case "$formatter" in
     prettier)
@@ -40,7 +29,7 @@ case "$formatter" in
         else
             args=("--check" ".")
         fi
-        if has_format_script; then
+        if has_pkg_script format; then
             if [ "$FIX" = true ]; then
                 run_pkg_script format --write .
             else
@@ -58,22 +47,12 @@ case "$formatter" in
     black)
         args=(".")
         [ "$FIX" = false ] && args+=("--check")
-        if [ "$package_manager" = "uv" ]; then
-            uv run black "${args[@]}"
-        elif [ "$package_manager" = "poetry" ]; then
-            poetry run black "${args[@]}"
-        else
-            python -m black "${args[@]}"
-        fi
+        run_python_tool black "${args[@]}"
         ;;
     ruff)
         args=("format" ".")
         [ "$FIX" = false ] && args+=("--check")
-        if [ "$package_manager" = "uv" ]; then
-            uv run ruff "${args[@]}"
-        else
-            python -m ruff "${args[@]}"
-        fi
+        run_python_tool ruff "${args[@]}"
         ;;
     gofmt)
         if [ "$FIX" = true ]; then
