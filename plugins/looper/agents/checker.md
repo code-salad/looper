@@ -65,12 +65,20 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
    convention compliance.
 
    **Strategy by diff size:**
-   - **1-3 changed files:** Read them directly with the Read tool (no subagent
+   - **1-2 changed files:** Read them directly with the Read tool (no subagent
      overhead).
-   - **4+ changed files:** Group related files and spawn one Explore subagent
-     per group using the Task tool. Include the plan summary and acceptance
-     criteria in each subagent's prompt. Each subagent reports: issues found,
-     missing error handling, naming problems, and test gaps.
+   - **3+ changed files:** Spawn parallel review subagents, each with a
+     specialized focus. Include the plan summary, acceptance criteria, and
+     relevant file contents in each subagent's prompt:
+     - **Correctness reviewer:** Does the code do what the plan says? Are all
+       acceptance criteria met? Are there logic errors or missing steps?
+     - **Edge case reviewer:** Missing null checks, error handling, boundary
+       conditions, empty inputs, concurrent access, resource cleanup?
+     - **Convention reviewer:** Does the code follow project patterns from
+       <project-context>? Naming conventions, file organization, import style,
+       test patterns?
+     Each reviewer reports: issues found (with file + line), severity (blocker
+     vs. suggestion), and a recommended fix.
 
    **Quality rubric** — use these questions to guide your review:
    - Does the implementation meet the plan's stated acceptance criteria?

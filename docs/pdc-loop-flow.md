@@ -186,8 +186,10 @@ Agent definition: `agents/planner.md`
 - Gather context in parallel: run `git-loop-context` + `detect-stack` (Bash),
   map project structure (Glob), and investigate prior feedback (Explore) — all
   as concurrent tool calls in one message
-- For complex tasks, spawn up to 3 Explore subagents in parallel for deep
-  codebase exploration across different areas
+- For multi-area tasks, spawn up to 5 Explore subagents in parallel for deep
+  codebase exploration across different areas (not just large codebases)
+- For complex tasks with multiple viable strategies, spawn 2-3 evaluation
+  subagents to assess competing approaches before selecting the best one
 - Produce a concrete, actionable plan
 - Commit the plan (no code changes — plan lives in the commit message body)
 
@@ -203,7 +205,10 @@ Agent definition: `agents/doer.md`
 - Read the plan from the latest planner commit (`git log`)
 - Pre-explore files in parallel (grouped by source/tests/config) before
   implementing, using Explore subagents for 3+ file plans
-- Implement the plan — write code, edit files, run commands
+- Implement the plan using a delegation strategy:
+  - Small plans (1-3 files): implement directly
+  - Large plans (4+ files): delegate to parallel implementation subagents
+    grouped by area, then integrate their output for cross-group consistency
 - Run checks in two rounds: Round 1 auto-fixes (lint --fix → format --fix,
   sequential), Round 2 validates (tests + typecheck, parallel)
 - Commit all changes with a summary in the commit message body
@@ -223,8 +228,8 @@ Planner as FAIL feedback.
 **Responsibilities:**
 - Read the full context from `git log` (plan + doer summary + doer diff) as
   3 parallel Bash calls in one message
-- Review the diff: direct Read for 1-3 files, parallel Explore subagents
-  (grouped by area) for 4+ files
+- Review the diff: direct Read for 1-2 files, parallel specialized review
+  subagents for 3+ files (correctness, edge cases, convention compliance)
 - Run all 6 checks in parallel as separate Bash calls (tests, lint, typecheck,
   format, build, security scan) — all in check-only mode, safe to parallelize
 - **Fix issues it finds** — style, lint, small bugs, missing edge cases, test gaps
@@ -628,6 +633,42 @@ The loop agents will discover and invoke them if instructed in the prompt.
 
 ---
 
+## Subagent Delegation Patterns
+
+Agents use the Task tool to spawn subagents for parallelism. Four patterns:
+
+### 1. Exploration subagents (all agents)
+
+Read-only subagents that search and report. Used by Planner for codebase
+exploration (up to 5 parallel area-specific subagents), by Doer for pre-read
+(grouped by source/tests/config), and by Checker for specialized review.
+
+### 2. Implementation subagents (Doer only)
+
+Write-capable subagents that implement a subset of the plan. For plans touching
+4+ files, the Doer groups files by area or subsystem, spawns one subagent per
+group with the relevant plan subset and current file contents, then integrates
+their output by checking cross-group compatibility (imports, types, interfaces).
+Small plans (1-3 files) are implemented directly without delegation overhead.
+
+### 3. Evaluation subagents (Planner only)
+
+Read-only subagents that evaluate competing approaches. For complex tasks with
+multiple viable strategies, the Planner spawns 2-3 subagents in parallel, each
+assessing one approach for complexity, risk, and compatibility with existing
+patterns. The Planner selects the best approach and documents why alternatives
+were rejected.
+
+### 4. Specialized review subagents (Checker only)
+
+For diffs touching 3+ files, the Checker spawns parallel reviewer subagents
+with specialized focus areas: correctness (does the code match the plan?),
+edge cases (null checks, error handling, boundary conditions), and convention
+compliance (project patterns, naming, file organization). Each reviewer reports
+issues with file locations, severity, and recommended fixes.
+
+---
+
 ## PR Creation & CI Recovery
 
 After the loop exits with PASS:
@@ -657,8 +698,8 @@ After the loop exits with PASS:
 | Verdict is always last commit | Bash orchestrator can reliably read the verdict by checking the most recent `Loop-Verdict:` trailer. |
 | Git trailers for loop metadata | Native git feature (`git interpret-trailers`). Queryable with `git log --grep`. No custom parsing needed. |
 | Max iteration cap | Safety valve — prevents infinite loops (default: 10). |
-| Explore subagents only | Agents can't spawn doer/planner/checker subagents — only Explore for read-only codebase search. |
+| Subagent delegation with thresholds | Agents delegate to Task subagents based on work size: Doer delegates implementation for 4+ file plans, Checker delegates review for 3+ file diffs, Planner delegates exploration for multi-area tasks. Thresholds keep simple tasks fast. |
 | Intra-agent parallelism via tool calls | Agents exploit Claude Code's parallel tool call convention: independent tool calls in one message run concurrently. Separate Bash calls (not `&`/`wait`) give isolated stdout/stderr and exit codes per command. |
 | Doer fixes sequential, validation parallel | `--fix` flags modify files — write conflicts if parallel. Read-only checks (tests, typecheck) are safe to run as parallel Bash calls after fixes complete. |
 | Checker 6-way parallel checks | Checker runs in check-only mode (no `--fix`) — all 6 scripts are pure reads, safe to parallelize as separate Bash calls. `detect-stack` redundancy across scripts is harmless (~100ms, file-system only). |
-| Explore subagents for file review | Embarrassingly parallel. Each reviewer subagent gets plan context and checks files independently. Direct Read preferred for 1-3 files (subagent spawn has ~2-5s overhead). |
+| Specialized review subagents | Embarrassingly parallel. Each reviewer subagent gets plan context, acceptance criteria, and a specialized focus (correctness, edge cases, conventions). Direct Read preferred for 1-2 files (subagent spawn has ~2-5s overhead). |

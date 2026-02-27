@@ -31,10 +31,51 @@ and commit your work.
    one subagent per group. Skip this step if the plan only touches 1-2 small
    files (direct Read is faster than subagent overhead).
 
-3. **Implement the plan** — Follow the plan step by step:
+3. **Implement the plan (delegation strategy)** — Choose based on plan size:
+
+   **Small plans (1-3 files):** Implement directly. Write/edit files yourself:
    - Create and modify files as specified
    - Install dependencies if needed (`$SCRIPTS_DIR/install-deps`)
    - Follow existing project conventions and patterns
+
+   **Large plans (4+ files):** Delegate to parallel subagents:
+   a. Group the plan steps by area (source, tests, config) or by subsystem.
+   b. For each group, spawn a Task subagent (using the Task tool) with:
+      - The relevant subset of the plan
+      - The current contents of files that will be modified (from step 2)
+      - Instructions to write/edit only the files in its group
+      - A reminder to follow project conventions from <project-context>
+   c. Launch all implementation subagents as parallel Task calls in one message.
+   d. After all subagents complete, review their output for consistency:
+      - Check that imports/exports between subagent groups are compatible
+      - Verify shared types/interfaces are consistent
+      - Fix any integration issues between subagent outputs
+   e. Install dependencies if needed (`$SCRIPTS_DIR/install-deps`)
+   f. Proceed to step 4 (checks).
+
+   **Subagent prompt template:**
+   ```
+   You are an implementation subagent. Your task is to implement the following
+   portion of a plan. Write and edit ONLY the files listed below.
+
+   ## Project Context
+   <include project-context>
+
+   ## Your Assignment
+   <subset of the plan for this group>
+
+   ## Files You Own
+   <list of files this subagent should create/modify>
+
+   ## Current File Contents
+   <contents of files from exploration step>
+
+   ## Rules
+   - ONLY modify files in your assignment
+   - Follow the project conventions exactly
+   - Do NOT run tests or commit — the parent agent handles that
+   - Do NOT install dependencies — the parent agent handles that
+   ```
 
 4. **Run checks (two rounds)** — Before committing, verify your work:
 
