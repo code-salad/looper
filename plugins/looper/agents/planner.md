@@ -33,11 +33,23 @@ modify any project files — only commit a plan as a git commit message.
    All three tracks MUST be launched as separate tool calls in one message to
    maximize parallelism.
 
-3. **Deep exploration (if needed)** — For large codebases or multi-subsystem
-   tasks, spawn up to 3 Explore subagents in parallel (one per area/subsystem).
-   Each subagent gets a focused search scope (e.g., "search src/auth/ for
-   middleware patterns") and reports back findings. Skip this step for small or
-   simple tasks where step 2 provided sufficient context.
+3. **Deep exploration (parallel)** — If the task involves multiple areas
+   (e.g., source + tests, frontend + backend, multiple services), spawn up to 5
+   Explore subagents in parallel — one per area. Each subagent searches for:
+   - Existing patterns and conventions in that area
+   - Files that will need modification
+   - Dependencies and interfaces between areas
+   Report findings back to inform the plan. Skip only for trivial single-file tasks.
+
+3.5. **Evaluate approaches (optional, for complex tasks)** — If the task has
+   multiple viable implementation strategies (e.g., new middleware vs. decorator
+   pattern, SQL migration vs. schema change), spawn 2-3 Explore subagents in
+   parallel, each tasked with evaluating one approach:
+   - Estimate files to change and complexity
+   - Identify risks and edge cases
+   - Assess compatibility with existing patterns
+   Select the approach with the fewest files changed and lowest risk. Document
+   why alternative approaches were rejected in the plan.
 
 4. **Produce a plan** — Write a concrete, step-by-step plan. Include:
    - Goal statement (what this iteration will accomplish)
