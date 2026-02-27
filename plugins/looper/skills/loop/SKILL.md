@@ -1,7 +1,7 @@
 ---
 name: loop
 description: Use this skill when the user wants to run an iterative Plan-Do-Check agent loop. Three agents (Planner, Doer, Checker) cycle until the Checker passes the work. Triggered by "/loop" followed by a task description.
-tools: Bash, Read, Grep, Glob
+tools: Bash, Read, Edit, Write, Grep, Glob
 ---
 
 # PDC Loop Skill
@@ -12,7 +12,6 @@ iterate until the Checker issues a PASS verdict.
 ## Prerequisites
 
 - Must be in a git repository
-- Must NOT be on `main` or `master` branch
 - `claude` CLI must be available
 - `jq` must be installed
 - `git` must be available
@@ -24,14 +23,9 @@ iterate until the Checker issues a PASS verdict.
 ```bash
 # Must be in a git repo
 git rev-parse --is-inside-work-tree
-
-# Must not be on main/master
-BRANCH=$(git branch --show-current)
 ```
 
-**Gate:** Abort if:
-- Not in a git repo
-- Current branch is `main` or `master` — tell the user to create a feature branch first
+**Gate:** Abort if not in a git repo.
 
 ### 2. Validate argument
 
@@ -50,12 +44,39 @@ a conventional commit scope:
 
 Example: "Add User Authentication Flow" → "add-user-authentication-flow"
 
-### 4. Execute the loop
+### 4. Create a worktree
+
+Create an isolated worktree so the loop does not modify the current branch
+directly. Use the task name as the worktree name.
+
+1. **Ensure `.worktrees` is gitignored** — Check if `.gitignore` at the repo
+   root already contains `.worktrees`. If not, append it (create the file if
+   needed), then stage and commit with message `chore: gitignore .worktrees`.
+   Skip the commit if already up to date.
+
+2. **Create the worktree:**
+
+   ```bash
+   REPO_ROOT=$(git rev-parse --show-toplevel)
+   git worktree add "$REPO_ROOT/.worktrees/$TASK_NAME"
+   ```
+
+   If the worktree already exists (e.g. resuming a previous run), just `cd`
+   into it instead of recreating.
+
+3. **Change into the worktree:**
+
+   ```bash
+   cd "$REPO_ROOT/.worktrees/$TASK_NAME"
+   ```
+
+### 5. Execute the loop
 
 `loop.sh` lives in the `scripts/` subdirectory alongside the other utility scripts.
+Resolve the script path **before** changing into the worktree, using
+`CLAUDE_PLUGIN_ROOT` or the original repo root.
 
 ```bash
-REPO_ROOT=$(git rev-parse --show-toplevel)
 LOOP_SCRIPT="${CLAUDE_PLUGIN_ROOT:-${REPO_ROOT}}/skills/loop/scripts/loop.sh"
 
 bash "$LOOP_SCRIPT" \
@@ -70,7 +91,7 @@ Let the script run. It will output progress for each iteration.
 After `loop.sh` exits:
 
 - **Exit code 0 (PASS):** Report success. Show the number of iterations it took.
-  Suggest creating a PR with `/create-github-pr`.
+  Automatically create a PR by invoking `/create-github-pr`.
 - **Exit code 1 (FAIL):** Report that max iterations were reached without PASS.
   Show the last checker verdict:
   ```bash
@@ -118,8 +139,8 @@ their dynamic context.
 | Scenario | Action |
 |----------|--------|
 | Not in a git repo | Abort: "Must be in a git repository." |
-| On main/master | Abort: "Create a feature branch first." |
 | No arguments | Ask user for task description |
-| loop.sh not found | Abort: "loop.sh not found at repo root." |
+| Worktree already exists | `cd` into it and continue (resume case) |
+| loop.sh not found | Abort: "loop.sh not found at expected path." |
 | claude CLI not found | Abort: "Claude CLI not installed." |
 | jq not found | Abort: "jq not installed." |
