@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "vikyw89-looper",
+  "description": "Plan-Do-Check loop orchestrator for Claude Code",
+  "owner": {
+    "name": "looper"
+  },
+  "plugins": [
+    {
+      "name": "looper",
+      "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
+      "version": "0.1.0",
+      "author": {
+        "name": "looper"
+      },
+      "source": ".",
+      "category": "development"
+    }
+  ]
+}
