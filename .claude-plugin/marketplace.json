@@ -1,6 +1,6 @@
 {
   "name": "vikyw89-looper",
-  "description": "Plan-Do-Check loop orchestrator for Claude Code",
+  "description": "Plan-Do-Check loop orchestrator and nested subagent toolkit for Claude Code",
   "owner": {
     "name": "looper"
   },
@@ -14,6 +14,23 @@
       },
       "source": "./plugins/looper",
       "category": "development"
+    },
+    {
+      "name": "fallback-agent",
+      "description": "Nested subagent — spawns fresh Claude processes with full tool access for unlimited nesting",
+      "version": "1.0.3",
+      "author": {
+        "name": "gruckion"
+      },
+      "source": "./plugins/fallback-agent",
+      "category": "development",
+      "mcpServers": {
+        "fallback": {
+          "command": "node",
+          "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.mjs"]
+        }
+      },
+      "strict": false
     }
   ]
 }

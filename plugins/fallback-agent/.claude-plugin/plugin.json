@@ -1,0 +1,16 @@
+{
+  "name": "fallback-agent",
+  "description": "Nested subagent — spawns fresh Claude processes with full tool access for unlimited nesting",
+  "version": "1.0.3",
+  "author": {
+    "name": "gruckion"
+  },
+  "license": "MIT",
+  "keywords": [
+    "agent",
+    "subagent",
+    "nesting",
+    "task",
+    "mcp"
+  ]
+}
