@@ -24,14 +24,35 @@ fi
 echo "## Loop Context: ${TASK}, Iteration ${ITERATION}"
 echo ""
 
-# Show context from all prior iterations
+# If iteration 1, note that there's no prior context and exit early
+if [ "$ITERATION" -eq 1 ]; then
+    echo "This is the first iteration. No prior context available."
+    echo ""
+    exit 0
+fi
+
+# Fetch all loop commits in a single git log call
+# Each commit is delimited by __COMMIT__ markers with hash, phase, iteration, and body
+ALL_LOG=$(git log --grep="Loop-Iteration:" --format="__COMMIT__%H%n%B__END__" 2>/dev/null || true)
+
+# For each prior iteration, extract the relevant commits from the combined log
 for (( i=1; i<ITERATION; i++ )); do
     echo "### Iteration ${i}"
     echo ""
 
-    # Plan
-    plan_body=$(git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: ${i}" \
-        --all-match --format="%B" -1 2>/dev/null || true)
+    # Extract plan commit body for this iteration
+    plan_body=$(echo "$ALL_LOG" | awk -v iter="$i" '
+        /^__COMMIT__/ { hash=substr($0,11); body=""; in_commit=1; is_plan=0; is_iter=0; next }
+        /^__END__$/ {
+            if (in_commit && is_plan && is_iter) print body
+            in_commit=0; next
+        }
+        in_commit {
+            if ($0 ~ "^Loop-Phase: plan$") is_plan=1
+            if ($0 ~ "^Loop-Iteration: " iter "$") is_iter=1
+            body = (body == "" ? $0 : body "\n" $0)
+        }
+    ')
     if [ -n "$plan_body" ]; then
         echo "#### Plan"
         echo ""
@@ -39,11 +60,22 @@ for (( i=1; i<ITERATION; i++ )); do
         echo ""
     fi
 
-    # Doer changes
-    doer_hash=$(git log --grep="Loop-Phase: do" --grep="Loop-Iteration: ${i}" \
-        --all-match --format="%H" -1 2>/dev/null || true)
-    if [ -n "$doer_hash" ]; then
-        doer_body=$(git log --format="%B" -1 "$doer_hash" 2>/dev/null || true)
+    # Extract doer commit hash and body for this iteration
+    doer_info=$(echo "$ALL_LOG" | awk -v iter="$i" '
+        /^__COMMIT__/ { hash=substr($0,11); body=""; in_commit=1; is_do=0; is_iter=0; next }
+        /^__END__$/ {
+            if (in_commit && is_do && is_iter) print "HASH:" hash "\n" body
+            in_commit=0; next
+        }
+        in_commit {
+            if ($0 ~ "^Loop-Phase: do$") is_do=1
+            if ($0 ~ "^Loop-Iteration: " iter "$") is_iter=1
+            body = (body == "" ? $0 : body "\n" $0)
+        }
+    ')
+    if [ -n "$doer_info" ]; then
+        doer_hash=$(echo "$doer_info" | head -1 | sed 's/^HASH://')
+        doer_body=$(echo "$doer_info" | tail -n +2)
         echo "#### Changes"
         echo ""
         echo "$doer_body" | sed '/^Loop-Phase:/d; /^Loop-Iteration:/d; /^Loop-Verdict:/d'
@@ -55,9 +87,19 @@ for (( i=1; i<ITERATION; i++ )); do
         echo ""
     fi
 
-    # Verdict
-    verdict_body=$(git log --grep="Loop-Phase: check" --grep="Loop-Iteration: ${i}" \
-        --grep="Loop-Verdict:" --all-match --format="%B" -1 2>/dev/null || true)
+    # Extract checker verdict body for this iteration
+    verdict_body=$(echo "$ALL_LOG" | awk -v iter="$i" '
+        /^__COMMIT__/ { hash=substr($0,11); body=""; in_commit=1; is_check=0; is_iter=0; next }
+        /^__END__$/ {
+            if (in_commit && is_check && is_iter) print body
+            in_commit=0; next
+        }
+        in_commit {
+            if ($0 ~ "^Loop-Phase: check$") is_check=1
+            if ($0 ~ "^Loop-Iteration: " iter "$") is_iter=1
+            body = (body == "" ? $0 : body "\n" $0)
+        }
+    ')
     if [ -n "$verdict_body" ]; then
         verdict=$(echo "$verdict_body" | grep -oE 'Loop-Verdict: (PASS|FAIL)' | head -1 | sed 's/Loop-Verdict: //' || echo "UNKNOWN")
         echo "#### Verdict: ${verdict}"
@@ -69,9 +111,3 @@ for (( i=1; i<ITERATION; i++ )); do
     echo "---"
     echo ""
 done
-
-# If iteration 1, note that there's no prior context
-if [ "$ITERATION" -eq 1 ]; then
-    echo "This is the first iteration. No prior context available."
-    echo ""
-fi

@@ -9,6 +9,12 @@ set -euo pipefail
 LAST_ITERATION=$(git log --grep="Loop-Iteration:" --format="%B" -1 2>/dev/null \
     | grep -oE 'Loop-Iteration: [0-9]+' | sed 's/Loop-Iteration: //' || echo "0")
 
+# Validate that the extracted iteration number is a valid integer
+if ! [[ "$LAST_ITERATION" =~ ^[0-9]+$ ]]; then
+    echo "[detect-resume] Warning: invalid iteration '$LAST_ITERATION', starting from 1" >&2
+    LAST_ITERATION=0
+fi
+
 LAST_VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" 2>/dev/null \
     | grep -oE 'Loop-Verdict: (PASS|FAIL)' | sed 's/Loop-Verdict: //' || echo "")
 

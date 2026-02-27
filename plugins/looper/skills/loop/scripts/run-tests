@@ -5,6 +5,8 @@ set -euo pipefail
 # Usage: run-tests [--file <path>] [--grep <pattern>]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
+
 FILE=""
 GREP_PATTERN=""
 
@@ -16,33 +18,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-STACK=$("$SCRIPT_DIR/detect-stack")
+STACK=$(load_stack)
 test_runner=$(echo "$STACK" | jq -r '.test_runner')
 package_manager=$(echo "$STACK" | jq -r '.package_manager')
-
-# Helper: run via package.json script if available
-run_pkg_script() {
-    local script="$1"
-    shift
-    case "$package_manager" in
-        pnpm) pnpm run "$script" -- "$@" ;;
-        yarn) yarn run "$script" "$@" ;;
-        bun)  bun run "$script" "$@" ;;
-        npm|*) npm run "$script" -- "$@" ;;
-    esac
-}
-
-# Check if package.json has a test script
-has_test_script() {
-    [ -f "package.json" ] && jq -e '.scripts.test' package.json &>/dev/null
-}
 
 case "$test_runner" in
     vitest)
         args=("run")
         [ -n "$FILE" ] && args+=("$FILE")
         [ -n "$GREP_PATTERN" ] && args+=("--grep" "$GREP_PATTERN")
-        if has_test_script; then
+        if has_pkg_script test; then
             run_pkg_script test "${args[@]}"
         else
             npx vitest "${args[@]}"
@@ -52,7 +37,7 @@ case "$test_runner" in
         args=()
         [ -n "$FILE" ] && args+=("$FILE")
         [ -n "$GREP_PATTERN" ] && args+=("--testNamePattern" "$GREP_PATTERN")
-        if has_test_script; then
+        if has_pkg_script test; then
             run_pkg_script test "${args[@]}"
         else
             npx jest "${args[@]}"
@@ -62,7 +47,7 @@ case "$test_runner" in
         args=()
         [ -n "$FILE" ] && args+=("$FILE")
         [ -n "$GREP_PATTERN" ] && args+=("--grep" "$GREP_PATTERN")
-        if has_test_script; then
+        if has_pkg_script test; then
             run_pkg_script test "${args[@]}"
         else
             npx mocha "${args[@]}"
@@ -72,13 +57,7 @@ case "$test_runner" in
         args=()
         [ -n "$FILE" ] && args+=("$FILE")
         [ -n "$GREP_PATTERN" ] && args+=("-k" "$GREP_PATTERN")
-        if [ "$package_manager" = "uv" ]; then
-            uv run pytest "${args[@]}"
-        elif [ "$package_manager" = "poetry" ]; then
-            poetry run pytest "${args[@]}"
-        else
-            python -m pytest "${args[@]}"
-        fi
+        run_python_tool pytest "${args[@]}"
         ;;
     go-test)
         args=("./...")

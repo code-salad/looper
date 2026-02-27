@@ -26,6 +26,12 @@ WORKTREE_DIR="$REPO_ROOT/.worktrees/$TASK"
 # Ensure .worktrees is gitignored
 GITIGNORE="$REPO_ROOT/.gitignore"
 if ! [ -f "$GITIGNORE" ] || ! grep -qxF '.worktrees' "$GITIGNORE"; then
+    # Ensure file ends with newline before appending
+    if [ -f "$GITIGNORE" ] && [ -s "$GITIGNORE" ]; then
+        if [ "$(tail -c 1 "$GITIGNORE" | wc -l)" -eq 0 ]; then
+            echo "" >> "$GITIGNORE"
+        fi
+    fi
     echo '.worktrees' >> "$GITIGNORE"
     git -C "$REPO_ROOT" add -- .gitignore
     git -C "$REPO_ROOT" diff --cached --quiet || \

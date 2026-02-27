@@ -5,8 +5,9 @@ set -euo pipefail
 # Usage: security-scan
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
 
-STACK=$("$SCRIPT_DIR/detect-stack")
+STACK=$(load_stack)
 package_manager=$(echo "$STACK" | jq -r '.package_manager')
 language=$(echo "$STACK" | jq -r '.language')
 

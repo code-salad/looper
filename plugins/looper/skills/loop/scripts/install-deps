@@ -5,8 +5,9 @@ set -euo pipefail
 # Usage: install-deps
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/_helpers.sh"
 
-STACK=$("$SCRIPT_DIR/detect-stack")
+STACK=$(load_stack)
 package_manager=$(echo "$STACK" | jq -r '.package_manager')
 
 case "$package_manager" in
