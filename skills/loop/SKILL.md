@@ -58,7 +58,7 @@ Example: "Add User Authentication Flow" → "add-user-authentication-flow"
 
 ```bash
 REPO_ROOT=$(git rev-parse --show-toplevel)
-LOOP_SCRIPT="${REPO_ROOT}/.claude/skills/loop/scripts/loop.sh"
+LOOP_SCRIPT="${CLAUDE_PLUGIN_ROOT:-${REPO_ROOT}}/skills/loop/scripts/loop.sh"
 
 bash "$LOOP_SCRIPT" \
     --task "$TASK_NAME" \
@@ -85,17 +85,17 @@ After `loop.sh` exits:
 
 This skill orchestrates the following components:
 
-### Agents (`.claude/agents/`)
+### Agents (`agents/`)
 
 | Agent | File | Role |
 |-------|------|------|
-| `planner` | `.claude/agents/planner.md` | Explores codebase, produces plan (read-only) |
-| `doer` | `.claude/agents/doer.md` | Implements the plan, commits changes |
-| `checker` | `.claude/agents/checker.md` | Reviews work, fixes issues, issues PASS/FAIL verdict |
+| `planner` | `agents/planner.md` | Explores codebase, produces plan (read-only) |
+| `doer` | `agents/doer.md` | Implements the plan, commits changes |
+| `checker` | `agents/checker.md` | Reviews work, fixes issues, issues PASS/FAIL verdict |
 
 ### Scripts (`scripts/`)
 
-All executable scripts live in `.claude/skills/loop/scripts/`:
+All executable scripts live in `skills/loop/scripts/`:
 
 | Script | Purpose |
 |--------|---------|

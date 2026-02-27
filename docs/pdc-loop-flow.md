@@ -224,7 +224,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     ITERATION=$((ITERATION + 1))
 
     # --- PLAN PHASE ---
-    # --agent planner loads .claude/agents/planner.md (static instructions)
+    # --agent planner loads agents/planner.md (static instructions)
     # --setting-sources user,project loads CLAUDE.md (not auto-loaded in -p mode)
     # --append-system-prompt-file injects dynamic per-iteration context
     # --max-turns 50 is a per-phase safety valve
@@ -267,7 +267,7 @@ exit 1
 
 Invoked as `claude -p --agent planner`.
 
-Agent definition: `.claude/agents/planner.md`
+Agent definition: `agents/planner.md`
 
 **Responsibilities:**
 - Read prior iteration context from `git log`
@@ -281,7 +281,7 @@ Agent definition: `.claude/agents/planner.md`
 
 Invoked as `claude -p --agent doer`.
 
-Agent definition: `.claude/agents/doer.md`
+Agent definition: `agents/doer.md`
 
 **Responsibilities:**
 - Read the plan from the latest planner commit (`git log`)
@@ -295,7 +295,7 @@ Agent definition: `.claude/agents/doer.md`
 
 Invoked as `claude -p --agent checker`.
 
-Agent definition: `.claude/agents/checker.md`
+Agent definition: `agents/checker.md`
 
 The checker doubles as a **code reviewer**. It doesn't just evaluate — it fixes
 what it can. Only issues it cannot resolve itself get escalated back to the

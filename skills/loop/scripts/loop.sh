@@ -3,7 +3,7 @@ set -euo pipefail
 
 # loop.sh — PDC Loop Orchestrator
 # Runs Plan → Do → Check agents in a loop until PASS or max iterations.
-# Agents are defined in .claude/agents/{planner,doer,checker}.md
+# Agents are defined in agents/{planner,doer,checker}.md
 
 # ──────────────────────────────────────────────
 # Defaults
@@ -194,6 +194,9 @@ run_phase() {
     # Build dynamic context file
     local context_file
     context_file=$(build_context_file "$phase")
+
+    # Allow claude -p to launch when invoked from inside a Claude Code session
+    unset CLAUDECODE
 
     # Run claude -p with --agent
     local exit_code=0

@@ -2,29 +2,44 @@
 
 ## What This Is
 
-A Plan-Do-Check loop orchestrator for Claude Code. The bash script `loop.sh`
-drives three `claude -p` agents (Planner, Doer, Checker) in a loop until the
-Checker issues a PASS verdict.
+A Plan-Do-Check loop orchestrator for Claude Code, installable as a plugin.
+The bash script `loop.sh` drives three `claude -p` agents (Planner, Doer,
+Checker) in a loop until the Checker issues a PASS verdict.
+
+## Installation
+
+```bash
+# Local install from a checkout
+claude plugin install /path/to/looper
+
+# Or use the skill directly if developing in this repo
+/loop "task description"
+```
 
 ## Project Structure
 
 ```
-.claude/
-├── agents/                Agent definitions (planner, doer, checker)
-└── skills/loop/           The loop skill
-    ├── SKILL.md           User-invocable entry point (/loop)
-    └── scripts/           All executable scripts
-        ├── loop.sh        Main PDC loop orchestrator
-        ├── detect-stack   Auto-detect project tech stack
-        ├── run-tests      Run test suite
-        ├── run-lint       Run linter
-        ├── run-typecheck  Run type checker
-        ├── run-format     Run formatter
-        ├── run-build      Build project
-        ├── install-deps   Install dependencies
-        ├── security-scan  Security vulnerability scan
-        ├── git-loop-context  Read loop history from git
-        └── git-commit-loop   Commit with loop trailers
+.claude-plugin/
+  plugin.json              Plugin manifest
+agents/                    Agent definitions (planner, doer, checker)
+skills/
+  loop/                    The loop skill
+    SKILL.md               User-invocable entry point (/loop)
+    scripts/               All executable scripts
+      loop.sh              Main PDC loop orchestrator
+      detect-stack         Auto-detect project tech stack
+      run-tests            Run test suite
+      run-lint             Run linter
+      run-typecheck        Run type checker
+      run-format           Run formatter
+      run-build            Build project
+      install-deps         Install dependencies
+      security-scan        Security vulnerability scan
+      git-loop-context     Read loop history from git
+      git-commit-loop      Commit with loop trailers
+  git-commit/              Conventional commit skill
+  create-github-pr/        PR creation skill
+  initiate-worktree/       Git worktree skill
 docs/                      Design docs and flow diagrams
 ```
 
@@ -40,7 +55,7 @@ docs/                      Design docs and flow diagrams
 ## Running the Loop
 
 ```bash
-./loop.sh --task <task-name> --prompt "description of what to do"
+./skills/loop/scripts/loop.sh --task <task-name> --prompt "description of what to do"
 ```
 
 Optional flags: `--context <extra-context>`, `--model <model>`, `--max-iterations <N>`.
