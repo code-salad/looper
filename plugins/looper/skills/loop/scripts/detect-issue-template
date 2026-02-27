@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# detect-issue-template — Find bug report issue template in the repo
+# Outputs JSON with: template_found, template_type, template_path, template_content
+
+template_found=false
+template_type="none"
+template_path=""
+template_content=""
+
+# Search order: exact names first, then scan, then legacy
+
+# 1. .github/ISSUE_TEMPLATE/bug_report.yml
+if [ -f ".github/ISSUE_TEMPLATE/bug_report.yml" ]; then
+    template_found=true
+    template_type="yml"
+    template_path=".github/ISSUE_TEMPLATE/bug_report.yml"
+
+# 2. .github/ISSUE_TEMPLATE/bug_report.md
+elif [ -f ".github/ISSUE_TEMPLATE/bug_report.md" ]; then
+    template_found=true
+    template_type="md"
+    template_path=".github/ISSUE_TEMPLATE/bug_report.md"
+
+# 3. .github/ISSUE_TEMPLATE/bug-report.yml
+elif [ -f ".github/ISSUE_TEMPLATE/bug-report.yml" ]; then
+    template_found=true
+    template_type="yml"
+    template_path=".github/ISSUE_TEMPLATE/bug-report.yml"
+
+# 4. .github/ISSUE_TEMPLATE/bug-report.md
+elif [ -f ".github/ISSUE_TEMPLATE/bug-report.md" ]; then
+    template_found=true
+    template_type="md"
+    template_path=".github/ISSUE_TEMPLATE/bug-report.md"
+
+# 5. Scan all templates for bug-related ones
+elif [ -d ".github/ISSUE_TEMPLATE" ]; then
+    for f in .github/ISSUE_TEMPLATE/*.yml .github/ISSUE_TEMPLATE/*.md; do
+        [ -f "$f" ] || continue
+        fname=$(basename "$f")
+        # Check filename for bug-related keywords
+        if echo "$fname" | grep -qi "bug"; then
+            template_found=true
+            if [[ "$f" == *.yml ]]; then
+                template_type="yml"
+            else
+                template_type="md"
+            fi
+            template_path="$f"
+            break
+        fi
+        # Check content for bug-related keywords
+        if grep -qi "bug\|defect\|issue report" "$f" 2>/dev/null; then
+            template_found=true
+            if [[ "$f" == *.yml ]]; then
+                template_type="yml"
+            else
+                template_type="md"
+            fi
+            template_path="$f"
+            break
+        fi
+    done
+
+# 6. Legacy single-file template
+elif [ -f ".github/ISSUE_TEMPLATE.md" ]; then
+    template_found=true
+    template_type="md"
+    template_path=".github/ISSUE_TEMPLATE.md"
+fi
+
+# Read template content if found
+if [ "$template_found" = true ] && [ -n "$template_path" ]; then
+    template_content=$(cat "$template_path")
+fi
+
+# --- Output JSON ---
+# Use jq if available for proper escaping, otherwise manual escaping
+if command -v jq &>/dev/null; then
+    jq -n \
+        --argjson template_found "$template_found" \
+        --arg template_type "$template_type" \
+        --arg template_path "$template_path" \
+        --arg template_content "$template_content" \
+        '{
+            template_found: $template_found,
+            template_type: $template_type,
+            template_path: $template_path,
+            template_content: $template_content
+        }'
+else
+    # Escape content for JSON (backslashes, quotes, newlines, tabs)
+    escaped_content=$(printf '%s' "$template_content" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e ':a' -e 'N' -e '$!ba' -e 's/\n/\\n/g' -e 's/\t/\\t/g')
+    cat <<EOF
+{
+  "template_found": ${template_found},
+  "template_type": "${template_type}",
+  "template_path": "${template_path}",
+  "template_content": "${escaped_content}"
+}
+EOF
+fi

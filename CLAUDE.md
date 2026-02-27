@@ -44,8 +44,10 @@ plugins/
           security-scan    Security vulnerability scan
           git-loop-context Read loop history from git
           git-commit-loop  Commit with loop trailers
+          detect-issue-template  Detect bug report issue template
       git-commit/          Conventional commit skill
       create-github-pr/    PR creation skill
+      github-bug-report/   GitHub bug report issue skill
       initiate-worktree/   Git worktree skill
 docs/                      Design docs and flow diagrams
 ```
