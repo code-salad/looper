@@ -1,7 +1,7 @@
 {
   "name": "looper",
   "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "author": {
     "name": "looper"
   },
