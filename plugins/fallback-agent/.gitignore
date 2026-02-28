@@ -3,3 +3,6 @@ node_modules
 
 # Include built MCP server bundle (overrides root .gitignore)
 !mcp-server/dist/
+
+# Rust build artifacts
+mcp-server-rs/target/
