@@ -3,7 +3,7 @@
   "description": "Nested subagent — spawns fresh Claude processes with full tool access for unlimited nesting",
   "version": "0.11.1",
   "author": {
-    "name": "gruckion"
+    "name": "vikyw89"
   },
   "license": "MIT",
   "keywords": [
