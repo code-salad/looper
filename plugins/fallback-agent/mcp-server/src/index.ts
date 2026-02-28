@@ -34,8 +34,8 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { spawn, ChildProcess } from "child_process";
 import { createInterface } from "readline";
-import { appendFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { appendFileSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync } from "fs";
+import { join, resolve, basename } from "path";
 
 // Debug logging to file - use /tmp for reliable access
 const LOG_FILE = "/tmp/fallback-agent-debug.log";
@@ -56,6 +56,158 @@ try {
 } catch {
   // Ignore
 }
+
+// ── Agent Definition Discovery ──────────────────────────────────────────────
+
+interface AgentDefinition {
+  name: string;
+  qualifiedName: string; // e.g., "looper:planner"
+  description: string;
+  tools?: string[];
+  disallowedTools?: string[];
+  model?: "sonnet" | "opus" | "haiku";
+  systemPrompt: string; // markdown body after frontmatter
+}
+
+/** Tools that require write access — used to enforce read-only agents. */
+const WRITE_TOOLS = ["Write", "Edit", "NotebookEdit"];
+
+/**
+ * Parse YAML frontmatter and markdown body from an agent definition file.
+ * Handles simple `key: value` pairs and comma-separated lists.
+ */
+function parseAgentFile(content: string, namespace: string): AgentDefinition | null {
+  if (!content.startsWith("---")) return null;
+
+  const endIdx = content.indexOf("\n---", 3);
+  if (endIdx === -1) return null;
+
+  const frontmatter = content.slice(4, endIdx); // skip opening '---\n'
+  const body = content.slice(endIdx + 4).trim(); // skip closing '\n---\n'
+
+  const meta: Record<string, string> = {};
+  for (const line of frontmatter.split("\n")) {
+    const colonIdx = line.indexOf(":");
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    const value = line.slice(colonIdx + 1).trim();
+    if (key && value) meta[key] = value;
+  }
+
+  if (!meta.name) return null;
+
+  const parseList = (s?: string): string[] | undefined =>
+    s ? s.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+
+  const qualifiedName = namespace ? `${namespace}:${meta.name}` : meta.name;
+  const model = (["sonnet", "opus", "haiku"].includes(meta.model) ? meta.model : undefined) as
+    | AgentDefinition["model"]
+    | undefined;
+
+  return {
+    name: meta.name,
+    qualifiedName,
+    description: meta.description || "",
+    tools: parseList(meta.tools),
+    disallowedTools: parseList(meta.disallowedTools),
+    model,
+    systemPrompt: body,
+  };
+}
+
+/**
+ * Read the plugin name from `.claude-plugin/plugin.json`, falling back to the
+ * directory basename.
+ */
+function getPluginNamespace(pluginDir: string): string {
+  try {
+    const pj = JSON.parse(readFileSync(join(pluginDir, ".claude-plugin", "plugin.json"), "utf-8"));
+    if (pj.name) return pj.name;
+  } catch {
+    // fall through
+  }
+  return basename(resolve(pluginDir));
+}
+
+/**
+ * Discover agent definitions by scanning:
+ *   1. CLAUDE_PLUGIN_ROOT/agents/*.md  (own plugin)
+ *   2. CLAUDE_PLUGIN_ROOT/../* /agents/*.md  (sibling plugins)
+ */
+function discoverAgents(): Map<string, AgentDefinition> {
+  const agents = new Map<string, AgentDefinition>();
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
+
+  if (!pluginRoot) {
+    log("No CLAUDE_PLUGIN_ROOT set — skipping agent discovery");
+    return agents;
+  }
+
+  const scanTargets: Array<[string, string]> = [];
+
+  // Own plugin
+  const ownAgentsDir = join(pluginRoot, "agents");
+  if (existsSync(ownAgentsDir) && statSync(ownAgentsDir).isDirectory()) {
+    scanTargets.push([ownAgentsDir, getPluginNamespace(pluginRoot)]);
+  }
+
+  // Sibling plugins
+  const pluginsDir = resolve(pluginRoot, "..");
+  try {
+    for (const sibling of readdirSync(pluginsDir)) {
+      const siblingPath = join(pluginsDir, sibling);
+      if (resolve(siblingPath) === resolve(pluginRoot)) continue;
+      const siblingAgentsDir = join(siblingPath, "agents");
+      if (existsSync(siblingAgentsDir) && statSync(siblingAgentsDir).isDirectory()) {
+        scanTargets.push([siblingAgentsDir, getPluginNamespace(siblingPath)]);
+      }
+    }
+  } catch (err) {
+    log(`Error scanning sibling plugins: ${err}`);
+  }
+
+  for (const [dir, namespace] of scanTargets) {
+    try {
+      for (const file of readdirSync(dir).filter((f) => f.endsWith(".md"))) {
+        try {
+          const content = readFileSync(join(dir, file), "utf-8");
+          const agent = parseAgentFile(content, namespace);
+          if (agent) {
+            agents.set(agent.qualifiedName, agent);
+            log(`Discovered agent: ${agent.qualifiedName} (${join(dir, file)})`);
+          }
+        } catch (err) {
+          log(`Error parsing agent file ${join(dir, file)}: ${err}`);
+        }
+      }
+    } catch (err) {
+      log(`Error scanning agent directory ${dir}: ${err}`);
+    }
+  }
+
+  return agents;
+}
+
+/**
+ * Compute effective disallowed tools for an agent definition.
+ * Uses explicit `disallowedTools` and supplements by blocking write tools
+ * that are absent from the `tools` allowlist.
+ */
+function computeEffectiveDisallowedTools(agent: AgentDefinition): string[] {
+  const disallowed = new Set(agent.disallowedTools ?? []);
+  if (agent.tools?.length) {
+    for (const tool of WRITE_TOOLS) {
+      if (!agent.tools.includes(tool)) {
+        disallowed.add(tool);
+      }
+    }
+  }
+  return [...disallowed];
+}
+
+// Run agent discovery at startup
+const agentDefinitions = discoverAgents();
+log(`Discovered ${agentDefinitions.size} agent definition(s): ${[...agentDefinitions.keys()].join(", ") || "(none)"}`);
 
 // Types for Claude CLI stream-json output
 interface StreamMessage {
@@ -90,10 +242,86 @@ interface StreamMessage {
   };
 }
 
-// Tool definition - named "Task" to match native Task tool UX
-const NESTED_TASK_TOOL: Tool = {
-  name: "Task",
-  description: `Launch a new agent that has access to all tools including Task. When you are searching for a keyword or file and are not confident that you will find the right match on the first try, use the Agent tool to perform the search for you. For example:
+// Build tool definition dynamically based on discovered agents
+function buildToolDefinition(): Tool {
+  const properties: Record<string, object> = {
+    description: {
+      type: "string",
+      description: "A short (3-5 word) description of the task",
+    },
+    prompt: {
+      type: "string",
+      description: "The task for the agent to perform",
+    },
+    model: {
+      type: "string",
+      enum: ["sonnet", "opus", "haiku"],
+      default: "sonnet",
+      description: "Model to use (default: sonnet)",
+    },
+    workingDir: {
+      type: "string",
+      description: "Working directory (defaults to current)",
+    },
+    timeout: {
+      type: "number",
+      default: 600000,
+      description: "Timeout in ms (default: 10 minutes)",
+    },
+    allowWrite: {
+      type: "boolean",
+      default: false,
+      description: "Enable file write permissions (--dangerously-skip-permissions)",
+    },
+    permissionMode: {
+      type: "string",
+      enum: ["default", "acceptEdits", "bypassPermissions", "plan"],
+      description: "Permission mode for the spawned subagent",
+    },
+    systemPrompt: {
+      type: "string",
+      description: "Custom system prompt for the spawned subagent",
+    },
+    appendSystemPrompt: {
+      type: "string",
+      description: "Append to default system prompt",
+    },
+    allowedTools: {
+      type: "array",
+      items: { type: "string" },
+      description: "List of allowed tools (e.g., ['Bash', 'Read', 'Edit'])",
+    },
+    disallowedTools: {
+      type: "array",
+      items: { type: "string" },
+      description: "List of disallowed tools",
+    },
+    maxBudgetUsd: {
+      type: "number",
+      description: "Maximum API cost budget in USD",
+    },
+    addDirs: {
+      type: "array",
+      items: { type: "string" },
+      description: "Additional directories to allow access to",
+    },
+  };
+
+  // Add subagent_type enum if agents were discovered
+  if (agentDefinitions.size > 0) {
+    const agentList = [...agentDefinitions.entries()]
+      .map(([k, v]) => `"${k}" — ${v.description}`)
+      .join("\n");
+    properties.subagent_type = {
+      type: "string",
+      enum: [...agentDefinitions.keys()],
+      description: `Specialized agent type. Applies the agent's system prompt, tool restrictions, and model from its definition file. Explicit parameters override agent defaults.\n\nAvailable agents:\n${agentList}`,
+    };
+  }
+
+  return {
+    name: "Task",
+    description: `Launch a new agent that has access to all tools including Task. When you are searching for a keyword or file and are not confident that you will find the right match on the first try, use the Agent tool to perform the search for you. For example:
 
 - If you are searching for a keyword like "config" or "logger", the Agent tool is appropriate
 - If you want to read a specific file path, use the Read or Glob tool instead of the Agent tool, to find the match more quickly
@@ -105,75 +333,16 @@ Usage notes:
 3. Each agent invocation is stateless. You will not be able to send additional messages to the agent, nor will the agent be able to communicate with you outside of its final report. Therefore, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
 4. The agent's outputs should generally be trusted
 5. IMPORTANT: The spawned agent runs as a fresh process with its own 200k context window and CAN use the Task tool.`,
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      description: {
-        type: "string",
-        description: "A short (3-5 word) description of the task",
-      },
-      prompt: {
-        type: "string",
-        description: "The task for the agent to perform",
-      },
-      model: {
-        type: "string",
-        enum: ["sonnet", "opus", "haiku"],
-        default: "sonnet",
-        description: "Model to use (default: sonnet)",
-      },
-      workingDir: {
-        type: "string",
-        description: "Working directory (defaults to current)",
-      },
-      timeout: {
-        type: "number",
-        default: 600000,
-        description: "Timeout in ms (default: 10 minutes)",
-      },
-      allowWrite: {
-        type: "boolean",
-        default: false,
-        description: "Enable file write permissions (--dangerously-skip-permissions)",
-      },
-      permissionMode: {
-        type: "string",
-        enum: ["default", "acceptEdits", "bypassPermissions", "plan"],
-        description: "Permission mode for the spawned subagent",
-      },
-      systemPrompt: {
-        type: "string",
-        description: "Custom system prompt for the spawned subagent",
-      },
-      appendSystemPrompt: {
-        type: "string",
-        description: "Append to default system prompt",
-      },
-      allowedTools: {
-        type: "array",
-        items: { type: "string" },
-        description: "List of allowed tools (e.g., ['Bash', 'Read', 'Edit'])",
-      },
-      disallowedTools: {
-        type: "array",
-        items: { type: "string" },
-        description: "List of disallowed tools",
-      },
-      maxBudgetUsd: {
-        type: "number",
-        description: "Maximum API cost budget in USD",
-      },
-      addDirs: {
-        type: "array",
-        items: { type: "string" },
-        description: "Additional directories to allow access to",
-      },
+    inputSchema: {
+      type: "object" as const,
+      properties,
+      required: ["prompt"],
     },
-    required: ["prompt"],
-  },
-};
+  };
+}
 
 interface TaskInput {
+  subagent_type?: string;
   description?: string;
   prompt: string;
   model?: "sonnet" | "opus" | "haiku";
@@ -532,7 +701,7 @@ async function runTask(
 
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [NESTED_TASK_TOOL],
+  tools: [buildToolDefinition()],
 }));
 
 // Handle tool execution
@@ -557,6 +726,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [{ type: "text", text: "Error: prompt is required" }],
       isError: true,
     };
+  }
+
+  // Apply agent definition defaults when subagent_type is specified
+  if (input.subagent_type) {
+    const agent = agentDefinitions.get(input.subagent_type);
+    if (!agent) {
+      const available = [...agentDefinitions.keys()].join(", ") || "(none discovered)";
+      return {
+        content: [{ type: "text", text: `Error: unknown subagent_type "${input.subagent_type}". Available: ${available}` }],
+        isError: true,
+      };
+    }
+
+    log(`Applying agent definition: ${agent.qualifiedName} (model=${agent.model})`);
+
+    // Agent markdown body → system prompt (unless caller explicitly set one)
+    if (!input.systemPrompt && agent.systemPrompt) {
+      input.systemPrompt = agent.systemPrompt;
+    }
+
+    // Agent model as default
+    if (!input.model && agent.model) {
+      input.model = agent.model;
+    }
+
+    // Compute and merge disallowed tools (unless caller explicitly set them)
+    if (!input.disallowedTools) {
+      const effective = computeEffectiveDisallowedTools(agent);
+      if (effective.length > 0) {
+        input.disallowedTools = effective;
+        log(`Applied disallowed tools: ${effective.join(", ")}`);
+      }
+    }
   }
 
   const result = await runTask(input, progressToken);
