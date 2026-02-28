@@ -130,9 +130,18 @@ function getPluginNamespace(pluginDir: string): string {
 }
 
 /**
+ * Check if a directory is a plugin root (has .claude-plugin/plugin.json).
+ */
+function isPluginDir(dir: string): boolean {
+  return existsSync(join(dir, ".claude-plugin", "plugin.json"));
+}
+
+/**
  * Discover agent definitions by scanning:
  *   1. CLAUDE_PLUGIN_ROOT/agents/*.md  (own plugin)
- *   2. CLAUDE_PLUGIN_ROOT/../* /agents/*.md  (sibling plugins)
+ *   2. Sibling plugins — handles both flat and versioned cache layouts:
+ *      - Flat:  plugins/<this-plugin>/  → plugins/<sibling>/agents/
+ *      - Cache: cache/<repo>/<this-plugin>/<ver>/ → cache/<repo>/<sibling>/<ver>/agents/
  */
 function discoverAgents(): Map<string, AgentDefinition> {
   const agents = new Map<string, AgentDefinition>();
@@ -144,28 +153,72 @@ function discoverAgents(): Map<string, AgentDefinition> {
   }
 
   const scanTargets: Array<[string, string]> = [];
+  const visited = new Set<string>([resolve(pluginRoot)]);
 
-  // Own plugin
+  // 1. Own plugin agents
   const ownAgentsDir = join(pluginRoot, "agents");
   if (existsSync(ownAgentsDir) && statSync(ownAgentsDir).isDirectory()) {
     scanTargets.push([ownAgentsDir, getPluginNamespace(pluginRoot)]);
   }
 
-  // Sibling plugins
-  const pluginsDir = resolve(pluginRoot, "..");
-  try {
-    for (const sibling of readdirSync(pluginsDir)) {
-      const siblingPath = join(pluginsDir, sibling);
-      if (resolve(siblingPath) === resolve(pluginRoot)) continue;
-      const siblingAgentsDir = join(siblingPath, "agents");
-      if (existsSync(siblingAgentsDir) && statSync(siblingAgentsDir).isDirectory()) {
-        scanTargets.push([siblingAgentsDir, getPluginNamespace(siblingPath)]);
-      }
+  /**
+   * Try to add a plugin directory's agents/ to scan targets.
+   * Skips if already visited or if it's the current plugin.
+   */
+  function addPluginAgents(pluginDir: string) {
+    const resolved = resolve(pluginDir);
+    if (visited.has(resolved)) return;
+    visited.add(resolved);
+    const agentsDir = join(pluginDir, "agents");
+    if (existsSync(agentsDir) && statSync(agentsDir).isDirectory()) {
+      scanTargets.push([agentsDir, getPluginNamespace(pluginDir)]);
+      log(`Found sibling agents: ${agentsDir}`);
     }
-  } catch (err) {
-    log(`Error scanning sibling plugins: ${err}`);
   }
 
+  /**
+   * Scan a directory for sibling plugins. Each child entry may be:
+   *   - A plugin directory (has .claude-plugin/plugin.json)  → flat layout
+   *   - A versioned directory containing plugin subdirs       → cache layout
+   */
+  function scanForSiblings(dir: string) {
+    try {
+      for (const entry of readdirSync(dir)) {
+        const entryPath = join(dir, entry);
+        if (!statSync(entryPath).isDirectory()) continue;
+
+        // Direct plugin sibling (flat layout)
+        if (isPluginDir(entryPath)) {
+          addPluginAgents(entryPath);
+          continue;
+        }
+
+        // Versioned plugin sibling (cache layout) — scan subdirs for plugin roots
+        // e.g., looper/0.11.1/.claude-plugin/plugin.json
+        try {
+          for (const sub of readdirSync(entryPath)) {
+            const subPath = join(entryPath, sub);
+            if (statSync(subPath).isDirectory() && isPluginDir(subPath)) {
+              addPluginAgents(subPath);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch (err) {
+      log(`Error scanning for siblings in ${dir}: ${err}`);
+    }
+  }
+
+  // 2. Scan parent (flat layout: plugins/<name>/) and grandparent (cache: cache/<repo>/<name>/<ver>/)
+  const parent = resolve(pluginRoot, "..");
+  const grandparent = resolve(pluginRoot, "../..");
+
+  scanForSiblings(parent);
+  scanForSiblings(grandparent);
+
+  // 3. Parse agent files from all discovered directories
   for (const [dir, namespace] of scanTargets) {
     try {
       for (const file of readdirSync(dir).filter((f) => f.endsWith(".md"))) {
