@@ -3,9 +3,9 @@
   "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
   "version": "0.12.0",
   "author": {
-    "name": "looper"
+    "name": "vikyw89"
   },
-  "repository": "https://github.com/anthropics/looper",
+  "repository": "https://github.com/vikyw89/looper",
   "license": "MIT",
   "keywords": [
     "pdc",

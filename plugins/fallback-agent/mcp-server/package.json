@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "MCP server that provides a fallback agent by spawning fresh Claude processes",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/index.mjs",
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/index.js",
+    "start": "node dist/index.mjs",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
