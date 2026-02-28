@@ -1,7 +1,8 @@
 import process$1 from "node:process";
 import { spawn } from "child_process";
 import { createInterface } from "readline";
-import { appendFileSync, writeFileSync } from "fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
+import { basename, join, resolve } from "path";
 
 //#region rolldown:runtime
 var __create = Object.create;
@@ -5863,7 +5864,7 @@ var Protocol = class {
 					return;
 				}
 				const pollInterval = task$1.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-				await new Promise((resolve) => setTimeout(resolve, pollInterval));
+				await new Promise((resolve$1) => setTimeout(resolve$1, pollInterval));
 				options?.signal?.throwIfAborted();
 			}
 		} catch (error) {
@@ -5880,7 +5881,7 @@ var Protocol = class {
 	*/
 	request(request, resultSchema, options) {
 		const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-		return new Promise((resolve, reject) => {
+		return new Promise((resolve$1, reject) => {
 			const earlyReject = (error) => {
 				reject(error);
 			};
@@ -5947,7 +5948,7 @@ var Protocol = class {
 				try {
 					const parseResult = safeParse$1(resultSchema, response.result);
 					if (!parseResult.success) reject(parseResult.error);
-					else resolve(parseResult.data);
+					else resolve$1(parseResult.data);
 				} catch (error) {
 					reject(error);
 				}
@@ -6195,12 +6196,12 @@ var Protocol = class {
 			const task = await this._taskStore?.getTask(taskId);
 			if (task?.pollInterval) interval = task.pollInterval;
 		} catch {}
-		return new Promise((resolve, reject) => {
+		return new Promise((resolve$1, reject) => {
 			if (signal.aborted) {
 				reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
 				return;
 			}
-			const timeoutId = setTimeout(resolve, interval);
+			const timeoutId = setTimeout(resolve$1, interval);
 			signal.addEventListener("abort", () => {
 				clearTimeout(timeoutId);
 				reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -13220,10 +13221,10 @@ var StdioServerTransport = class {
 		this.onclose?.();
 	}
 	send(message) {
-		return new Promise((resolve) => {
+		return new Promise((resolve$1) => {
 			const json = serializeMessage(message);
-			if (this._stdout.write(json)) resolve();
-			else this._stdout.once("drain", resolve);
+			if (this._stdout.write(json)) resolve$1();
+			else this._stdout.once("drain", resolve$1);
 		});
 	}
 };
@@ -13267,9 +13268,197 @@ try {
 	writeFileSync(LOG_FILE, `=== Fallback Agent MCP Server Started ===\n`);
 	appendFileSync(LOG_FILE, `CLAUDE_PLUGIN_ROOT=${process.env.CLAUDE_PLUGIN_ROOT || "(not set)"}\n`);
 } catch {}
-const NESTED_TASK_TOOL = {
-	name: "Task",
-	description: `Launch a new agent that has access to all tools including Task. When you are searching for a keyword or file and are not confident that you will find the right match on the first try, use the Agent tool to perform the search for you. For example:
+/** Tools that require write access — used to enforce read-only agents. */
+const WRITE_TOOLS = [
+	"Write",
+	"Edit",
+	"NotebookEdit"
+];
+/**
+* Parse YAML frontmatter and markdown body from an agent definition file.
+* Handles simple `key: value` pairs and comma-separated lists.
+*/
+function parseAgentFile(content, namespace) {
+	if (!content.startsWith("---")) return null;
+	const endIdx = content.indexOf("\n---", 3);
+	if (endIdx === -1) return null;
+	const frontmatter = content.slice(4, endIdx);
+	const body = content.slice(endIdx + 4).trim();
+	const meta$2 = {};
+	for (const line of frontmatter.split("\n")) {
+		const colonIdx = line.indexOf(":");
+		if (colonIdx === -1) continue;
+		const key = line.slice(0, colonIdx).trim();
+		const value = line.slice(colonIdx + 1).trim();
+		if (key && value) meta$2[key] = value;
+	}
+	if (!meta$2.name) return null;
+	const parseList = (s) => s ? s.split(",").map((t) => t.trim()).filter(Boolean) : void 0;
+	const qualifiedName = namespace ? `${namespace}:${meta$2.name}` : meta$2.name;
+	const model = [
+		"sonnet",
+		"opus",
+		"haiku"
+	].includes(meta$2.model) ? meta$2.model : void 0;
+	return {
+		name: meta$2.name,
+		qualifiedName,
+		description: meta$2.description || "",
+		tools: parseList(meta$2.tools),
+		disallowedTools: parseList(meta$2.disallowedTools),
+		model,
+		systemPrompt: body
+	};
+}
+/**
+* Read the plugin name from `.claude-plugin/plugin.json`, falling back to the
+* directory basename.
+*/
+function getPluginNamespace(pluginDir) {
+	try {
+		const pj = JSON.parse(readFileSync(join(pluginDir, ".claude-plugin", "plugin.json"), "utf-8"));
+		if (pj.name) return pj.name;
+	} catch {}
+	return basename(resolve(pluginDir));
+}
+/**
+* Discover agent definitions by scanning:
+*   1. CLAUDE_PLUGIN_ROOT/agents/*.md  (own plugin)
+*   2. CLAUDE_PLUGIN_ROOT/../* /agents/*.md  (sibling plugins)
+*/
+function discoverAgents() {
+	const agents = /* @__PURE__ */ new Map();
+	const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
+	if (!pluginRoot) {
+		log("No CLAUDE_PLUGIN_ROOT set — skipping agent discovery");
+		return agents;
+	}
+	const scanTargets = [];
+	const ownAgentsDir = join(pluginRoot, "agents");
+	if (existsSync(ownAgentsDir) && statSync(ownAgentsDir).isDirectory()) scanTargets.push([ownAgentsDir, getPluginNamespace(pluginRoot)]);
+	const pluginsDir = resolve(pluginRoot, "..");
+	try {
+		for (const sibling of readdirSync(pluginsDir)) {
+			const siblingPath = join(pluginsDir, sibling);
+			if (resolve(siblingPath) === resolve(pluginRoot)) continue;
+			const siblingAgentsDir = join(siblingPath, "agents");
+			if (existsSync(siblingAgentsDir) && statSync(siblingAgentsDir).isDirectory()) scanTargets.push([siblingAgentsDir, getPluginNamespace(siblingPath)]);
+		}
+	} catch (err) {
+		log(`Error scanning sibling plugins: ${err}`);
+	}
+	for (const [dir, namespace] of scanTargets) try {
+		for (const file of readdirSync(dir).filter((f) => f.endsWith(".md"))) try {
+			const agent = parseAgentFile(readFileSync(join(dir, file), "utf-8"), namespace);
+			if (agent) {
+				agents.set(agent.qualifiedName, agent);
+				log(`Discovered agent: ${agent.qualifiedName} (${join(dir, file)})`);
+			}
+		} catch (err) {
+			log(`Error parsing agent file ${join(dir, file)}: ${err}`);
+		}
+	} catch (err) {
+		log(`Error scanning agent directory ${dir}: ${err}`);
+	}
+	return agents;
+}
+/**
+* Compute effective disallowed tools for an agent definition.
+* Uses explicit `disallowedTools` and supplements by blocking write tools
+* that are absent from the `tools` allowlist.
+*/
+function computeEffectiveDisallowedTools(agent) {
+	const disallowed = new Set(agent.disallowedTools ?? []);
+	if (agent.tools?.length) {
+		for (const tool of WRITE_TOOLS) if (!agent.tools.includes(tool)) disallowed.add(tool);
+	}
+	return [...disallowed];
+}
+const agentDefinitions = discoverAgents();
+log(`Discovered ${agentDefinitions.size} agent definition(s): ${[...agentDefinitions.keys()].join(", ") || "(none)"}`);
+function buildToolDefinition() {
+	const properties = {
+		description: {
+			type: "string",
+			description: "A short (3-5 word) description of the task"
+		},
+		prompt: {
+			type: "string",
+			description: "The task for the agent to perform"
+		},
+		model: {
+			type: "string",
+			enum: [
+				"sonnet",
+				"opus",
+				"haiku"
+			],
+			default: "sonnet",
+			description: "Model to use (default: sonnet)"
+		},
+		workingDir: {
+			type: "string",
+			description: "Working directory (defaults to current)"
+		},
+		timeout: {
+			type: "number",
+			default: 6e5,
+			description: "Timeout in ms (default: 10 minutes)"
+		},
+		allowWrite: {
+			type: "boolean",
+			default: false,
+			description: "Enable file write permissions (--dangerously-skip-permissions)"
+		},
+		permissionMode: {
+			type: "string",
+			enum: [
+				"default",
+				"acceptEdits",
+				"bypassPermissions",
+				"plan"
+			],
+			description: "Permission mode for the spawned subagent"
+		},
+		systemPrompt: {
+			type: "string",
+			description: "Custom system prompt for the spawned subagent"
+		},
+		appendSystemPrompt: {
+			type: "string",
+			description: "Append to default system prompt"
+		},
+		allowedTools: {
+			type: "array",
+			items: { type: "string" },
+			description: "List of allowed tools (e.g., ['Bash', 'Read', 'Edit'])"
+		},
+		disallowedTools: {
+			type: "array",
+			items: { type: "string" },
+			description: "List of disallowed tools"
+		},
+		maxBudgetUsd: {
+			type: "number",
+			description: "Maximum API cost budget in USD"
+		},
+		addDirs: {
+			type: "array",
+			items: { type: "string" },
+			description: "Additional directories to allow access to"
+		}
+	};
+	if (agentDefinitions.size > 0) {
+		const agentList = [...agentDefinitions.entries()].map(([k, v]) => `"${k}" — ${v.description}`).join("\n");
+		properties.subagent_type = {
+			type: "string",
+			enum: [...agentDefinitions.keys()],
+			description: `Specialized agent type. Applies the agent's system prompt, tool restrictions, and model from its definition file. Explicit parameters override agent defaults.\n\nAvailable agents:\n${agentList}`
+		};
+	}
+	return {
+		name: "Task",
+		description: `Launch a new agent that has access to all tools including Task. When you are searching for a keyword or file and are not confident that you will find the right match on the first try, use the Agent tool to perform the search for you. For example:
 
 - If you are searching for a keyword like "config" or "logger", the Agent tool is appropriate
 - If you want to read a specific file path, use the Read or Glob tool instead of the Agent tool, to find the match more quickly
@@ -13281,82 +13470,13 @@ Usage notes:
 3. Each agent invocation is stateless. You will not be able to send additional messages to the agent, nor will the agent be able to communicate with you outside of its final report. Therefore, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
 4. The agent's outputs should generally be trusted
 5. IMPORTANT: The spawned agent runs as a fresh process with its own 200k context window and CAN use the Task tool.`,
-	inputSchema: {
-		type: "object",
-		properties: {
-			description: {
-				type: "string",
-				description: "A short (3-5 word) description of the task"
-			},
-			prompt: {
-				type: "string",
-				description: "The task for the agent to perform"
-			},
-			model: {
-				type: "string",
-				enum: [
-					"sonnet",
-					"opus",
-					"haiku"
-				],
-				default: "sonnet",
-				description: "Model to use (default: sonnet)"
-			},
-			workingDir: {
-				type: "string",
-				description: "Working directory (defaults to current)"
-			},
-			timeout: {
-				type: "number",
-				default: 6e5,
-				description: "Timeout in ms (default: 10 minutes)"
-			},
-			allowWrite: {
-				type: "boolean",
-				default: false,
-				description: "Enable file write permissions (--dangerously-skip-permissions)"
-			},
-			permissionMode: {
-				type: "string",
-				enum: [
-					"default",
-					"acceptEdits",
-					"bypassPermissions",
-					"plan"
-				],
-				description: "Permission mode for the spawned subagent"
-			},
-			systemPrompt: {
-				type: "string",
-				description: "Custom system prompt for the spawned subagent"
-			},
-			appendSystemPrompt: {
-				type: "string",
-				description: "Append to default system prompt"
-			},
-			allowedTools: {
-				type: "array",
-				items: { type: "string" },
-				description: "List of allowed tools (e.g., ['Bash', 'Read', 'Edit'])"
-			},
-			disallowedTools: {
-				type: "array",
-				items: { type: "string" },
-				description: "List of disallowed tools"
-			},
-			maxBudgetUsd: {
-				type: "number",
-				description: "Maximum API cost budget in USD"
-			},
-			addDirs: {
-				type: "array",
-				items: { type: "string" },
-				description: "Additional directories to allow access to"
-			}
-		},
-		required: ["prompt"]
-	}
-};
+		inputSchema: {
+			type: "object",
+			properties,
+			required: ["prompt"]
+		}
+	};
+}
 const server = new Server({
 	name: "fallback-agent",
 	version: "2.0.0"
@@ -13408,7 +13528,7 @@ async function runTask(input, progressToken) {
 	args.push("--no-session-persistence");
 	const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
 	if (pluginRoot) args.push("--plugin-dir", pluginRoot);
-	return new Promise((resolve) => {
+	return new Promise((resolve$1) => {
 		let lastResult = null;
 		let timedOut = false;
 		const processId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -13516,7 +13636,7 @@ async function runTask(input, progressToken) {
 			log(`[${processId}] Duration: ${duration$2}ms, timedOut: ${timedOut}, hasResult: ${!!lastResult}`);
 			if (timedOut) {
 				log(`[${processId}] Resolving with timeout error`);
-				resolve({
+				resolve$1({
 					success: false,
 					error: `Task timed out after ${timeout}ms`
 				});
@@ -13533,7 +13653,7 @@ async function runTask(input, progressToken) {
 						message: `Done (${state.toolUseCount} tool uses, ${duration$2}ms, $${lastResult.total_cost_usd?.toFixed(4) ?? "?"})`
 					}
 				});
-				resolve({
+				resolve$1({
 					success: !lastResult.is_error,
 					result: lastResult.result,
 					usage: lastResult.usage,
@@ -13542,7 +13662,7 @@ async function runTask(input, progressToken) {
 					tokens: totalTokens,
 					toolOutputs: state.toolOutputs
 				});
-			} else if (code === 0) resolve({
+			} else if (code === 0) resolve$1({
 				success: true,
 				result: "(completed with no output)",
 				toolUseCount: state.toolUseCount,
@@ -13550,7 +13670,7 @@ async function runTask(input, progressToken) {
 				tokens: 0,
 				toolOutputs: state.toolOutputs
 			});
-			else resolve({
+			else resolve$1({
 				success: false,
 				error: stderr.trim() || `Process exited with code ${code}`
 			});
@@ -13558,14 +13678,14 @@ async function runTask(input, progressToken) {
 		proc.on("error", (err) => {
 			clearTimeout(timeoutId);
 			activeProcesses.delete(processId);
-			resolve({
+			resolve$1({
 				success: false,
 				error: `Failed to spawn: ${err.message}`
 			});
 		});
 	});
 }
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [NESTED_TASK_TOOL] }));
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [buildToolDefinition()] }));
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	log(`Tool called: ${request.params.name}`);
 	if (request.params.name !== "Task") return {
@@ -13586,6 +13706,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 		}],
 		isError: true
 	};
+	if (input.subagent_type) {
+		const agent = agentDefinitions.get(input.subagent_type);
+		if (!agent) {
+			const available = [...agentDefinitions.keys()].join(", ") || "(none discovered)";
+			return {
+				content: [{
+					type: "text",
+					text: `Error: unknown subagent_type "${input.subagent_type}". Available: ${available}`
+				}],
+				isError: true
+			};
+		}
+		log(`Applying agent definition: ${agent.qualifiedName} (model=${agent.model})`);
+		if (!input.systemPrompt && agent.systemPrompt) input.systemPrompt = agent.systemPrompt;
+		if (!input.model && agent.model) input.model = agent.model;
+		if (!input.disallowedTools) {
+			const effective = computeEffectiveDisallowedTools(agent);
+			if (effective.length > 0) {
+				input.disallowedTools = effective;
+				log(`Applied disallowed tools: ${effective.join(", ")}`);
+			}
+		}
+	}
 	const result = await runTask(input, progressToken);
 	log(`Result: success=${result.success}, error=${result.error}`);
 	if (result.success) {
