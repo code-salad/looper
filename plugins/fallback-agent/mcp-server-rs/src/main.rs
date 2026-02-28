@@ -417,8 +417,17 @@ async fn main() {
 
     // Create stdio transport and serve
     let transport = rmcp::transport::stdio();
-    if let Err(e) = server.serve(transport).await {
-        eprintln!("Server error: {}", e);
+    let service = match server.serve(transport).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Server error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Keep the server alive until the client disconnects
+    if let Err(e) = service.waiting().await {
+        eprintln!("Service error: {}", e);
         std::process::exit(1);
     }
 }
