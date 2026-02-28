@@ -13241,12 +13241,12 @@ var StdioServerTransport = class {
 * - Uses `claude -p --output-format stream-json --verbose` for real-time streaming
 * - Emits MCP progress notifications for each tool use
 * - Supports abort via SIGTERM (graceful) and SIGKILL (forced)
-* - Passes through all relevant CLI options to match native Task tool behavior
+* - API aligned with built-in Agent tool (minus team features)
 *
 * Architecture:
 * ```
 * Main Plugin Session
-*     └── MCP Tool: spawn_subagent({prompt, progressToken})
+*     └── MCP Tool: Task({prompt, progressToken})
 *             │
 *             ├── Spawns: claude -p --output-format stream-json --verbose
 *             │
@@ -13419,13 +13419,17 @@ const agentDefinitions = discoverAgents();
 log(`Discovered ${agentDefinitions.size} agent definition(s): ${[...agentDefinitions.keys()].join(", ") || "(none)"}`);
 function buildToolDefinition() {
 	const properties = {
+		prompt: {
+			type: "string",
+			description: "The task for the agent to perform"
+		},
 		description: {
 			type: "string",
 			description: "A short (3-5 word) description of the task"
 		},
-		prompt: {
+		name: {
 			type: "string",
-			description: "The task for the agent to perform"
+			description: "Agent name for identification in logs and results"
 		},
 		model: {
 			type: "string",
@@ -13437,56 +13441,34 @@ function buildToolDefinition() {
 			default: "sonnet",
 			description: "Model to use (default: sonnet)"
 		},
-		workingDir: {
-			type: "string",
-			description: "Working directory (defaults to current)"
-		},
-		timeout: {
-			type: "number",
-			default: 6e5,
-			description: "Timeout in ms (default: 10 minutes)"
-		},
-		allowWrite: {
-			type: "boolean",
-			default: false,
-			description: "Enable file write permissions (--dangerously-skip-permissions)"
-		},
-		permissionMode: {
+		mode: {
 			type: "string",
 			enum: [
 				"default",
 				"acceptEdits",
 				"bypassPermissions",
+				"dontAsk",
 				"plan"
 			],
 			description: "Permission mode for the spawned subagent"
 		},
-		systemPrompt: {
+		isolation: {
 			type: "string",
-			description: "Custom system prompt for the spawned subagent"
+			enum: ["worktree"],
+			description: "When \"worktree\": run the agent in a temporary git worktree"
 		},
-		appendSystemPrompt: {
-			type: "string",
-			description: "Append to default system prompt"
-		},
-		allowedTools: {
-			type: "array",
-			items: { type: "string" },
-			description: "List of allowed tools (e.g., ['Bash', 'Read', 'Edit'])"
-		},
-		disallowedTools: {
-			type: "array",
-			items: { type: "string" },
-			description: "List of disallowed tools"
-		},
-		maxBudgetUsd: {
+		max_turns: {
 			type: "number",
-			description: "Maximum API cost budget in USD"
+			description: "Maximum number of agentic turns (API round-trips) before stopping",
+			exclusiveMinimum: 0
 		},
-		addDirs: {
-			type: "array",
-			items: { type: "string" },
-			description: "Additional directories to allow access to"
+		resume: {
+			type: "string",
+			description: "Session ID to resume from a previous invocation"
+		},
+		run_in_background: {
+			type: "boolean",
+			description: "Run the task in the background; returns immediately with a taskId. Use TaskStatus to check progress."
 		}
 	};
 	if (agentDefinitions.size > 0) {
@@ -13518,9 +13500,24 @@ Usage notes:
 		}
 	};
 }
+function buildTaskStatusDefinition() {
+	return {
+		name: "TaskStatus",
+		description: "Check the status of a background task started with run_in_background: true. Returns the current status and, once completed, the full result.",
+		inputSchema: {
+			type: "object",
+			properties: { taskId: {
+				type: "string",
+				description: "The task ID returned when the background task was started"
+			} },
+			required: ["taskId"]
+		}
+	};
+}
+const backgroundTasks = /* @__PURE__ */ new Map();
 const server = new Server({
 	name: "fallback-agent",
-	version: "2.0.0"
+	version: "3.0.0"
 }, { capabilities: { tools: {} } });
 const activeProcesses = /* @__PURE__ */ new Map();
 /**
@@ -13539,12 +13536,32 @@ function formatDuration(ms) {
 	return `${(ms / 1e3).toFixed(0)}s`;
 }
 /**
-* Spawns a nested task (fresh Claude process) with streaming output
+* Format a TaskResult into display text.
 */
-async function runTask(input, progressToken) {
-	const { prompt, model = "sonnet", workingDir = process.cwd(), timeout = 6e5, allowWrite = false, permissionMode, systemPrompt, appendSystemPrompt, allowedTools, disallowedTools, maxBudgetUsd, addDirs } = input;
+function formatTaskResult(result) {
+	if (!result.success) {
+		const parts$1 = [`Error: ${result.error}`];
+		if (result.session_id) parts$1.push(`session_id: ${result.session_id}`);
+		return parts$1.join("\n");
+	}
+	const summary = `Done (${result.toolUseCount === 1 ? "1 tool use" : `${result.toolUseCount ?? 0} tool uses`} · ${formatNumber(result.tokens ?? 0) + " tokens"} · ${formatDuration(result.duration ?? 0)})`;
+	let toolOutputsText = "";
+	if (result.toolOutputs && result.toolOutputs.length > 0) toolOutputsText = result.toolOutputs.map((to) => `[${to.tool}]\n${to.output}`).join("\n\n");
+	const parts = [];
+	if (toolOutputsText) parts.push(toolOutputsText);
+	if (result.result) parts.push(result.result);
+	if (result.session_id) parts.push(`session_id: ${result.session_id}`);
+	parts.push(summary);
+	return parts.join("\n\n");
+}
+/**
+* Spawns a nested task (fresh Claude process) with streaming output.
+*/
+async function runTask(config$1, progressToken) {
+	const { prompt, name: agentName, model, mode, isolation, resume, max_turns, systemPrompt, disallowedTools, workingDir, timeout } = config$1;
 	const state = {
 		toolUseCount: 0,
+		assistantTurnCount: 0,
 		currentToolUse: null,
 		startTime: Date.now(),
 		toolOutputs: []
@@ -13558,24 +13575,23 @@ async function runTask(input, progressToken) {
 		"--model",
 		model
 	];
-	if (allowWrite) args.push("--dangerously-skip-permissions");
-	else if (permissionMode) args.push("--permission-mode", permissionMode);
+	if (mode) args.push("--permission-mode", mode);
+	if (isolation === "worktree") args.push("--worktree");
+	if (resume) args.push("--resume", resume);
+	else args.push("--no-session-persistence");
 	if (systemPrompt) args.push("--system-prompt", systemPrompt);
-	if (appendSystemPrompt) args.push("--append-system-prompt", appendSystemPrompt);
-	if (allowedTools && allowedTools.length > 0) args.push("--allowed-tools", ...allowedTools);
 	if (disallowedTools && disallowedTools.length > 0) args.push("--disallowed-tools", ...disallowedTools);
-	if (maxBudgetUsd !== void 0) args.push("--max-budget-usd", String(maxBudgetUsd));
-	if (addDirs && addDirs.length > 0) args.push("--add-dir", ...addDirs);
-	args.push("--no-session-persistence");
 	const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
 	if (pluginRoot) args.push("--plugin-dir", pluginRoot);
-	return new Promise((resolve$1) => {
+	return new Promise((resolvePromise) => {
 		let lastResult = null;
 		let timedOut = false;
+		let maxTurnsReached = false;
 		const processId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-		log(`[${processId}] CLAUDE_PLUGIN_ROOT=${process.env.CLAUDE_PLUGIN_ROOT || "(not set)"}`);
-		log(`[${processId}] Spawning claude with args: ${JSON.stringify(args)}`);
-		log(`[${processId}] Working dir: ${workingDir}`);
+		const label = agentName || processId;
+		log(`[${label}] CLAUDE_PLUGIN_ROOT=${process.env.CLAUDE_PLUGIN_ROOT || "(not set)"}`);
+		log(`[${label}] Spawning claude with args: ${JSON.stringify(args)}`);
+		log(`[${label}] Working dir: ${workingDir}`);
 		const proc = spawn("claude", args, {
 			cwd: workingDir,
 			env: process.env,
@@ -13585,9 +13601,9 @@ async function runTask(input, progressToken) {
 				"pipe"
 			]
 		});
-		log(`[${processId}] Process spawned with PID: ${proc.pid}`);
+		log(`[${label}] Process spawned with PID: ${proc.pid}`);
 		proc.stdin?.end();
-		log(`[${processId}] stdin closed`);
+		log(`[${label}] stdin closed`);
 		activeProcesses.set(processId, proc);
 		const timeoutId = setTimeout(() => {
 			timedOut = true;
@@ -13597,12 +13613,13 @@ async function runTask(input, progressToken) {
 			}, 5e3);
 		}, timeout);
 		createInterface({ input: proc.stdout }).on("line", (line) => {
-			log(`[${processId}] STDOUT line: ${line.slice(0, 200)}${line.length > 200 ? "..." : ""}`);
+			log(`[${label}] STDOUT line: ${line.slice(0, 200)}${line.length > 200 ? "..." : ""}`);
 			if (!line.trim()) return;
 			try {
 				const msg = JSON.parse(line);
 				switch (msg.type) {
 					case "system":
+						if (msg.session_id) state.sessionId = msg.session_id;
 						if (progressToken !== void 0) server.notification({
 							method: "notifications/progress",
 							params: {
@@ -13613,6 +13630,13 @@ async function runTask(input, progressToken) {
 						});
 						break;
 					case "assistant":
+						state.assistantTurnCount++;
+						if (max_turns && state.assistantTurnCount > max_turns) {
+							log(`[${label}] max_turns (${max_turns}) exceeded at turn ${state.assistantTurnCount}, stopping`);
+							maxTurnsReached = true;
+							proc.kill("SIGTERM");
+							break;
+						}
 						if (msg.message?.content) {
 							for (const block of msg.message.content) if (block.type === "tool_use" && block.name) {
 								state.toolUseCount++;
@@ -13667,19 +13691,34 @@ async function runTask(input, progressToken) {
 		proc.stderr?.on("data", (data) => {
 			const chunk = data.toString();
 			stderr += chunk;
-			log(`[${processId}] STDERR: ${chunk}`);
+			log(`[${label}] STDERR: ${chunk}`);
 		});
 		proc.on("close", (code) => {
-			log(`[${processId}] Process closed with code: ${code}`);
+			log(`[${label}] Process closed with code: ${code}`);
 			clearTimeout(timeoutId);
 			activeProcesses.delete(processId);
 			const duration$2 = Date.now() - state.startTime;
-			log(`[${processId}] Duration: ${duration$2}ms, timedOut: ${timedOut}, hasResult: ${!!lastResult}`);
+			log(`[${label}] Duration: ${duration$2}ms, timedOut: ${timedOut}, maxTurnsReached: ${maxTurnsReached}, hasResult: ${!!lastResult}`);
 			if (timedOut) {
-				log(`[${processId}] Resolving with timeout error`);
-				resolve$1({
+				log(`[${label}] Resolving with timeout error`);
+				resolvePromise({
 					success: false,
-					error: `Task timed out after ${timeout}ms`
+					error: `Task timed out after ${timeout}ms`,
+					session_id: state.sessionId
+				});
+				return;
+			}
+			if (maxTurnsReached) {
+				const totalTokens = lastResult?.usage ? (lastResult.usage.cache_creation_input_tokens ?? 0) + (lastResult.usage.cache_read_input_tokens ?? 0) + lastResult.usage.input_tokens + lastResult.usage.output_tokens : 0;
+				resolvePromise({
+					success: true,
+					result: lastResult?.result || `(stopped after ${max_turns} turns)`,
+					session_id: state.sessionId,
+					usage: lastResult?.usage,
+					toolUseCount: state.toolUseCount,
+					duration: duration$2,
+					tokens: totalTokens,
+					toolOutputs: state.toolOutputs
 				});
 				return;
 			}
@@ -13694,41 +13733,76 @@ async function runTask(input, progressToken) {
 						message: `Done (${state.toolUseCount} tool uses, ${duration$2}ms, $${lastResult.total_cost_usd?.toFixed(4) ?? "?"})`
 					}
 				});
-				resolve$1({
+				resolvePromise({
 					success: !lastResult.is_error,
 					result: lastResult.result,
+					session_id: state.sessionId,
 					usage: lastResult.usage,
 					toolUseCount: state.toolUseCount,
 					duration: duration$2,
 					tokens: totalTokens,
 					toolOutputs: state.toolOutputs
 				});
-			} else if (code === 0) resolve$1({
+			} else if (code === 0) resolvePromise({
 				success: true,
 				result: "(completed with no output)",
+				session_id: state.sessionId,
 				toolUseCount: state.toolUseCount,
 				duration: duration$2,
 				tokens: 0,
 				toolOutputs: state.toolOutputs
 			});
-			else resolve$1({
+			else resolvePromise({
 				success: false,
-				error: stderr.trim() || `Process exited with code ${code}`
+				error: stderr.trim() || `Process exited with code ${code}`,
+				session_id: state.sessionId
 			});
 		});
 		proc.on("error", (err) => {
 			clearTimeout(timeoutId);
 			activeProcesses.delete(processId);
-			resolve$1({
+			resolvePromise({
 				success: false,
 				error: `Failed to spawn: ${err.message}`
 			});
 		});
 	});
 }
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [buildToolDefinition()] }));
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [buildToolDefinition(), buildTaskStatusDefinition()] }));
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	log(`Tool called: ${request.params.name}`);
+	if (request.params.name === "TaskStatus") {
+		const taskId = request.params.arguments?.taskId;
+		if (!taskId) return {
+			content: [{
+				type: "text",
+				text: "Error: taskId is required"
+			}],
+			isError: true
+		};
+		const entry = backgroundTasks.get(taskId);
+		if (!entry) return {
+			content: [{
+				type: "text",
+				text: `Error: unknown taskId "${taskId}"`
+			}],
+			isError: true
+		};
+		if (entry.status === "running") return { content: [{
+			type: "text",
+			text: JSON.stringify({
+				taskId,
+				status: "running"
+			})
+		}] };
+		return {
+			content: [{
+				type: "text",
+				text: formatTaskResult(entry.result)
+			}],
+			isError: !entry.result.success
+		};
+	}
 	if (request.params.name !== "Task") return {
 		content: [{
 			type: "text",
@@ -13739,13 +13813,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	const input = request.params.arguments;
 	const progressToken = request.params._meta?.progressToken;
 	log(`Prompt: ${input.prompt?.slice(0, 100)}...`);
-	log(`Model: ${input.model}, timeout: ${input.timeout}, allowWrite: ${input.allowWrite}`);
+	log(`Model: ${input.model}, mode: ${input.mode}, name: ${input.name}`);
 	if (!input.prompt) return {
 		content: [{
 			type: "text",
 			text: "Error: prompt is required"
 		}],
 		isError: true
+	};
+	const config$1 = {
+		prompt: input.prompt,
+		name: input.name,
+		model: input.model || "sonnet",
+		mode: input.mode,
+		isolation: input.isolation,
+		resume: input.resume,
+		max_turns: input.max_turns,
+		workingDir: process.cwd(),
+		timeout: 6e5
 	};
 	if (input.subagent_type) {
 		const agent = agentDefinitions.get(input.subagent_type);
@@ -13760,53 +13845,64 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			};
 		}
 		log(`Applying agent definition: ${agent.qualifiedName} (model=${agent.model})`);
-		if (!input.systemPrompt && agent.systemPrompt) input.systemPrompt = agent.systemPrompt;
-		if (!input.model && agent.model) input.model = agent.model;
-		if (!input.disallowedTools) {
-			const effective = computeEffectiveDisallowedTools(agent);
-			if (effective.length > 0) {
-				input.disallowedTools = effective;
-				log(`Applied disallowed tools: ${effective.join(", ")}`);
-			}
+		if (agent.systemPrompt) config$1.systemPrompt = agent.systemPrompt;
+		if (!input.model && agent.model) config$1.model = agent.model;
+		const effective = computeEffectiveDisallowedTools(agent);
+		if (effective.length > 0) {
+			config$1.disallowedTools = effective;
+			log(`Applied disallowed tools: ${effective.join(", ")}`);
 		}
 	}
-	const result = await runTask(input, progressToken);
-	log(`Result: success=${result.success}, error=${result.error}`);
-	if (result.success) {
-		const summary = `Done (${result.toolUseCount === 1 ? "1 tool use" : `${result.toolUseCount ?? 0} tool uses`} · ${formatNumber(result.tokens ?? 0) + " tokens"} · ${formatDuration(result.duration ?? 0)})`;
-		let toolOutputsText = "";
-		if (result.toolOutputs && result.toolOutputs.length > 0) toolOutputsText = result.toolOutputs.map((to) => `[${to.tool}]\n${to.output}`).join("\n\n");
-		const parts = [];
-		if (toolOutputsText) parts.push(toolOutputsText);
-		if (result.result) parts.push(result.result);
-		parts.push(summary);
+	if (input.run_in_background) {
+		const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const entry = {
+			taskId,
+			status: "running"
+		};
+		backgroundTasks.set(taskId, entry);
+		runTask(config$1, progressToken).then((result$1) => {
+			entry.status = result$1.success ? "completed" : "error";
+			entry.result = result$1;
+		}).catch((err) => {
+			entry.status = "error";
+			entry.result = {
+				success: false,
+				error: String(err)
+			};
+		});
 		return { content: [{
 			type: "text",
-			text: parts.join("\n\n")
+			text: JSON.stringify({
+				taskId,
+				status: "running"
+			})
 		}] };
-	} else return {
+	}
+	const result = await runTask(config$1, progressToken);
+	log(`Result: success=${result.success}, error=${result.error}`);
+	return {
 		content: [{
 			type: "text",
-			text: `Error: ${result.error}`
+			text: formatTaskResult(result)
 		}],
-		isError: true
+		isError: !result.success ? true : void 0
 	};
 });
 process.on("SIGTERM", () => {
-	for (const [id, proc] of activeProcesses) proc.kill("SIGTERM");
+	for (const [, proc] of activeProcesses) proc.kill("SIGTERM");
 	setTimeout(() => {
-		for (const [id, proc] of activeProcesses) if (!proc.killed) proc.kill("SIGKILL");
+		for (const [, proc] of activeProcesses) if (!proc.killed) proc.kill("SIGKILL");
 		process.exit(0);
 	}, 5e3);
 });
 process.on("SIGINT", () => {
-	for (const [id, proc] of activeProcesses) proc.kill("SIGINT");
+	for (const [, proc] of activeProcesses) proc.kill("SIGINT");
 	process.exit(0);
 });
 async function main() {
 	const transport = new StdioServerTransport();
 	await server.connect(transport);
-	console.error("Fallback Agent MCP Server v2.0 (streaming) running on stdio");
+	console.error("Fallback Agent MCP Server v3.0 (streaming) running on stdio");
 }
 main().catch((error) => {
 	console.error("Fatal error:", error);
