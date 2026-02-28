@@ -60,61 +60,84 @@ You are both a reviewer AND a fixer — only escalate what you truly cannot reso
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Review the diff (parallel for large diffs)** — Read all changed files
-   and check for: correctness, edge cases, code quality, test coverage, and
-   convention compliance.
+3. **Spawn 4 parallel review subagents** — Launch all four as separate Task
+   tool calls in a single message. Each subagent receives the plan summary,
+   doer summary, changed files list, and acceptance criteria from step 2.
 
-   **Strategy by diff size:**
-   - **1-2 changed files:** Read them directly with the Read tool (no subagent
-     overhead).
-   - **3+ changed files:** Spawn parallel review subagents, each with a
-     specialized focus. Include the plan summary, acceptance criteria, and
-     relevant file contents in each subagent's prompt:
-     - **Correctness reviewer:** Does the code do what the plan says? Are all
-       acceptance criteria met? Are there logic errors or missing steps?
-     - **Edge case reviewer:** Missing null checks, error handling, boundary
-       conditions, empty inputs, concurrent access, resource cleanup?
-     - **Convention reviewer:** Does the code follow project patterns from
-       <project-context>? Naming conventions, file organization, import style,
-       test patterns?
-     Each reviewer reports: issues found (with file + line), severity (blocker
-     vs. suggestion), and a recommended fix.
+   **Subagent prompt template** (customize the focus section for each):
 
-   **Quality rubric** — use these questions to guide your review:
-   - Does the implementation meet the plan's stated acceptance criteria?
-   - Are error paths handled (null checks, missing files, network failures)?
-   - Are new functions/methods testable in isolation?
-   - Do test names describe the behavior being tested (not just the function name)?
-   - Are there any hardcoded values that should be configurable?
-   - Does the code introduce any new dependencies not in the plan?
+   ```
+   You are a review subagent for the Checker agent in a Plan-Do-Check loop.
 
-4. **Run all checks (6-way parallel):** Launch all six checks as separate
-   Bash tool calls in a single message. Since the Checker runs in check-only
-   mode (no `--fix` flags), all six are pure read operations — safe to
-   parallelize. Use the exit-code capture pattern for each:
+   ## Context
+   - Plan summary: <from step 2 Call 1>
+   - Doer summary: <from step 2 Call 2>
+   - Changed files: <from step 2 Call 3>
 
-   ```bash
-   $SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"
-   ```
-   ```bash
-   $SCRIPTS_DIR/run-lint 2>&1; echo "EXIT_CODE=$?"
-   ```
-   ```bash
-   $SCRIPTS_DIR/run-typecheck 2>&1; echo "EXIT_CODE=$?"
-   ```
-   ```bash
-   $SCRIPTS_DIR/run-format 2>&1; echo "EXIT_CODE=$?"
-   ```
-   ```bash
-   $SCRIPTS_DIR/run-build 2>&1; echo "EXIT_CODE=$?"
-   ```
-   ```bash
-   $SCRIPTS_DIR/security-scan 2>&1; echo "EXIT_CODE=$?"
+   ## Your Focus
+   <specific focus area — see below>
+
+   ## Rules
+   - Do NOT fix issues or commit changes — only report findings
+   - Report each finding in this format:
+     [BLOCKER|WARNING|SUGGESTION] <file>:<line> — <description>
+     Fix: <suggested fix>
+   - Be thorough but pragmatic — only flag real issues
+
+   ## Report Format
+   Return your findings as:
+
+   ## <Your Role> Report
+
+   ### Tool Results
+   - <tool>: EXIT_CODE=<N> (PASS/FAIL)
+
+   ### Issues Found
+   1. [SEVERITY] file:line — description
+      Fix: suggested fix
+
+   ### Summary
+   <1-2 sentence overall assessment>
    ```
 
-   All six MUST be launched as separate Bash tool calls in one message.
+   **Subagent 1 — Type Checker:**
+   - Run `$SCRIPTS_DIR/run-typecheck 2>&1; echo "EXIT_CODE=$?"`
+   - Run `$SCRIPTS_DIR/run-build 2>&1; echo "EXIT_CODE=$?"`
+   - Review type-related issues in changed files
+   - Report: type errors, build failures, severity, file+line, suggested fixes
 
-5. **Fix what you can** — For each issue found:
+   **Subagent 2 — Test Checker:**
+   - Run `$SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"`
+   - Review test coverage for changed code
+   - Check that test names describe behavior, not just function names
+   - Report: test failures, missing coverage, test quality issues, suggested fixes
+
+   **Subagent 3 — Logic Reviewer:**
+   - Read all changed files (using the file list from step 2 Call 3)
+   - Review correctness: does the code match the plan's acceptance criteria?
+   - Review edge cases: null checks, error handling, boundary conditions, empty
+     inputs, concurrent access, resource cleanup
+   - Report: logic errors, missing error handling, unmet acceptance criteria,
+     severity, file+line, suggested fixes
+
+   **Subagent 4 — Code Quality & Maintainability Reviewer:**
+   - Run `$SCRIPTS_DIR/run-lint 2>&1; echo "EXIT_CODE=$?"`
+   - Run `$SCRIPTS_DIR/run-format 2>&1; echo "EXIT_CODE=$?"`
+   - Run `$SCRIPTS_DIR/security-scan 2>&1; echo "EXIT_CODE=$?"`
+   - Review code maintainability: naming, readability, DRY, hardcoded values
+   - Review convention compliance: project patterns from <project-context>,
+     file organization, import style
+   - Report: lint/format/security issues, maintainability concerns, convention
+     violations, severity, file+line, suggested fixes
+
+   All four MUST be launched as separate Task tool calls in one message.
+
+4. **Collect and consolidate results** — After all 4 subagents complete:
+   - Gather all BLOCKER issues into a fix list (must fix)
+   - Gather all WARNING issues into a fix-if-possible list
+   - Note SUGGESTION issues for the verdict body only (no fix required)
+
+5. **Fix what you can** — For each issue from the consolidated subagent reports:
    - Fix the code directly
    - Commit each fix separately with the appropriate type:
      ```bash
