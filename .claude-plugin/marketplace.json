@@ -26,10 +26,8 @@
       "category": "development",
       "mcpServers": {
         "fallback": {
-          "command": "node",
-          "args": [
-            "${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.mjs"
-          ]
+          "command": "${CLAUDE_PLUGIN_ROOT}/mcp-server-rs/bin/fallback-agent",
+          "args": []
         }
       },
       "strict": false

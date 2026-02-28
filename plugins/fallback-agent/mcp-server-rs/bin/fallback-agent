@@ -1,0 +1,23 @@
+#!/bin/sh
+# Launcher: picks the prebuilt Rust binary for the current platform,
+# falls back to the Node.js version if no binary exists.
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ARCH="$(uname -m)"
+OS="$(uname -s)"
+
+case "$OS" in
+  Linux)  os="linux"  ;;
+  Darwin) os="darwin" ;;
+  *)      os="$OS"    ;;
+esac
+
+BIN="$SCRIPT_DIR/fallback-agent-${ARCH}-${os}"
+
+if [ -x "$BIN" ]; then
+  exec "$BIN" "$@"
+else
+  # Fallback to Node.js version
+  exec node "$PLUGIN_ROOT/mcp-server/dist/index.mjs" "$@"
+fi
