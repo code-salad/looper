@@ -8,7 +8,7 @@
     {
       "name": "looper",
       "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
-      "version": "0.15.2",
+      "version": "0.15.3",
       "author": {
         "name": "vikyw89"
       },
@@ -18,7 +18,7 @@
     {
       "name": "fallback-agent",
       "description": "Nested subagent — spawns fresh Claude processes with full tool access for unlimited nesting",
-      "version": "0.15.2",
+      "version": "0.15.3",
       "author": {
         "name": "vikyw89"
       },
