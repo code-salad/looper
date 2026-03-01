@@ -357,11 +357,7 @@ function buildToolDefinition(): Tool {
 
   return {
     name: "Task",
-    description: `Launch a new agent that has access to all tools including Task. When you are searching for a keyword or file and are not confident that you will find the right match on the first try, use the Agent tool to perform the search for you. For example:
-
-- If you are searching for a keyword like "config" or "logger", the Agent tool is appropriate
-- If you want to read a specific file path, use the Read or Glob tool instead of the Agent tool, to find the match more quickly
-- If you are searching for a specific class definition like "class Foo", use the Glob tool instead, to find the match more quickly
+    description: `FALLBACK AGENT SPAWNER — Only use this tool from within subagents that do NOT have access to the built-in Agent tool. If you have access to the built-in Agent tool (check your tool list), ALWAYS prefer that instead. This tool exists solely to give nested subagents the ability to spawn further subagents.
 
 Usage notes:
 1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
