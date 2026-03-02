@@ -6,8 +6,8 @@ use serde_json::json;
 
 use crate::types::AgentDefinition;
 
-/// Build the Task tool definition with dynamic subagent_type enum.
-pub fn build_task_tool(agents: &HashMap<String, AgentDefinition>) -> Tool {
+/// Build the AgentFallback tool definition with dynamic subagent_type enum.
+pub fn build_agent_fallback_tool(agents: &HashMap<String, AgentDefinition>) -> Tool {
     let mut properties = serde_json::Map::new();
 
     properties.insert(
@@ -75,7 +75,7 @@ pub fn build_task_tool(agents: &HashMap<String, AgentDefinition>) -> Tool {
         "run_in_background".to_string(),
         json!({
             "type": "boolean",
-            "description": "Run the task in the background; returns immediately with a taskId. Use TaskStatus to check progress."
+            "description": "Run the agent in the background; returns immediately with a taskId. Use AgentFallbackStatus to check progress."
         }),
     );
 
@@ -116,14 +116,14 @@ pub fn build_task_tool(agents: &HashMap<String, AgentDefinition>) -> Tool {
     };
 
     Tool::new(
-        "Task",
-        "FALLBACK AGENT SPAWNER — Only use this tool from within subagents that do NOT have access to the built-in Agent tool. If you have access to the built-in Agent tool (check your tool list), ALWAYS prefer that instead. This tool exists solely to give nested subagents the ability to spawn further subagents.\n\nUsage notes:\n1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses\n2. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.\n3. Each agent invocation is stateless. You will not be able to send additional messages to the agent, nor will the agent be able to communicate with you outside of its final report. Therefore, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.\n4. The agent's outputs should generally be trusted\n5. IMPORTANT: The spawned agent runs as a fresh process with its own 200k context window and CAN use the Task tool.",
+        "AgentFallback",
+        "FALLBACK AGENT SPAWNER — Only use this tool from within subagents that do NOT have access to the built-in Agent tool. If you have access to the built-in Agent tool (check your tool list), ALWAYS prefer that instead. This tool exists solely to give nested subagents the ability to spawn further subagents.\n\nUsage notes:\n1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses\n2. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.\n3. Each agent invocation is stateless. You will not be able to send additional messages to the agent, nor will the agent be able to communicate with you outside of its final report. Therefore, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.\n4. The agent's outputs should generally be trusted\n5. IMPORTANT: The spawned agent runs as a fresh process with its own 200k context window and CAN use the AgentFallback tool.",
         Arc::new(input_schema),
     )
 }
 
-/// Build the TaskStatus tool definition.
-pub fn build_task_status_tool() -> Tool {
+/// Build the AgentFallbackStatus tool definition.
+pub fn build_agent_fallback_status_tool() -> Tool {
     let mut properties = serde_json::Map::new();
     properties.insert(
         "taskId".to_string(),
@@ -145,18 +145,18 @@ pub fn build_task_status_tool() -> Tool {
     };
 
     Tool::new(
-        "TaskStatus",
-        "Check the status of a background task started with run_in_background: true. Returns the current status and, once completed, the full result.",
+        "AgentFallbackStatus",
+        "Check the status of a background agent started with run_in_background: true. Returns the current status and, once completed, the full result.",
         Arc::new(input_schema),
     )
 }
 
-/// Build the ListToolsResult with Task and TaskStatus tools.
+/// Build the ListToolsResult with AgentFallback and AgentFallbackStatus tools.
 pub fn build_list_tools_result(agents: &HashMap<String, AgentDefinition>) -> ListToolsResult {
     ListToolsResult {
         meta: None,
         next_cursor: None,
-        tools: vec![build_task_tool(agents), build_task_status_tool()],
+        tools: vec![build_agent_fallback_tool(agents), build_agent_fallback_status_tool()],
     }
 }
 
@@ -165,10 +165,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_build_task_tool_no_agents() {
+    fn test_build_agent_fallback_tool_no_agents() {
         let agents = HashMap::new();
-        let tool = build_task_tool(&agents);
-        assert_eq!(tool.name, "Task");
+        let tool = build_agent_fallback_tool(&agents);
+        assert_eq!(tool.name, "AgentFallback");
         assert!(tool.description.is_some());
         let schema = tool.schema_as_json_value();
         let props = schema["properties"].as_object().unwrap();
@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_task_tool_with_agents() {
+    fn test_build_agent_fallback_tool_with_agents() {
         let mut agents = HashMap::new();
         agents.insert(
             "looper:planner".to_string(),
@@ -192,7 +192,7 @@ mod tests {
                 system_prompt: "".to_string(),
             },
         );
-        let tool = build_task_tool(&agents);
+        let tool = build_agent_fallback_tool(&agents);
         let schema = tool.schema_as_json_value();
         let props = schema["properties"].as_object().unwrap();
         assert!(props.contains_key("subagent_type"));
@@ -201,9 +201,9 @@ mod tests {
     }
 
     #[test]
-    fn test_build_task_status_tool() {
-        let tool = build_task_status_tool();
-        assert_eq!(tool.name, "TaskStatus");
+    fn test_build_agent_fallback_status_tool() {
+        let tool = build_agent_fallback_status_tool();
+        assert_eq!(tool.name, "AgentFallbackStatus");
         let schema = tool.schema_as_json_value();
         let props = schema["properties"].as_object().unwrap();
         assert!(props.contains_key("taskId"));

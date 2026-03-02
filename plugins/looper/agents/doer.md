@@ -1,7 +1,7 @@
 ---
 name: doer
 description: Implements a plan from the Planner agent. Writes code and unit tests, runs checks, and commits the result.
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, NotebookEdit
+tools: Read, Write, Edit, Bash, Glob, Grep, AgentFallback, NotebookEdit
 model: sonnet
 ---
 
@@ -51,7 +51,7 @@ checks, fix issues, and commit your work.
 
    **Large plans (4+ files):** Delegate to parallel subagents:
    a. Group the plan steps by area (source, tests, config) or by subsystem.
-   b. For each group, spawn a Task subagent (using the Task tool) with:
+   b. For each group, spawn a subagent (using the AgentFallback tool) with:
       - The relevant subset of the plan
       - The current contents of files that will be modified (from step 2)
       - Instructions to write/edit only the files in its group
@@ -62,7 +62,7 @@ checks, fix issues, and commit your work.
       - It writes corresponding test files for the new/changed functionality
       - It MUST NOT modify source files — only create/modify test files
    d. Launch all implementation subagents AND the test subagent as parallel
-      Task calls in one message.
+      AgentFallback calls in one message.
    e. After all subagents complete, review their output for consistency:
       - Check that imports/exports between subagent groups are compatible
       - Verify shared types/interfaces are consistent

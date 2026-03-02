@@ -3,7 +3,7 @@
 ## What This Is
 
 A Plan-Do-Check loop orchestrator for Claude Code, installable as a plugin.
-The SKILL.md entry point drives three Task subagents (Planner, Doer,
+The SKILL.md entry point drives three Agent subagents (Planner, Doer,
 Checker) in a loop until the Checker issues a PASS verdict.
 
 ## Installation
@@ -58,7 +58,7 @@ docs/                      Design docs and flow diagrams
   with `Loop-Phase`, `Loop-Iteration`, and optionally `Loop-Verdict` trailers.
 - **Skills** in `plugins/looper/skills/` include helper bash scripts that auto-detect the
   project's tech stack via `detect-stack` and dispatch to the right tool.
-- **Loop orchestration** is handled by SKILL.md, which spawns Task subagents
+- **Loop orchestration** is handled by SKILL.md, which spawns Agent subagents
   (`looper:planner`, `looper:doer`, `looper:checker`) directly.
 
 ## Running the Loop

@@ -2,7 +2,7 @@
 
 An orchestrated agent loop that iterates through three phases (Plan → Do → Check)
 until the Checker agent returns PASS. The SKILL.md entry point acts as the loop
-controller, spawning Task subagents directly from the main Claude Code session.
+controller, spawning Agent subagents directly from the main Claude Code session.
 
 ---
 
@@ -14,7 +14,7 @@ controller, spawning Task subagents directly from the main Claude Code session.
 │                                                         │
 │  1. User invokes /loop skill                            │
 │  2. SKILL.md builds project context                     │
-│  3. SKILL.md runs PDC loop via Task subagents           │
+│  3. SKILL.md runs PDC loop via Agent subagents           │
 │  4. Reads verdict from git log after each iteration     │
 └────────────────────┬────────────────────────────────────┘
                      │
@@ -22,7 +22,7 @@ controller, spawning Task subagents directly from the main Claude Code session.
           ▼          ▼          ▼
        Planner    Doer      Checker
        Agent      Agent      Agent
-     (Task)      (Task)     (Task)
+    (Agent)     (Agent)    (Agent)
 ```
 
 ---
@@ -36,9 +36,9 @@ flowchart TD
 
     subgraph LOOP ["PDC Loop (managed by SKILL.md)"]
         direction TB
-        P["Planner Agent (Task subagent)"]
-        P -->|"chore(task): plan ..."| D["Doer Agent (Task subagent)"]
-        D -->|"feat/fix(task): ..."| CH["Checker Agent (Task subagent)"]
+        P["Planner Agent (subagent)"]
+        P -->|"chore(task): plan ..."| D["Doer Agent (subagent)"]
+        D -->|"feat/fix(task): ..."| CH["Checker Agent (subagent)"]
         CH -->|"fix/refactor(task): review fixes"| V["Verdict Commit"]
         V -->|"test(task): check — PASS/FAIL"| DECIDE{Verdict?}
         DECIDE -->|"FAIL"| P
@@ -56,7 +56,7 @@ flowchart TD
 
 ## Project Context Bootstrap
 
-Task subagents inherit settings from the main session, but project docs that
+Subagents inherit settings from the main session, but project docs that
 agents routinely ignore — `CONTRIBUTING.md`, `README.md`, etc. — contain
 critical information (how to build, test, lint, commit, file structure
 conventions) that agents need to follow.
@@ -87,7 +87,7 @@ the context. See SKILL.md step 5 for the full list.
 
 ### How it's injected
 
-The `PROJECT_CONTEXT` is passed to every Task subagent in its prompt:
+The `PROJECT_CONTEXT` is passed to every subagent in its prompt:
 
 ```
 <project-context>
@@ -111,7 +111,7 @@ Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
 <output from git-loop-context>
 ```
 
-`CLAUDE.md` is inherited by Task subagents from the main session.
+`CLAUDE.md` is inherited by subagents from the main session.
 
 ### Checker verification against project context
 
@@ -141,7 +141,7 @@ When invoked from the main Claude Code session, it:
 - Creates a worktree for isolation
 - Builds project context by reading key project files
 - Detects resume point from git log
-- Runs the PDC loop by spawning Task subagents sequentially
+- Runs the PDC loop by spawning Agent subagents sequentially
 - Reads the verdict from git log after each iteration
 
 **Pseudocode:**
@@ -156,15 +156,15 @@ for ITERATION in START_ITERATION..MAX_ITERATIONS:
     CONTEXT = format(PROJECT_CONTEXT, TASK_NAME, ITERATION, LOOP_CONTEXT)
 
     # --- PLAN PHASE ---
-    Task(subagent_type="looper:planner", prompt=CONTEXT)
+    Agent(subagent_type="looper:planner", prompt=CONTEXT)
     # Agent commits with: chore(task): plan iteration N
 
     # --- DO PHASE ---
-    Task(subagent_type="looper:doer", prompt=CONTEXT)
+    Agent(subagent_type="looper:doer", prompt=CONTEXT)
     # Agent commits with: feat(task): implement ... (iteration N)
 
     # --- CHECK PHASE ---
-    Task(subagent_type="looper:checker", prompt=CONTEXT)
+    Agent(subagent_type="looper:checker", prompt=CONTEXT)
     # Checker may produce 0+ fix commits then 1 verdict commit
 
     # --- EVALUATE VERDICT ---
@@ -177,7 +177,7 @@ else: report FAIL
 
 ### 2. Planner Agent
 
-Spawned as `Task(subagent_type="looper:planner")`.
+Spawned as `Agent(subagent_type="looper:planner")`.
 
 Agent definition: `agents/planner.md`
 
@@ -193,11 +193,11 @@ Agent definition: `agents/planner.md`
 - Produce a concrete, actionable plan
 - Commit the plan (no code changes — plan lives in the commit message body)
 
-**Allowed tools:** Read, Glob, Grep, Task, Bash (Write/Edit/NotebookEdit disallowed)
+**Allowed tools:** Read, Glob, Grep, AgentFallback, Bash (Write/Edit/NotebookEdit disallowed)
 
 ### 3. Doer Agent
 
-Spawned as `Task(subagent_type="looper:doer")`.
+Spawned as `Agent(subagent_type="looper:doer")`.
 
 Agent definition: `agents/doer.md`
 
@@ -213,11 +213,11 @@ Agent definition: `agents/doer.md`
   sequential), Round 2 validates (tests + typecheck, parallel)
 - Commit all changes with a summary in the commit message body
 
-**Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, Task, NotebookEdit
+**Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, AgentFallback, NotebookEdit
 
 ### 4. Checker Agent (also: Reviewer)
 
-Spawned as `Task(subagent_type="looper:checker")`.
+Spawned as `Agent(subagent_type="looper:checker")`.
 
 Agent definition: `agents/checker.md`
 
@@ -239,7 +239,7 @@ Planner as FAIL feedback.
 - FAIL = issues remain that the checker couldn't resolve itself; commit body
   contains actionable feedback for the next Planner iteration
 
-**Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, Task, NotebookEdit
+**Allowed tools:** Read, Write, Edit, Bash, Glob, Grep, AgentFallback, NotebookEdit
 
 ---
 
@@ -635,7 +635,7 @@ The loop agents will discover and invoke them if instructed in the prompt.
 
 ## Subagent Delegation Patterns
 
-Agents use the Task tool to spawn subagents for parallelism. Four patterns:
+Agents use the AgentFallback tool to spawn subagents for parallelism. Four patterns:
 
 ### 1. Exploration subagents (all agents)
 
@@ -689,8 +689,8 @@ After the loop exits with PASS:
 
 | Decision | Rationale |
 |---|---|
-| SKILL.md as orchestrator | The main agent runs the loop directly, spawning Task subagents. No nested `claude -p` needed. |
-| Task subagent per phase | Each agent gets a fresh context with only git log as shared state. |
+| SKILL.md as orchestrator | The main agent runs the loop directly, spawning Agent subagents. No nested `claude -p` needed. |
+| Subagent per phase | Each agent gets a fresh context with only git log as shared state. |
 | Git commits as progress log | No separate progress file — commits are atomically tied to code state. Impossible to desync. |
 | Conventional commits + trailers | Human-readable subject line + machine-queryable metadata. Works with existing tooling (changelogs, CI filters). |
 | Type reflects actual change | `feat`/`fix`/`refactor` for doer, `chore` for planner, `fix`/`style`/`refactor`/`test` for checker fixes, `test` for verdict — stays true to conventional commits semantics. |
@@ -698,7 +698,7 @@ After the loop exits with PASS:
 | Verdict is always last commit | Bash orchestrator can reliably read the verdict by checking the most recent `Loop-Verdict:` trailer. |
 | Git trailers for loop metadata | Native git feature (`git interpret-trailers`). Queryable with `git log --grep`. No custom parsing needed. |
 | Max iteration cap | Safety valve — prevents infinite loops (default: 10). |
-| Subagent delegation with thresholds | Agents delegate to Task subagents based on work size: Doer delegates implementation for 4+ file plans, Checker delegates review for 3+ file diffs, Planner delegates exploration for multi-area tasks. Thresholds keep simple tasks fast. |
+| Subagent delegation with thresholds | Agents delegate to subagents based on work size: Doer delegates implementation for 4+ file plans, Checker delegates review for 3+ file diffs, Planner delegates exploration for multi-area tasks. Thresholds keep simple tasks fast. |
 | Intra-agent parallelism via tool calls | Agents exploit Claude Code's parallel tool call convention: independent tool calls in one message run concurrently. Separate Bash calls (not `&`/`wait`) give isolated stdout/stderr and exit codes per command. |
 | Doer fixes sequential, validation parallel | `--fix` flags modify files — write conflicts if parallel. Read-only checks (tests, typecheck) are safe to run as parallel Bash calls after fixes complete. |
 | Checker 6-way parallel checks | Checker runs in check-only mode (no `--fix`) — all 6 scripts are pure reads, safe to parallelize as separate Bash calls. `detect-stack` redundancy across scripts is harmless (~100ms, file-system only). |

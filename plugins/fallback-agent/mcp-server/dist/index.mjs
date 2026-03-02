@@ -13246,7 +13246,7 @@ var StdioServerTransport = class {
 * Architecture:
 * ```
 * Main Plugin Session
-*     └── MCP Tool: Task({prompt, progressToken})
+*     └── MCP Tool: AgentFallback({prompt, progressToken})
 *             │
 *             ├── Spawns: claude -p --output-format stream-json --verbose
 *             │
@@ -13468,7 +13468,7 @@ function buildToolDefinition() {
 		},
 		run_in_background: {
 			type: "boolean",
-			description: "Run the task in the background; returns immediately with a taskId. Use TaskStatus to check progress."
+			description: "Run the agent in the background; returns immediately with a taskId. Use AgentFallbackStatus to check progress."
 		}
 	};
 	if (agentDefinitions.size > 0) {
@@ -13480,19 +13480,15 @@ function buildToolDefinition() {
 		};
 	}
 	return {
-		name: "Task",
-		description: `Launch a new agent that has access to all tools including Task. When you are searching for a keyword or file and are not confident that you will find the right match on the first try, use the Agent tool to perform the search for you. For example:
-
-- If you are searching for a keyword like "config" or "logger", the Agent tool is appropriate
-- If you want to read a specific file path, use the Read or Glob tool instead of the Agent tool, to find the match more quickly
-- If you are searching for a specific class definition like "class Foo", use the Glob tool instead, to find the match more quickly
+		name: "AgentFallback",
+		description: `FALLBACK AGENT SPAWNER — Only use this tool from within subagents that do NOT have access to the built-in Agent tool. If you have access to the built-in Agent tool (check your tool list), ALWAYS prefer that instead. This tool exists solely to give nested subagents the ability to spawn further subagents.
 
 Usage notes:
 1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
 2. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.
 3. Each agent invocation is stateless. You will not be able to send additional messages to the agent, nor will the agent be able to communicate with you outside of its final report. Therefore, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
 4. The agent's outputs should generally be trusted
-5. IMPORTANT: The spawned agent runs as a fresh process with its own 200k context window and CAN use the Task tool.`,
+5. IMPORTANT: The spawned agent runs as a fresh process with its own 200k context window and CAN use the AgentFallback tool.`,
 		inputSchema: {
 			type: "object",
 			properties,
@@ -13500,10 +13496,10 @@ Usage notes:
 		}
 	};
 }
-function buildTaskStatusDefinition() {
+function buildAgentFallbackStatusDefinition() {
 	return {
-		name: "TaskStatus",
-		description: "Check the status of a background task started with run_in_background: true. Returns the current status and, once completed, the full result.",
+		name: "AgentFallbackStatus",
+		description: "Check the status of a background agent started with run_in_background: true. Returns the current status and, once completed, the full result.",
 		inputSchema: {
 			type: "object",
 			properties: { taskId: {
@@ -13768,10 +13764,10 @@ async function runTask(config$1, progressToken) {
 		});
 	});
 }
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [buildToolDefinition(), buildTaskStatusDefinition()] }));
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [buildToolDefinition(), buildAgentFallbackStatusDefinition()] }));
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
 	log(`Tool called: ${request.params.name}`);
-	if (request.params.name === "TaskStatus") {
+	if (request.params.name === "AgentFallbackStatus") {
 		const taskId = request.params.arguments?.taskId;
 		if (!taskId) return {
 			content: [{
@@ -13803,7 +13799,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 			isError: !entry.result.success
 		};
 	}
-	if (request.params.name !== "Task") return {
+	if (request.params.name !== "AgentFallback") return {
 		content: [{
 			type: "text",
 			text: `Unknown tool: ${request.params.name}`

@@ -45,15 +45,15 @@ User invokes /looper:loop
        ▼
   SKILL.md orchestrator
        │
-       ├── Planner agent (Task subagent) → reads codebase, commits a plan
-       ├── Doer agent    (Task subagent) → implements the plan, commits code
-       └── Checker agent (Task subagent) → reviews, fixes, issues PASS/FAIL
+       ├── Planner agent (Agent subagent) → reads codebase, commits a plan
+       ├── Doer agent    (Agent subagent) → implements the plan, commits code
+       └── Checker agent (Agent subagent) → reviews, fixes, issues PASS/FAIL
        │
        ▼
   PASS? → create PR    FAIL? → next iteration
 ```
 
-Each agent runs as a Task subagent. State is passed between iterations via git commits with structured trailers (`Loop-Phase`, `Loop-Iteration`, `Loop-Verdict`).
+Each agent runs as a Agent subagent. State is passed between iterations via git commits with structured trailers (`Loop-Phase`, `Loop-Iteration`, `Loop-Verdict`).
 
 ## Components
 

@@ -1,7 +1,7 @@
 ---
 name: loop
 description: Use this skill when the user wants to run an iterative Plan-Do-Check agent loop. Three agents (Planner, Doer, Checker) cycle until the Checker passes the work. Triggered by "/loop" followed by a task description.
-tools: Bash, Read, Edit, Write, Grep, Glob, Task
+tools: Bash, Read, Edit, Write, Grep, Glob, Agent
 ---
 
 # PDC Loop Skill
@@ -124,13 +124,13 @@ For each phase, print a progress header and spawn the agent. Wait for each
 to complete before proceeding to the next.
 
 1. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
-   `Task(subagent_type="looper:planner", prompt=<context from 7b>)`
+   `Agent(subagent_type="looper:planner", prompt=<context from 7b>)`
 
 2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase ===`
-   `Task(subagent_type="looper:doer", prompt=<context from 7b>)`
+   `Agent(subagent_type="looper:doer", prompt=<context from 7b>)`
 
 3. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`
-   `Task(subagent_type="looper:checker", prompt=<context from 7b>)`
+   `Agent(subagent_type="looper:checker", prompt=<context from 7b>)`
 
 #### 7d. Read verdict
 
