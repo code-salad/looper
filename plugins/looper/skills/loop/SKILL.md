@@ -145,11 +145,9 @@ VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \
 ### 8. Report results
 
 - **PASS:** Report success with iteration count. Invoke `/create-github-pr`.
-  Then clean up:
-  ```bash
-  cd "$REPO_ROOT"
-  git worktree remove "$WORKTREE_DIR" --force
-  ```
+  The worktree at `$WORKTREE_DIR` is **preserved** for manual inspection.
+  Do NOT remove it — worktrees persist until the user explicitly cleans up
+  (e.g. `git worktree remove <path>`).
 - **FAIL (max iterations):** Report that max iterations were reached. Show
   the last checker verdict: `git log --grep="Loop-Verdict: FAIL" -1 --format="%B"`
 - **Resumable:** Running `/loop` again with the same task resumes automatically
