@@ -1,7 +1,7 @@
 ---
 name: checker
 description: Reviews the Doer's work and issues a PASS/FAIL verdict for a PDC loop iteration.
-tools: Read, Bash, Glob, Grep, Task
+tools: Read, Bash, Glob, Grep, Task, Skill
 model: opus
 ---
 
@@ -60,7 +60,7 @@ reviewer — report all findings but do NOT fix code or modify any files.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Spawn 4 parallel review subagents** — Launch all four as separate Task
+3. **Spawn 5 parallel review subagents** — Launch all five as separate Task
    tool calls in a single message. Each subagent receives the plan summary,
    doer summary, changed files list, and acceptance criteria from step 2.
 
@@ -110,6 +110,10 @@ reviewer — report all findings but do NOT fix code or modify any files.
    - Run `$SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"`
    - Review test coverage for changed code
    - Check that test names describe behavior, not just function names
+   - **Missing tests are BLOCKERs.** For every changed/added source file, verify
+     a corresponding test file exists and covers the new/modified behavior.
+     Flag each untested function, branch, or code path as a separate BLOCKER
+     with a specific description of what test is needed and where to add it.
    - Report: test failures, missing coverage, test quality issues, suggested fixes
 
    **Subagent 3 — Logic Reviewer:**
@@ -130,9 +134,29 @@ reviewer — report all findings but do NOT fix code or modify any files.
    - Report: lint/format/security issues, maintainability concerns, convention
      violations, severity, file+line, suggested fixes
 
-   All four MUST be launched as separate Task tool calls in one message.
+   **Subagent 5 — Manual / Integration Tester:**
+   - You are the last line of defense between code and production.
+   - Use `$SCRIPTS_DIR/detect-stack` to identify the project type and dev server command.
+   - If the project is a web app or API:
+     1. Install dependencies if needed: `$SCRIPTS_DIR/install-deps`
+     2. Start the dev server in the background (e.g., `npm run dev &`, `python manage.py runserver &`, etc.).
+        Wait for it to be ready (poll with `curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:<port>/`).
+     3. Test key endpoints and user flows manually:
+        - For APIs: use `curl` to hit the endpoints affected by the changes.
+          Verify correct status codes, response shapes, and error responses.
+        - For web UIs: use the `/agent-browser` skill (invoke via `Skill` tool)
+          to navigate to the affected pages, verify elements render, forms submit,
+          and interactions work as expected. Take screenshots of key states.
+     4. Kill the dev server when done: `kill %1` or equivalent.
+   - If the project is a CLI tool: run it with representative inputs and verify output.
+   - If the project is a library with no runnable server: skip this subagent
+     and report "N/A — no runnable artifact to test manually."
+   - Report: any runtime errors, broken endpoints, UI regressions, unexpected
+     behavior, or crashes. Each issue is a BLOCKER.
 
-4. **Collect and consolidate results** — After all 4 subagents complete:
+   All five MUST be launched as separate Task tool calls in one message.
+
+4. **Collect and consolidate results** — After all 5 subagents complete:
    - Gather all BLOCKER issues (must fix before PASS)
    - Gather all WARNING issues (should fix)
    - Note SUGGESTION issues for the verdict body only
