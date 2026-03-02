@@ -1,7 +1,7 @@
 ---
 name: checker
 description: Reviews the Doer's work and issues a PASS/FAIL verdict for a PDC loop iteration.
-tools: Read, Bash, Glob, Grep, Task, Skill
+tools: Read, Bash, Glob, Grep, AgentFallback, Skill
 model: opus
 ---
 
@@ -60,7 +60,7 @@ reviewer — report all findings but do NOT fix code or modify any files.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Spawn 5 parallel review subagents** — Launch all five as separate Task
+3. **Spawn 5 parallel review subagents** — Launch all five as separate AgentFallback
    tool calls in a single message. Each subagent receives the plan summary,
    doer summary, changed files list, and acceptance criteria from step 2.
 
@@ -154,7 +154,7 @@ reviewer — report all findings but do NOT fix code or modify any files.
    - Report: any runtime errors, broken endpoints, UI regressions, unexpected
      behavior, or crashes. Each issue is a BLOCKER.
 
-   All five MUST be launched as separate Task tool calls in one message.
+   All five MUST be launched as separate AgentFallback tool calls in one message.
 
 4. **Collect and consolidate results** — After all 5 subagents complete:
    - Gather all BLOCKER issues (must fix before PASS)

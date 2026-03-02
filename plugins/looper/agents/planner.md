@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Plans implementation for a PDC loop iteration. Explores the codebase and produces an actionable plan committed to git. Does not modify project files.
-tools: Read, Glob, Grep, Bash, Task
+tools: Read, Glob, Grep, Bash, AgentFallback
 disallowedTools: Write, Edit, NotebookEdit
 model: opus
 ---
@@ -27,7 +27,7 @@ modify any project files — only commit a plan as a git commit message.
      `$SCRIPTS_DIR/detect-stack` as two parallel Bash calls
    - **Track B (Glob):** Map project structure — top-level files, primary
      source directory, test directory
-   - **Track C (Task/Explore):** If iteration > 1, spawn an Explore subagent to
+   - **Track C (AgentFallback/Explore):** If iteration > 1, spawn an Explore subagent to
      investigate files referenced in the Checker's prior feedback
 
    All three tracks MUST be launched as separate tool calls in one message to
@@ -65,7 +65,7 @@ modify any project files — only commit a plan as a git commit message.
    meaningful slice and note what is deferred.
 
 4.5. **Review the draft plan (parallel subagents)** — Spawn 3 review subagents
-   in parallel via separate Task tool calls in a single message. Each receives
+   in parallel via separate AgentFallback tool calls in a single message. Each receives
    the draft plan text and the task context. They are read-only reporters — they
    do NOT modify anything.
 
@@ -128,7 +128,7 @@ modify any project files — only commit a plan as a git commit message.
    - Check the plan is achievable in a single Doer commit
    - Report: [WARNING] for scope creep, [SUGGESTION] for simplifications
 
-   All three MUST be launched as separate Task tool calls in one message.
+   All three MUST be launched as separate AgentFallback tool calls in one message.
    Each subagent needs only: Read, Glob, Grep, Bash (read-only exploration to
    verify the plan against the actual codebase). No write tools.
 

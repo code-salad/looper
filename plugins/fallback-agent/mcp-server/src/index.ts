@@ -13,7 +13,7 @@
  * Architecture:
  * ```
  * Main Plugin Session
- *     └── MCP Tool: Task({prompt, progressToken})
+ *     └── MCP Tool: AgentFallback({prompt, progressToken})
  *             │
  *             ├── Spawns: claude -p --output-format stream-json --verbose
  *             │
@@ -297,7 +297,7 @@ interface StreamMessage {
 
 // ── Tool Definitions ────────────────────────────────────────────────────────
 
-// Build Task tool definition — API aligned with built-in Agent tool (minus team features)
+// Build AgentFallback tool definition — API aligned with built-in Agent tool (minus team features)
 function buildToolDefinition(): Tool {
   const properties: Record<string, object> = {
     prompt: {
@@ -339,7 +339,7 @@ function buildToolDefinition(): Tool {
     },
     run_in_background: {
       type: "boolean",
-      description: "Run the task in the background; returns immediately with a taskId. Use TaskStatus to check progress.",
+      description: "Run the agent in the background; returns immediately with a taskId. Use AgentFallbackStatus to check progress.",
     },
   };
 
@@ -356,7 +356,7 @@ function buildToolDefinition(): Tool {
   }
 
   return {
-    name: "Task",
+    name: "AgentFallback",
     description: `FALLBACK AGENT SPAWNER — Only use this tool from within subagents that do NOT have access to the built-in Agent tool. If you have access to the built-in Agent tool (check your tool list), ALWAYS prefer that instead. This tool exists solely to give nested subagents the ability to spawn further subagents.
 
 Usage notes:
@@ -364,7 +364,7 @@ Usage notes:
 2. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.
 3. Each agent invocation is stateless. You will not be able to send additional messages to the agent, nor will the agent be able to communicate with you outside of its final report. Therefore, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
 4. The agent's outputs should generally be trusted
-5. IMPORTANT: The spawned agent runs as a fresh process with its own 200k context window and CAN use the Task tool.`,
+5. IMPORTANT: The spawned agent runs as a fresh process with its own 200k context window and CAN use the AgentFallback tool.`,
     inputSchema: {
       type: "object" as const,
       properties,
@@ -373,11 +373,11 @@ Usage notes:
   };
 }
 
-// Build TaskStatus tool definition for checking background tasks
-function buildTaskStatusDefinition(): Tool {
+// Build AgentFallbackStatus tool definition for checking background tasks
+function buildAgentFallbackStatusDefinition(): Tool {
   return {
-    name: "TaskStatus",
-    description: "Check the status of a background task started with run_in_background: true. Returns the current status and, once completed, the full result.",
+    name: "AgentFallbackStatus",
+    description: "Check the status of a background agent started with run_in_background: true. Returns the current status and, once completed, the full result.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -859,15 +859,15 @@ async function runTask(
 
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [buildToolDefinition(), buildTaskStatusDefinition()],
+  tools: [buildToolDefinition(), buildAgentFallbackStatusDefinition()],
 }));
 
 // Handle tool execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   log(`Tool called: ${request.params.name}`);
 
-  // ── TaskStatus tool ──
-  if (request.params.name === "TaskStatus") {
+  // ── AgentFallbackStatus tool ──
+  if (request.params.name === "AgentFallbackStatus") {
     const args = request.params.arguments as { taskId?: string };
     const taskId = args?.taskId;
     if (!taskId) {
@@ -895,8 +895,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   }
 
-  // ── Task tool ──
-  if (request.params.name !== "Task") {
+  // ── AgentFallback tool ──
+  if (request.params.name !== "AgentFallback") {
     return {
       content: [{ type: "text", text: `Unknown tool: ${request.params.name}` }],
       isError: true,

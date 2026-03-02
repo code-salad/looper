@@ -114,13 +114,13 @@ impl ServerHandler for FallbackAgentServer {
         async move {
             log(&format!("Tool called: {}", request.name));
 
-            // ── TaskStatus tool ──
-            if request.name == "TaskStatus" {
+            // ── AgentFallbackStatus tool ──
+            if request.name == "AgentFallbackStatus" {
                 return handle_task_status(&request, &background_tasks).await;
             }
 
-            // ── Task tool ──
-            if request.name != "Task" {
+            // ── AgentFallback tool ──
+            if request.name != "AgentFallback" {
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "Unknown tool: {}",
                     request.name
@@ -185,7 +185,7 @@ async fn handle_task_status(
     }
 }
 
-/// Handle the Task tool call.
+/// Handle the AgentFallback tool call.
 async fn handle_task(
     request: CallToolRequestParams,
     agents: Arc<HashMap<String, AgentDefinition>>,
