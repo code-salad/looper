@@ -1,0 +1,16 @@
+{
+  "name": "looper-dashboard",
+  "version": "0.17.0",
+  "description": "Kanban dashboard for Looper — Plan-Do-Check loop orchestrator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "uuid": "^11.0.0",
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}

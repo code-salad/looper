@@ -1,101 +1,281 @@
+[English](README.md) | [한국어](README.ko.md)
+
 # Looper
 
-A Plan-Do-Check loop orchestrator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Three agents — Planner, Doer, Checker — iterate in a loop until the Checker issues a PASS verdict, then automatically create a PR.
+**Plan-Do-Check loop orchestrator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code)**
 
-## Installation
+Three AI agents — Planner, Doer, Checker — iterate in a loop until your code passes all checks, then automatically create a PR.
 
-Install as a Claude Code plugin:
+[![Version](https://img.shields.io/badge/version-0.17.0-blue)](.claude-plugin/plugin.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![CI](https://img.shields.io/badge/CI-passing-brightgreen)](.github/workflows/ci.yml)
+
+---
+
+## What is Looper?
+
+Looper is a Claude Code plugin that automates the full development cycle. Give it a task description, and it will:
+
+1. **Plan** — Explore your codebase and produce a detailed implementation plan
+2. **Do** — Write the code, tests, and run all checks
+3. **Check** — Review the work, fix issues, and issue a PASS/FAIL verdict
+4. **Repeat** — If FAIL, iterate with feedback until it passes
+5. **Ship** — On PASS, automatically create a GitHub PR with architecture diagrams
+
+No manual intervention required. Just describe what you want, and Looper handles the rest.
+
+---
+
+## Key Features
+
+- **Automated PDC Loop** — Plan-Do-Check agents iterate until quality passes
+- **PM Agent Dashboard** — Break down complex tasks into subtasks with AI-powered decomposition
+- **Auto Tech Stack Detection** — Supports Node.js, Python, Go, Rust, .NET, and more
+- **Automated Quality Gates** — Tests, linting, type checking, formatting, security scanning
+- **Git-Based State** — All progress tracked via conventional commits with structured trailers
+- **Auto PR Creation** — PRs with Mermaid architecture diagrams and test results
+- **Isolated Worktrees** — Each task runs in its own git worktree
+- **Resume Support** — Pick up interrupted loops from the last iteration
+
+---
+
+## Quick Start
+
+### 1. Install
 
 ```bash
-# From GitHub
 claude plugin install vikyw89/looper
-
-# From a local checkout
-claude plugin install /path/to/looper
 ```
 
-## Usage
-
-Once installed, invoke the loop skill from any Claude Code session:
+### 2. Run your first loop
 
 ```
 /looper:loop "add input validation to the login endpoint"
 ```
 
-The loop runs entirely through Claude Code's skill system. It creates a git
-worktree for isolation, iterates Plan-Do-Check until PASS, then creates a PR.
+### 3. Watch it work
 
-### Options
+Looper creates a git worktree, runs the PDC loop, and creates a PR when done. Each iteration produces conventional commits you can inspect:
+
+```bash
+git log --grep="Loop-Phase:" --oneline
+```
+
+---
+
+## Use Cases
+
+### Automate Feature Development
+
+> "Build a complete feature from a single prompt."
+
+```
+/looper:loop "add OAuth2 login with Google and GitHub providers"
+```
+
+The Planner agent explores your codebase, identifies the auth module, and produces a step-by-step plan. The Doer implements routes, middleware, and tests. The Checker verifies everything works end-to-end.
+
+### Automate Bug Fixes
+
+> "Describe the bug, get a tested fix."
+
+```
+/looper:loop "fix memory leak in the worker pool when connections timeout"
+```
+
+Looper analyzes the bug, identifies root cause, implements the fix, writes regression tests, and verifies all existing tests still pass.
+
+### Automate Refactoring
+
+> "Restructure code with confidence."
+
+```
+/looper:loop "refactor auth module from callbacks to async/await with proper error handling"
+```
+
+The Planner maps all affected files, the Doer refactors systematically, and the Checker ensures no regressions.
+
+### Auto-Generate PRs with Architecture Diagrams
+
+> "Professional PRs with visual documentation."
+
+```
+/looper:create-github-pr
+```
+
+Creates a comprehensive PR with:
+- Problem statement
+- Before/After Mermaid architecture diagrams
+- Key changes walkthrough
+- Test results and CI status
+
+### Automated Code Review
+
+> "AI-powered review with 5 specialized reviewers."
+
+Every iteration, the Checker agent spawns 5 parallel review subagents:
+- **Type Checker** — Verifies type safety and build success
+- **Test Checker** — Validates test coverage (missing tests = BLOCKER)
+- **Logic Reviewer** — Checks correctness and edge cases
+- **Code Quality** — Lint, format, security scan, conventions
+- **Integration Tester** — Starts dev server and tests endpoints
+
+### Auto-Generate GitHub Issues
+
+> "Structured bug reports from a description."
+
+```
+/looper:github-bug-report "search results return duplicates when using pagination with filters"
+```
+
+Detects your repo's issue template, fills in environment info, checks for duplicates, and creates a well-structured issue.
+
+### Multi-Language Project Support
+
+Looper auto-detects your tech stack and uses the right tools:
+
+| Language | Test Runner | Linter | Formatter | Type Checker | Build |
+|----------|-------------|--------|-----------|-------------|-------|
+| TypeScript/JS | vitest, jest, mocha | eslint, biome | prettier, biome | tsc | vite, webpack, esbuild |
+| Python | pytest | ruff, flake8 | black, ruff | mypy, pyright | — |
+| Go | go test | golangci-lint | gofmt | go vet | go build |
+| Rust | cargo test | clippy | rustfmt | cargo check | cargo build |
+| C#/.NET | dotnet test | dotnet format | dotnet format | dotnet build | dotnet build |
+
+---
+
+## How It Works
+
+```mermaid
+flowchart TD
+    A["User: /loop 'task description'"] --> B["SKILL.md Orchestrator"]
+    B --> C["Create Git Worktree"]
+    C --> D["Sync with Remote"]
+    D --> E["Build Project Context"]
+    E --> F["PDC Loop"]
+
+    subgraph F ["PDC Loop (max 10 iterations)"]
+        direction TB
+        P["Planner Agent"] -->|"commits plan"| DO["Doer Agent"]
+        DO -->|"commits code + tests"| CH["Checker Agent"]
+        CH --> V{"Verdict?"}
+        V -->|"FAIL + feedback"| P
+        V -->|"PASS"| EXIT["Exit Loop"]
+    end
+
+    EXIT --> PR["Create GitHub PR"]
+    PR --> CI["Wait for CI"]
+```
+
+### State Management
+
+All state is stored in git commits with structured trailers:
+
+```
+feat(add-auth): implement OAuth2 login flow
+
+Added Google and GitHub OAuth providers with session management.
+
+Loop-Phase: do
+Loop-Iteration: 2
+```
+
+Query loop progress with git:
+
+```bash
+# All plan commits
+git log --grep="Loop-Phase: plan" --oneline
+
+# Specific iteration
+git log --grep="Loop-Iteration: 2" --oneline
+
+# Find the PASS verdict
+git log --grep="Loop-Verdict: PASS" --format="%B" -1
+```
+
+---
+
+## Architecture
+
+### Agents
+
+| Agent | Model | Role | Tools |
+|-------|-------|------|-------|
+| **Planner** | Opus | Explores codebase, produces actionable plan | Read, Glob, Grep, Bash (read-only) |
+| **Doer** | Sonnet | Implements plan, writes tests, runs checks | Read, Write, Edit, Bash, Glob, Grep |
+| **Checker** | Opus | Reviews work, issues PASS/FAIL verdict | Read, Bash, Glob, Grep |
+
+### Skills
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| Loop | `/looper:loop "task"` | Main PDC loop orchestrator |
+| Git Commit | `/looper:git-commit` | Conventional commit helper |
+| Create PR | `/looper:create-github-pr` | PR with architecture diagrams |
+| Bug Report | `/looper:github-bug-report "desc"` | GitHub issue creation |
+| Worktree | `/looper:initiate-worktree "name"` | Git worktree helper |
+
+### Utility Scripts
+
+All scripts auto-detect your tech stack and dispatch to the right tool:
+
+| Script | Purpose |
+|--------|---------|
+| `detect-stack` | Auto-detect project tech stack (JSON) |
+| `run-tests` | Run test suite |
+| `run-lint` | Run linter (with `--fix`) |
+| `run-typecheck` | Run type checker |
+| `run-format` | Run formatter (with `--fix`) |
+| `run-build` | Build the project |
+| `install-deps` | Install dependencies |
+| `security-scan` | Security vulnerability scan |
+
+---
+
+## Kanban Dashboard
+
+Looper includes a web-based Kanban dashboard for visual task management and loop monitoring.
+
+### Launch
+
+```bash
+cd dashboard
+npm install
+npm start
+# Open http://localhost:3000
+```
+
+### Features
+
+- **Kanban Board** — Drag-and-drop task cards across Backlog, Planning, In Progress, Review, and Done columns
+- **PM Agent** — Enter a high-level prompt and AI decomposes it into subtasks automatically
+- **Live Loop Monitoring** — Watch agent progress in real-time via WebSocket
+- **Loop History** — Browse all past loops with iteration details
+- **Analytics** — Success rates, average iterations, task distribution
+- **Dark/Light Mode** — Enterprise SaaS-grade UI with Pretendard font
+- **EN/KO** — Full bilingual support
+
+---
+
+## Configuration
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `LOOPER_MAX_ITERATIONS` | `10` | Maximum PDC loop iterations before giving up |
-
-To override max iterations:
+| `LOOPER_MAX_ITERATIONS` | `10` | Maximum PDC loop iterations |
 
 ```bash
 LOOPER_MAX_ITERATIONS=5 claude
 ```
 
-## How It Works
-
-```
-User invokes /looper:loop
-       │
-       ▼
-  SKILL.md orchestrator
-       │
-       ├── Planner agent (Agent subagent) → reads codebase, commits a plan
-       ├── Doer agent    (Agent subagent) → implements the plan, commits code
-       └── Checker agent (Agent subagent) → reviews, fixes, issues PASS/FAIL
-       │
-       ▼
-  PASS? → create PR    FAIL? → next iteration
-```
-
-Each agent runs as a Agent subagent. State is passed between iterations via git commits with structured trailers (`Loop-Phase`, `Loop-Iteration`, `Loop-Verdict`).
-
-## Components
-
-### Agents (`agents/`)
-
-| Agent | File | Role |
-|-------|------|------|
-| Planner | `agents/planner.md` | Explores codebase, produces actionable plan (read-only) |
-| Doer | `agents/doer.md` | Implements the plan, runs tests, commits changes |
-| Checker | `agents/checker.md` | Reviews work, fixes issues, issues PASS/FAIL verdict |
-
-### Skills (`skills/`)
-
-| Skill | Description |
-|-------|-------------|
-| `loop` | Main PDC loop entry point (`/loop`) |
-| `git-commit` | Conventional commit helper (`/git-commit`) |
-| `create-github-pr` | PR creation with architecture diagrams (`/create-github-pr`) |
-| `initiate-worktree` | Git worktree helper (`/initiate-worktree`) |
-
-### Utility Scripts (`skills/loop/scripts/`)
-
-| Script | Purpose |
-|--------|---------|
-| `detect-stack` | Auto-detect project tech stack (JSON output) |
-| `run-tests` | Run test suite |
-| `run-lint` | Run linter |
-| `run-typecheck` | Run type checker |
-| `run-format` | Run formatter |
-| `run-build` | Build the project |
-| `install-deps` | Install project dependencies |
-| `security-scan` | Security vulnerability scan |
-| `git-loop-context` | Read loop history from git |
-| `git-commit-loop` | Commit with loop trailers |
-
-The utility scripts auto-detect the project's tech stack and dispatch to the appropriate tool (e.g., `vitest`/`jest`/`pytest` for tests, `eslint`/`ruff`/`clippy` for linting).
+---
 
 ## Requirements
 
-- `claude` CLI ([Claude Code](https://docs.anthropic.com/en/docs/claude-code))
-- `jq`
+- [`claude` CLI](https://docs.anthropic.com/en/docs/claude-code) (Claude Code)
 - `git`
+- `jq`
+- `gh` (GitHub CLI, optional — required for PR creation)
+- `node` (optional — required for the dashboard)
 
 ## License
 
