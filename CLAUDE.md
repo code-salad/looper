@@ -44,6 +44,7 @@ plugins/
           security-scan    Security vulnerability scan
           git-loop-context Read loop history from git
           git-commit-loop  Commit with loop trailers
+          sync-with-remote Fetch & rebase onto default remote branch
           detect-issue-template  Detect bug report issue template
       git-commit/          Conventional commit skill
       create-github-pr/    PR creation skill
