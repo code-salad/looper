@@ -49,6 +49,26 @@ WORKTREE_DIR=$($SCRIPTS_DIR/setup-worktree --task "$TASK_NAME")
 cd "$WORKTREE_DIR"
 ```
 
+### 4b. Sync worktree with remote
+
+Fetch the latest remote and rebase the worktree branch onto the default remote branch.
+This ensures the loop starts from an up-to-date base.
+
+```bash
+SYNC_OUTPUT=$($SCRIPTS_DIR/sync-with-remote) && SYNC_EXIT=0 || SYNC_EXIT=$?
+eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
+```
+
+- **`STATUS=up-to-date` or `STATUS=rebased` (exit 0):** Continue to step 5.
+- **`STATUS=conflicts` (exit 1):** The rebase is paused with conflicts. Resolve them:
+  1. List conflicted files: `git diff --name-only --diff-filter=U`
+  2. Read each conflicted file, understand both sides of the conflict.
+  3. Edit the file to resolve the conflict (remove conflict markers, keep correct code).
+  4. Stage each resolved file: `git add <file>`
+  5. Continue the rebase: `git rebase --continue`
+  6. If new conflicts appear, repeat until the rebase completes.
+- **Exit 2 (error):** Warn and continue — the loop can still proceed without sync.
+
 ### 5. Build project context
 
 Read the following files (skip any that don't exist) and assemble them into `PROJECT_CONTEXT`:
@@ -141,6 +161,31 @@ VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \
 
 - **PASS:** Break out of the loop, proceed to step 8.
 - **FAIL** (or no verdict): Report and continue to next iteration.
+
+### 7e. Sync with remote before PR
+
+After the loop completes with PASS, sync one more time to ensure the PR will have
+no merge conflicts with the default remote branch.
+
+```bash
+SYNC_OUTPUT=$($SCRIPTS_DIR/sync-with-remote) && SYNC_EXIT=0 || SYNC_EXIT=$?
+eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
+```
+
+- **`STATUS=up-to-date` or `STATUS=rebased` (exit 0):** Proceed to step 8.
+- **`STATUS=conflicts` (exit 1):** The rebase is paused with conflicts. Resolve them:
+  1. List conflicted files: `git diff --name-only --diff-filter=U`
+  2. Read each conflicted file, understand both sides of the conflict.
+  3. Edit the file to resolve the conflict (remove conflict markers, keep correct code).
+  4. Stage each resolved file: `git add <file>`
+  5. Continue the rebase: `git rebase --continue`
+  6. If new conflicts appear, repeat until the rebase completes.
+  7. After all conflicts are resolved, run the project's tests to verify nothing broke:
+     ```bash
+     $SCRIPTS_DIR/run-tests
+     ```
+  8. If tests fail after conflict resolution, fix the issues and commit before proceeding.
+- **Exit 2 (error):** Warn but still attempt PR creation.
 
 ### 8. Report results
 
