@@ -42,3 +42,5 @@ build/
 /tmp/
 *.tmp
 .worktrees
+dashboard/node_modules/
+dashboard/package-lock.json
