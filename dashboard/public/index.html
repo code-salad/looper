@@ -270,27 +270,11 @@ textarea{resize:vertical;min-height:80px}
 .onboarding-tooltip .dismiss:hover{opacity:1}
 
 /* ========== REPO INDICATOR ========== */
-.repo-indicator{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-1) var(--space-3);border-radius:var(--radius-sm);background:var(--bg-tertiary);border:1px solid var(--border-primary);font-size:.8rem;cursor:pointer;max-width:220px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;height:36px}
+.repo-indicator{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-1) var(--space-3);border-radius:var(--radius-sm);background:var(--bg-tertiary);border:1px solid var(--border-primary);font-size:.8rem;cursor:pointer;max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .repo-indicator:hover{background:var(--bg-hover)}
 .repo-indicator svg{width:14px;height:14px;color:var(--text-tertiary);flex-shrink:0}
 .repo-indicator .repo-name{font-weight:500;overflow:hidden;text-overflow:ellipsis}
-
-/* ========== GITHUB REPOS LIST ========== */
-.github-repo-list{max-height:300px;overflow-y:auto;border:1px solid var(--border-primary);border-radius:var(--radius-md);margin-top:var(--space-2)}
-.github-repo-item{display:flex;align-items:center;justify-content:space-between;padding:var(--space-3);border-bottom:1px solid var(--border-primary);font-size:.85rem}
-.github-repo-item:last-child{border-bottom:none}
-.github-repo-item:hover{background:var(--bg-hover)}
-.github-repo-item .repo-info{flex:1;min-width:0}
-.github-repo-item .repo-fullname{font-weight:500}
-.github-repo-item .repo-desc{font-size:.75rem;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.github-repo-item .repo-lang{font-size:.7rem;color:var(--text-secondary);margin-top:2px}
-
-/* ========== REPO LIST ========== */
-.repo-list-item{display:flex;align-items:center;justify-content:space-between;padding:var(--space-3);border-bottom:1px solid var(--border-primary)}
-.repo-list-item:last-child{border-bottom:none}
-.repo-list-item .repo-info{flex:1}
-.repo-list-item .repo-path{font-size:.75rem;color:var(--text-tertiary);font-family:var(--font-mono)}
-.repo-list-item .repo-active-badge{font-size:.7rem;font-weight:600;padding:1px 6px;border-radius:3px;background:rgba(34,197,94,.15);color:var(--color-pass);margin-left:var(--space-2)}
+.repo-indicator .repo-branch{color:var(--text-tertiary);font-size:.75rem}
 
 /* ========== RESPONSIVE ========== */
 @media(max-width:1024px){
@@ -351,10 +335,7 @@ textarea{resize:vertical;min-height:80px}
         <input type="text" id="globalSearch" data-i18n-placeholder="search.placeholder" placeholder="Search tasks..." onkeyup="handleGlobalSearch(event)">
         <span class="kbd">Ctrl+K</span>
       </div>
-      <div class="repo-indicator" id="repoIndicator" onclick="switchView('settings')" title="Click to manage repositories">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-        <span class="repo-name" style="color:var(--text-tertiary)">No repo</span>
-      </div>
+      <div class="repo-indicator" id="repoIndicator" onclick="switchView('settings')" title="Click to manage repositories"></div>
       <div class="header-actions">
         <button class="lang-toggle" id="langToggle" onclick="toggleLang()">EN</button>
         <button class="icon-btn" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">
@@ -368,7 +349,6 @@ textarea{resize:vertical;min-height:80px}
 
     <!-- CONTENT VIEWS -->
     <div class="content" id="content">
-      <!-- Kanban View (default) -->
       <div id="view-kanban" class="view active"></div>
       <div id="view-history" class="view" style="display:none"></div>
       <div id="view-analytics" class="view" style="display:none"></div>
@@ -508,8 +488,8 @@ const State = {
   searchQuery: '',
   repos: [],
   activeRepo: null,
-  appSettings: {},
-  pmStatus: null
+  pmStatus: null,
+  appSettings: {}
 };
 
 const COLUMNS = [
@@ -522,7 +502,9 @@ const COLUMNS = [
 
 const i18n = {
   en: {
-    'nav.kanban': 'Kanban Board', 'nav.history': 'Loop History', 'nav.analytics': 'Analytics', 'nav.guide': 'User Guide', 'nav.settings': 'Settings',
+    'nav.kanban': 'Kanban Board', 'nav.history': 'Loop History', 'nav.analytics': 'Analytics', 'nav.settings': 'Settings',
+    'nav.guide': 'User Guide',
+    'guide.title': 'User Guide',
     'search.placeholder': 'Search tasks...', 'cmd.placeholder': 'Type a command...',
     'kanban.title': 'Kanban Board', 'btn.newTask': '+ New Task', 'btn.pmAgent': 'PM Agent',
     'modal.newTask': 'New Task', 'modal.editTask': 'Edit Task', 'modal.manual': 'Manual', 'modal.pmAgent': 'PM Agent',
@@ -534,6 +516,8 @@ const i18n = {
     'btn.decompose': 'Decompose with AI', 'btn.cancel': 'Cancel', 'btn.create': 'Create Task',
     'btn.save': 'Save', 'btn.delete': 'Delete', 'btn.addAll': 'Add All to Board', 'btn.startLoop': 'Start Loop',
     'btn.stopLoop': 'Stop Loop', 'btn.export': 'Export JSON',
+    'btn.addRepo': 'Add Repository', 'btn.browse': 'Browse', 'btn.clone': 'Clone & Add',
+    'btn.activate': 'Activate', 'btn.remove': 'Remove',
     'empty.backlog': 'No tasks yet. Create one to get started!',
     'empty.planning': 'Move tasks here when planning begins.',
     'empty.inProgress': 'Tasks being worked on appear here.',
@@ -542,6 +526,9 @@ const i18n = {
     'toast.created': 'Task created', 'toast.updated': 'Task updated', 'toast.deleted': 'Task deleted',
     'toast.loopStarted': 'Loop started', 'toast.loopStopped': 'Loop stopped',
     'toast.decomposing': 'PM Agent is analyzing...', 'toast.decomposed': 'Subtasks generated',
+    'toast.repoAdded': 'Repository added', 'toast.repoActivated': 'Repository activated',
+    'toast.repoRemoved': 'Repository removed', 'toast.githubConnected': 'GitHub connected',
+    'toast.cancelled': 'Cancelled',
     'confirm.delete': 'Are you sure you want to delete this task?',
     'history.title': 'Loop History', 'history.task': 'Task', 'history.status': 'Status',
     'history.iterations': 'Iterations', 'history.lastActivity': 'Last Activity',
@@ -553,20 +540,21 @@ const i18n = {
     'settings.pmMode': 'PM Agent Mode', 'settings.pmModeSub': 'Claude CLI (default) or Anthropic API',
     'settings.export': 'Export Data', 'settings.exportSub': 'Download all tasks as JSON',
     'settings.reset': 'Reset Data', 'settings.resetSub': 'Delete all tasks (irreversible)',
+    'settings.repos': 'Repositories', 'settings.reposSub': 'Manage target repositories for loop execution',
+    'settings.github': 'GitHub Integration', 'settings.githubSub': 'Connect your GitHub account to browse repositories',
+    'settings.addLocalRepo': 'Add Local Repository', 'settings.addGithubRepo': 'Add from GitHub',
+    'settings.githubToken': 'GitHub Personal Access Token', 'settings.connect': 'Connect',
+    'settings.disconnect': 'Disconnect', 'settings.activeRepo': 'Active',
+    'settings.noRepos': 'No repositories configured. Add one to get started.',
     'detail.info': 'Information', 'detail.loop': 'Loop Progress', 'detail.timeline': 'Iteration Timeline',
     'onboarding.welcome': 'Welcome to Looper Dashboard! Create your first task or use PM Agent to auto-decompose a prompt.',
-    'guide.title': 'User Guide',
-    'settings.repos': 'Repositories', 'settings.reposSub': 'Manage target repositories for loop execution',
-    'settings.github': 'GitHub Integration', 'settings.githubSub': 'Connect your GitHub account to browse and clone repositories',
-    'settings.addLocalRepo': 'Add Local Repository', 'settings.addGithubRepo': 'Add from GitHub',
-    'settings.githubToken': 'GitHub Personal Access Token', 'settings.connect': 'Connect', 'settings.disconnect': 'Disconnect',
-    'settings.activeRepo': 'Active', 'settings.noRepos': 'No repositories configured. Add one to get started.',
-    'btn.addRepo': 'Add Repository', 'btn.browse': 'Browse Repos', 'btn.clone': 'Clone & Add', 'btn.activate': 'Activate', 'btn.remove': 'Remove',
-    'toast.repoAdded': 'Repository added', 'toast.repoActivated': 'Repository activated', 'toast.repoRemoved': 'Repository removed',
-    'toast.githubConnected': 'GitHub connected', 'toast.cancelled': 'Cancelled',
+    'pm.setupRequired': 'Setup Required',
+    'pm.setupGuide': 'PM Agent requires Claude CLI or an Anthropic API key.',
   },
   ko: {
-    'nav.kanban': '칸반 보드', 'nav.history': '루프 히스토리', 'nav.analytics': '분석', 'nav.guide': '사용자 가이드', 'nav.settings': '설정',
+    'nav.kanban': '칸반 보드', 'nav.history': '루프 히스토리', 'nav.analytics': '분석', 'nav.settings': '설정',
+    'nav.guide': '사용자 가이드',
+    'guide.title': '사용자 가이드',
     'search.placeholder': '태스크 검색...', 'cmd.placeholder': '명령어를 입력하세요...',
     'kanban.title': '칸반 보드', 'btn.newTask': '+ 새 태스크', 'btn.pmAgent': 'PM Agent',
     'modal.newTask': '새 태스크', 'modal.editTask': '태스크 편집', 'modal.manual': '수동 생성', 'modal.pmAgent': 'PM Agent',
@@ -578,6 +566,8 @@ const i18n = {
     'btn.decompose': 'AI로 분해하기', 'btn.cancel': '취소', 'btn.create': '태스크 생성',
     'btn.save': '저장', 'btn.delete': '삭제', 'btn.addAll': '전체 보드에 추가', 'btn.startLoop': '루프 시작',
     'btn.stopLoop': '루프 중지', 'btn.export': 'JSON 내보내기',
+    'btn.addRepo': '저장소 추가', 'btn.browse': '탐색', 'btn.clone': '클론 & 추가',
+    'btn.activate': '활성화', 'btn.remove': '제거',
     'empty.backlog': '태스크가 없습니다. 새로 만들어 보세요!',
     'empty.planning': '계획이 시작되면 여기로 이동하세요.',
     'empty.inProgress': '작업 중인 태스크가 여기에 표시됩니다.',
@@ -587,6 +577,9 @@ const i18n = {
     'toast.deleted': '태스크가 삭제되었습니다',
     'toast.loopStarted': '루프가 시작되었습니다', 'toast.loopStopped': '루프가 중지되었습니다',
     'toast.decomposing': 'PM Agent가 분석 중입니다...', 'toast.decomposed': '서브태스크가 생성되었습니다',
+    'toast.repoAdded': '저장소가 추가되었습니다', 'toast.repoActivated': '저장소가 활성화되었습니다',
+    'toast.repoRemoved': '저장소가 제거되었습니다', 'toast.githubConnected': 'GitHub가 연결되었습니다',
+    'toast.cancelled': '취소되었습니다',
     'confirm.delete': '이 태스크를 삭제하시겠습니까?',
     'history.title': '루프 히스토리', 'history.task': '태스크', 'history.status': '상태',
     'history.iterations': '이터레이션', 'history.lastActivity': '최근 활동',
@@ -598,23 +591,22 @@ const i18n = {
     'settings.pmMode': 'PM Agent 모드', 'settings.pmModeSub': 'Claude CLI (기본) 또는 Anthropic API',
     'settings.export': '데이터 내보내기', 'settings.exportSub': '모든 태스크를 JSON으로 다운로드',
     'settings.reset': '데이터 초기화', 'settings.resetSub': '모든 태스크 삭제 (되돌릴 수 없음)',
+    'settings.repos': '저장소', 'settings.reposSub': '루프 실행 대상 저장소 관리',
+    'settings.github': 'GitHub 연동', 'settings.githubSub': 'GitHub 계정을 연결하여 저장소를 탐색합니다',
+    'settings.addLocalRepo': '로컬 저장소 추가', 'settings.addGithubRepo': 'GitHub에서 추가',
+    'settings.githubToken': 'GitHub 개인 접근 토큰', 'settings.connect': '연결',
+    'settings.disconnect': '연결 해제', 'settings.activeRepo': '활성',
+    'settings.noRepos': '설정된 저장소가 없습니다. 추가하여 시작하세요.',
     'detail.info': '정보', 'detail.loop': '루프 진행', 'detail.timeline': '이터레이션 타임라인',
     'onboarding.welcome': 'Looper 대시보드에 오신 것을 환영합니다! 첫 태스크를 생성하거나 PM Agent로 프롬프트를 자동 분해해 보세요.',
-    'guide.title': '사용자 가이드',
-    'settings.repos': '저장소', 'settings.reposSub': '루프 실행 대상 저장소 관리',
-    'settings.github': 'GitHub 연동', 'settings.githubSub': 'GitHub 계정을 연결하여 저장소를 탐색하고 클론합니다',
-    'settings.addLocalRepo': '로컬 저장소 추가', 'settings.addGithubRepo': 'GitHub에서 추가',
-    'settings.githubToken': 'GitHub 개인 접근 토큰', 'settings.connect': '연결', 'settings.disconnect': '연결 해제',
-    'settings.activeRepo': '활성', 'settings.noRepos': '설정된 저장소가 없습니다. 추가하여 시작하세요.',
-    'btn.addRepo': '저장소 추가', 'btn.browse': '저장소 탐색', 'btn.clone': '클론 & 추가', 'btn.activate': '활성화', 'btn.remove': '제거',
-    'toast.repoAdded': '저장소가 추가되었습니다', 'toast.repoActivated': '저장소가 활성화되었습니다', 'toast.repoRemoved': '저장소가 제거되었습니다',
-    'toast.githubConnected': 'GitHub가 연결되었습니다', 'toast.cancelled': '취소되었습니다',
+    'pm.setupRequired': '설정 필요',
+    'pm.setupGuide': 'PM Agent를 사용하려면 Claude CLI 또는 Anthropic API 키가 필요합니다.',
   }
 };
 
 function t(key) { return (i18n[State.lang] || i18n.en)[key] || key; }
 
-/* ========== API ========== */
+/* ========== API (with error handling) ========== */
 const API = {
   async get(url) { const r = await fetch(url); if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `Request failed: ${r.status}`); } return r.json(); },
   async post(url, data) { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `Request failed: ${r.status}`); } return r.json(); },
@@ -625,17 +617,22 @@ const API = {
 async function loadTasks() { try { State.tasks = await API.get('/api/tasks'); } catch { State.tasks = []; } }
 async function loadLoops() { try { State.loops = await API.get('/api/git/loops'); } catch { State.loops = []; } }
 async function loadStats() { try { State.stats = await API.get('/api/stats'); } catch { State.stats = {}; } }
-async function loadRepos() { try { State.repos = await API.get('/api/repos'); State.activeRepo = State.repos.find(r => r.isActive) || null; } catch { State.repos = []; State.activeRepo = null; } }
-async function loadSettings() { try { State.appSettings = await API.get('/api/settings'); } catch { State.appSettings = {}; } }
-async function loadPmStatus() { try { State.pmStatus = await API.get('/api/pm/status'); } catch { State.pmStatus = null; } }
+async function loadRepos() {
+  try { State.repos = await API.get('/api/repos'); } catch { State.repos = []; }
+  State.activeRepo = State.repos.find(r => r.isActive) || null;
+}
+async function loadSettings() {
+  try { State.appSettings = await API.get('/api/settings'); } catch { State.appSettings = {}; }
+}
 
 async function refreshAll() {
-  await Promise.all([loadTasks(), loadLoops(), loadStats()]);
+  await Promise.all([loadTasks(), loadLoops(), loadStats(), loadRepos(), loadSettings()]);
   renderCurrentView();
+  updateRepoIndicator();
   showToast(State.lang === 'ko' ? '새로고침 완료' : 'Refreshed', 'info');
 }
 
-/* ========== WEBSOCKET ========== */
+/* ========== WEBSOCKET (exponential backoff) ========== */
 let wsReconnectDelay = 1000;
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -653,8 +650,6 @@ function connectWS() {
     } else if (msg.type === 'loop:log') {
       const panel = document.getElementById('loopLogContent');
       if (panel) { panel.textContent += msg.data.message; panel.scrollTop = panel.scrollHeight; }
-    } else if (msg.type === 'repo:activated' || msg.type === 'repo:added') {
-      loadRepos().then(updateRepoIndicator);
     }
   };
   State.ws.onclose = () => {
@@ -688,11 +683,15 @@ function renderKanban() {
   const emptyKeys = { 'backlog': 'empty.backlog', 'planning': 'empty.planning', 'in-progress': 'empty.inProgress', 'review': 'empty.review', 'done': 'empty.done' };
   let html = `<div class="kanban-header"><h1 data-i18n="kanban.title">${t('kanban.title')}</h1><div class="kanban-actions"><button class="btn btn-primary" onclick="openModal('newTaskModal')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span data-i18n="btn.newTask">${t('btn.newTask')}</span></button></div></div>`;
   html += '<div class="kanban-board">';
-  const q = State.searchQuery;
   for (const col of COLUMNS) {
     let tasks = State.tasks.filter(t => t.column === col.id);
-    if (q) {
-      tasks = tasks.filter(t => t.title.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q) || (t.labels || []).some(l => l.toLowerCase().includes(q)));
+    if (State.searchQuery) {
+      tasks = tasks.filter(t => {
+        const q = State.searchQuery;
+        return (t.title && t.title.toLowerCase().includes(q)) ||
+               (t.description && t.description.toLowerCase().includes(q)) ||
+               (t.labels && t.labels.some(l => l.toLowerCase().includes(q)));
+      });
     }
     html += `<div class="kanban-column" data-column="${col.id}"><div class="column-header"><div class="column-title"><span class="column-dot" style="background:${col.color}"></span>${col.label[State.lang] || col.label.en}</div><span class="column-count">${tasks.length}</span></div>`;
     html += `<div class="column-body" ondragover="onDragOver(event)" ondrop="onDrop(event,'${col.id}')" ondragleave="onDragLeave(event)">`;
@@ -720,6 +719,7 @@ function renderTaskCard(task) {
   if (task.loopIterations > 0) {
     loopHtml += `<span class="loop-indicator"><svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M12 4V2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10h-2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8v2l4-3-4-3z"/></svg> ${task.loopIterations}</span>`;
   }
+  const createdTimeHtml = task.createdAt ? `<span class="loop-indicator" title="${formatDate(task.createdAt)}">${relativeTime(task.createdAt)}</span>` : '';
   return `<div class="task-card" draggable="true" ondragstart="onDragStart(event,'${task.id}')" onclick="openTaskDetail('${task.id}')">
     <div class="task-card-header">
       <div class="task-card-title">${esc(task.title)}</div>
@@ -729,7 +729,7 @@ function renderTaskCard(task) {
       </div>
     </div>
     ${task.description ? `<div class="task-card-desc">${esc(task.description)}</div>` : ''}
-    <div class="task-card-meta"><span class="priority-badge ${priorityClass}">${task.priority}</span>${labels}${loopHtml}<span class="loop-indicator" title="${formatDate(task.createdAt)}">${relativeTime(task.createdAt)}</span></div>
+    <div class="task-card-meta"><span class="priority-badge ${priorityClass}">${task.priority}</span>${labels}${loopHtml}${createdTimeHtml}</div>
   </div>`;
 }
 
@@ -799,63 +799,22 @@ function statCard(label, value, sub, color) {
   return `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value" style="color:${color}">${value}</div>${sub ? `<div class="stat-sub">${sub}</div>` : ''}</div>`;
 }
 
-/* ========== SETTINGS VIEW ========== */
+/* ========== GUIDE VIEW ========== */
+function renderGuide() {
+  document.getElementById('view-guide').innerHTML = `<iframe src="/guide.html" style="width:100%;height:calc(100vh - 56px);border:none"></iframe>`;
+}
+
+/* ========== SETTINGS VIEW (async, with repos & PM status) ========== */
 async function renderSettings() {
-  await Promise.all([loadRepos(), loadSettings(), loadPmStatus()]);
   const isDark = State.theme === 'dark';
-  const pmMethod = State.pmStatus ? (State.pmStatus.available ? State.pmStatus.method.toUpperCase() : 'N/A') : '...';
+  let pmMode = 'Claude CLI';
+  try {
+    const pmStatus = await API.get('/api/pm/status');
+    State.pmStatus = pmStatus;
+    pmMode = pmStatus.mode || 'Claude CLI';
+  } catch { /* use default */ }
+
   let html = `<div class="kanban-header"><h1 data-i18n="settings.title">${t('settings.title')}</h1></div>`;
-
-  // Repositories section
-  html += `<div class="settings-section"><h3>${t('settings.repos')}</h3>`;
-  html += `<p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:var(--space-3)">${t('settings.reposSub')}</p>`;
-  if (State.repos.length > 0) {
-    html += '<div style="border:1px solid var(--border-primary);border-radius:var(--radius-md);margin-bottom:var(--space-3)">';
-    for (const repo of State.repos) {
-      html += `<div class="repo-list-item">
-        <div class="repo-info">
-          <div style="font-weight:500">${esc(repo.name)}${repo.isActive ? `<span class="repo-active-badge">${t('settings.activeRepo')}</span>` : ''}</div>
-          <div class="repo-path">${esc(repo.path)}</div>
-          ${repo.source === 'github' ? `<div style="font-size:.7rem;color:var(--text-tertiary)">GitHub</div>` : ''}
-        </div>
-        <div style="display:flex;gap:var(--space-1)">
-          ${!repo.isActive ? `<button class="btn btn-secondary btn-sm" onclick="activateRepo('${repo.id}')">${t('btn.activate')}</button>` : ''}
-          <button class="btn btn-danger btn-sm" onclick="removeRepo('${repo.id}')">${t('btn.remove')}</button>
-        </div>
-      </div>`;
-    }
-    html += '</div>';
-  } else {
-    html += `<div style="padding:var(--space-4);text-align:center;color:var(--text-tertiary);font-size:.85rem;border:1px dashed var(--border-primary);border-radius:var(--radius-md);margin-bottom:var(--space-3)">${t('settings.noRepos')}</div>`;
-  }
-  // Add local repo form
-  html += `<div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-3)">
-    <input type="text" id="localRepoPath" placeholder="${State.lang === 'ko' ? '로컬 저장소 경로 (예: /home/user/my-project)' : 'Local repository path (e.g. /home/user/my-project)'}" style="flex:1">
-    <button class="btn btn-primary btn-sm" onclick="addLocalRepo()">${t('btn.addRepo')}</button>
-  </div>`;
-  html += '</div>';
-
-  // GitHub Integration section
-  html += `<div class="settings-section"><h3>${t('settings.github')}</h3>`;
-  html += `<p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:var(--space-3)">${t('settings.githubSub')}</p>`;
-  if (State.appSettings.hasGithubToken) {
-    html += `<div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-3)">
-      <span style="font-size:.85rem;color:var(--color-pass)">Connected (${State.appSettings.githubToken || '••••'})</span>
-      <button class="btn btn-secondary btn-sm" onclick="disconnectGithub()">${t('settings.disconnect')}</button>
-    </div>`;
-    html += `<div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-3)">
-      <input type="text" id="githubOwner" placeholder="${State.lang === 'ko' ? 'GitHub 유저명 또는 조직명' : 'GitHub username or org'}" style="flex:1">
-      <button class="btn btn-primary btn-sm" onclick="browseGithubRepos()">${t('btn.browse')}</button>
-    </div>`;
-    html += '<div id="githubReposList"></div>';
-  } else {
-    html += `<div style="display:flex;gap:var(--space-2)">
-      <input type="password" id="githubToken" placeholder="${t('settings.githubToken')}" style="flex:1">
-      <button class="btn btn-primary btn-sm" onclick="connectGithub()">${t('settings.connect')}</button>
-    </div>`;
-    html += `<p style="font-size:.75rem;color:var(--text-tertiary);margin-top:var(--space-2)">${State.lang === 'ko' ? 'GitHub Settings > Developer settings > Personal access tokens에서 토큰을 생성하세요. repo 권한이 필요합니다.' : 'Create a token at GitHub Settings > Developer settings > Personal access tokens. Requires "repo" scope.'}</p>`;
-  }
-  html += '</div>';
 
   // General section
   html += `<div class="settings-section"><h3>${State.lang === 'ko' ? '일반' : 'General'}</h3>`;
@@ -863,9 +822,40 @@ async function renderSettings() {
   html += settingsRow(t('settings.lang'), t('settings.langSub'), `<button class="btn btn-secondary btn-sm" onclick="toggleLang()">${State.lang === 'en' ? 'English → 한국어' : '한국어 → English'}</button>`);
   html += '</div>';
 
+  // Repositories section
+  html += `<div class="settings-section"><h3>${t('settings.repos')}</h3>`;
+  html += `<p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:var(--space-4)">${t('settings.reposSub')}</p>`;
+  if (State.repos.length === 0) {
+    html += `<div style="text-align:center;padding:var(--space-6);color:var(--text-tertiary);font-size:.85rem">${t('settings.noRepos')}</div>`;
+  } else {
+    for (const repo of State.repos) {
+      const isActive = repo.isActive;
+      html += `<div class="settings-row"><div><label>${esc(repo.name)}</label><div class="desc">${esc(repo.path || repo.url || '')}</div></div><div style="display:flex;gap:var(--space-2);align-items:center">`;
+      if (isActive) {
+        html += `<span class="priority-badge priority-medium">${t('settings.activeRepo')}</span>`;
+      } else {
+        html += `<button class="btn btn-secondary btn-sm" onclick="activateRepo('${esc(repo.id)}')">${t('btn.activate')}</button>`;
+      }
+      html += `<button class="btn btn-danger btn-sm" onclick="removeRepo('${esc(repo.id)}')">${t('btn.remove')}</button>`;
+      html += '</div></div>';
+    }
+  }
+  // Add local repo form
+  html += `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--border-primary)">`;
+  html += `<label style="font-size:.85rem;font-weight:500;display:block;margin-bottom:var(--space-2)">${t('settings.addLocalRepo')}</label>`;
+  html += `<div style="display:flex;gap:var(--space-2)"><input type="text" id="localRepoPath" placeholder="/path/to/repo" style="flex:1"><button class="btn btn-primary btn-sm" onclick="addLocalRepo()">${t('btn.addRepo')}</button></div>`;
+  html += '</div>';
+  // GitHub integration
+  html += `<div style="margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--border-primary)">`;
+  html += `<label style="font-size:.85rem;font-weight:500;display:block;margin-bottom:var(--space-2)">${t('settings.github')}</label>`;
+  html += `<p style="font-size:.8rem;color:var(--text-tertiary);margin-bottom:var(--space-2)">${t('settings.githubSub')}</p>`;
+  html += `<div style="display:flex;gap:var(--space-2)"><input type="password" id="githubToken" placeholder="${t('settings.githubToken')}" style="flex:1"><button class="btn btn-primary btn-sm" onclick="connectGithub()">${t('settings.connect')}</button></div>`;
+  html += '</div>';
+  html += '</div>';
+
   // PM Agent section
   html += `<div class="settings-section"><h3>PM Agent</h3>`;
-  html += settingsRow(t('settings.pmMode'), t('settings.pmModeSub'), `<span style="font-size:.85rem;color:${State.pmStatus?.available ? 'var(--color-pass)' : 'var(--color-fail)'}">${pmMethod}${!State.pmStatus?.available ? ' — ' + esc(State.pmStatus?.message || '') : ''}</span>`);
+  html += settingsRow(t('settings.pmMode'), t('settings.pmModeSub'), `<span style="font-size:.85rem;color:var(--text-secondary)">${esc(pmMode)}</span>`);
   html += '</div>';
 
   // Data section
@@ -882,17 +872,15 @@ function settingsRow(label, desc, control) {
 
 /* ========== REPO MANAGEMENT ========== */
 async function addLocalRepo() {
-  const pathInput = document.getElementById('localRepoPath');
-  const localPath = pathInput.value.trim();
-  if (!localPath) return showToast(State.lang === 'ko' ? '경로를 입력하세요' : 'Path is required', 'error');
+  const path = document.getElementById('localRepoPath').value.trim();
+  if (!path) return showToast('Path is required', 'error');
   try {
-    await API.post('/api/repos', { localPath });
-    pathInput.value = '';
+    await API.post('/api/repos', { path });
     await loadRepos();
     updateRepoIndicator();
     renderSettings();
     showToast(t('toast.repoAdded'), 'success');
-  } catch (e) { showToast(e.message, 'error'); }
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function activateRepo(id) {
@@ -902,76 +890,26 @@ async function activateRepo(id) {
     updateRepoIndicator();
     renderSettings();
     showToast(t('toast.repoActivated'), 'success');
-  } catch (e) { showToast(e.message, 'error'); }
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function removeRepo(id) {
-  if (!confirm(State.lang === 'ko' ? '이 저장소를 제거하시겠습니까?' : 'Remove this repository?')) return;
   try {
     await API.del(`/api/repos/${id}`);
     await loadRepos();
     updateRepoIndicator();
     renderSettings();
     showToast(t('toast.repoRemoved'), 'success');
-  } catch (e) { showToast(e.message, 'error'); }
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function connectGithub() {
   const token = document.getElementById('githubToken').value.trim();
-  if (!token) return showToast(State.lang === 'ko' ? '토큰을 입력하세요' : 'Token is required', 'error');
+  if (!token) return showToast('Token is required', 'error');
   try {
-    await API.post('/api/repos/github/connect', { token });
-    await loadSettings();
-    renderSettings();
+    await API.post('/api/settings/github', { token });
     showToast(t('toast.githubConnected'), 'success');
-  } catch (e) { showToast(e.message, 'error'); }
-}
-
-async function disconnectGithub() {
-  try {
-    await API.post('/api/repos/github/connect', { token: '' });
-    await loadSettings();
-    renderSettings();
-    showToast(State.lang === 'ko' ? 'GitHub 연결 해제' : 'GitHub disconnected', 'info');
-  } catch (e) { showToast(e.message, 'error'); }
-}
-
-async function browseGithubRepos() {
-  const owner = document.getElementById('githubOwner').value.trim();
-  if (!owner) return showToast(State.lang === 'ko' ? '유저명을 입력하세요' : 'Username is required', 'error');
-  const container = document.getElementById('githubReposList');
-  container.innerHTML = '<div class="pm-loading"><div class="spinner"></div></div>';
-  try {
-    const repos = await API.get(`/api/repos/github/repos?owner=${encodeURIComponent(owner)}`);
-    if (repos.length === 0) {
-      container.innerHTML = `<div style="padding:var(--space-4);text-align:center;color:var(--text-tertiary)">${State.lang === 'ko' ? '저장소를 찾을 수 없습니다' : 'No repositories found'}</div>`;
-      return;
-    }
-    let html = '<div class="github-repo-list">';
-    for (const repo of repos) {
-      html += `<div class="github-repo-item">
-        <div class="repo-info">
-          <div class="repo-fullname">${esc(repo.full_name)}${repo.private ? ' <span style="font-size:.7rem;color:var(--text-tertiary)">private</span>' : ''}</div>
-          ${repo.description ? `<div class="repo-desc">${esc(repo.description)}</div>` : ''}
-          ${repo.language ? `<div class="repo-lang">${esc(repo.language)}</div>` : ''}
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="cloneGithubRepo('${esc(repo.clone_url)}', '${esc(repo.name)}')">${t('btn.clone')}</button>
-      </div>`;
-    }
-    html += '</div>';
-    container.innerHTML = html;
-  } catch (e) { container.innerHTML = `<div style="padding:var(--space-4);color:var(--color-fail)">${esc(e.message)}</div>`; }
-}
-
-async function cloneGithubRepo(url, name) {
-  showToast(State.lang === 'ko' ? '클론 중...' : 'Cloning...', 'info');
-  try {
-    await API.post('/api/repos', { githubUrl: url, name });
-    await loadRepos();
-    updateRepoIndicator();
-    renderSettings();
-    showToast(t('toast.repoAdded'), 'success');
-  } catch (e) { showToast(e.message, 'error'); }
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 function updateRepoIndicator() {
@@ -982,11 +920,6 @@ function updateRepoIndicator() {
   } else {
     el.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg><span class="repo-name" style="color:var(--text-tertiary)">${State.lang === 'ko' ? '저장소 없음' : 'No repo'}</span>`;
   }
-}
-
-/* ========== GUIDE VIEW ========== */
-function renderGuide() {
-  document.getElementById('view-guide').innerHTML = '<iframe src="/guide.html" style="width:100%;height:calc(100vh - 80px);border:none;border-radius:var(--radius-md)"></iframe>';
 }
 
 /* ========== TASK CRUD ========== */
@@ -1061,16 +994,16 @@ function confirmDeleteTask(id) {
   openModal('confirmDialog');
 }
 
-/* ========== PM AGENT ========== */
+/* ========== PM AGENT (with abort controller) ========== */
 let decomposeController = null;
+
 async function decomposePM() {
   const prompt = document.getElementById('pmPrompt').value.trim();
-  if (!prompt) return showToast(State.lang === 'ko' ? '프롬프트를 입력하세요' : 'Prompt is required', 'error');
+  if (!prompt) return showToast('Prompt is required', 'error');
   const btn = document.getElementById('decomposeBtn');
   btn.disabled = true;
   decomposeController = new AbortController();
   document.getElementById('pmResults').innerHTML = `<div class="pm-loading"><div class="spinner"></div><p>${t('toast.decomposing')}</p><button class="btn btn-secondary btn-sm" onclick="cancelDecompose()" style="margin-top:8px">${t('btn.cancel')}</button></div>`;
-  showToast(t('toast.decomposing'), 'info');
   try {
     const res = await fetch('/api/pm/decompose', {
       method: 'POST',
@@ -1084,35 +1017,26 @@ async function decomposePM() {
     }
     const data = await res.json();
     State.pmSubtasks = data.subtasks || [];
-    if (State.pmSubtasks.length === 0) {
-      document.getElementById('pmResults').innerHTML = `<div class="pm-loading" style="color:var(--text-tertiary)">${State.lang === 'ko' ? '서브태스크를 생성할 수 없습니다. 프롬프트를 수정해 보세요.' : 'No subtasks generated. Try modifying your prompt.'}</div>`;
-    } else {
-      let html = '<div class="pm-subtasks">';
-      State.pmSubtasks.forEach((sub, i) => {
-        html += `<div class="pm-subtask"><input type="checkbox" checked data-idx="${i}"><div class="pm-subtask-content"><div class="pm-subtask-title">${esc(sub.title)}</div><div class="pm-subtask-desc">${esc(sub.description)}</div><span class="priority-badge priority-${sub.priority}">${sub.priority}</span></div></div>`;
-      });
-      html += `</div><div style="margin-top:12px;text-align:right"><button class="btn btn-primary" onclick="saveNewTask()" data-i18n="btn.addAll">${t('btn.addAll')}</button></div>`;
-      document.getElementById('pmResults').innerHTML = html;
-      showToast(t('toast.decomposed'), 'success');
-    }
+    let html = '<div class="pm-subtasks">';
+    State.pmSubtasks.forEach((sub, i) => {
+      html += `<div class="pm-subtask"><input type="checkbox" checked data-idx="${i}"><div class="pm-subtask-content"><div class="pm-subtask-title">${esc(sub.title)}</div><div class="pm-subtask-desc">${esc(sub.description)}</div><span class="priority-badge priority-${sub.priority}">${sub.priority}</span></div></div>`;
+    });
+    html += `</div><div style="margin-top:12px;text-align:right"><button class="btn btn-primary" onclick="saveNewTask()" data-i18n="btn.addAll">${t('btn.addAll')}</button></div>`;
+    document.getElementById('pmResults').innerHTML = html;
+    showToast(t('toast.decomposed'), 'success');
   } catch (e) {
     if (e.name === 'AbortError') {
       document.getElementById('pmResults').innerHTML = '';
       showToast(t('toast.cancelled'), 'info');
     } else {
       let guidance = '';
-      const msg = e.message || 'Unknown error';
-      if (msg.includes('CLI not found') || msg.includes('Neither') || msg.includes('not available')) {
+      if (e.message.includes('CLI not found') || e.message.includes('Neither')) {
         guidance = State.lang === 'ko'
-          ? '<div style="margin-top:12px;text-align:left;font-size:.85rem;color:var(--text-secondary)"><strong>해결 방법:</strong><ol style="margin:4px 0 0 16px"><li>Claude CLI를 설치하세요: <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" style="color:var(--color-primary)">설치 가이드</a></li><li>또는 대시보드 시작 전에 <code>ANTHROPIC_API_KEY</code> 환경변수를 설정하세요</li></ol></div>'
-          : '<div style="margin-top:12px;text-align:left;font-size:.85rem;color:var(--text-secondary)"><strong>How to fix:</strong><ol style="margin:4px 0 0 16px"><li>Install Claude CLI: <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" style="color:var(--color-primary)">Installation Guide</a></li><li>Or set <code>ANTHROPIC_API_KEY</code> env variable before starting the dashboard</li></ol></div>';
-      } else if (msg.includes('timed out')) {
-        guidance = State.lang === 'ko'
-          ? '<div style="margin-top:8px;font-size:.85rem;color:var(--text-secondary)">Claude CLI가 응답하지 않습니다. 다시 시도하거나 ANTHROPIC_API_KEY를 설정해 보세요.</div>'
-          : '<div style="margin-top:8px;font-size:.85rem;color:var(--text-secondary)">Claude CLI is unresponsive. Try again or set ANTHROPIC_API_KEY.</div>';
+          ? '<br><br><strong>해결 방법:</strong><br>1. Claude CLI 설치: <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank">설치 가이드</a><br>2. 또는 Settings에서 ANTHROPIC_API_KEY 환경변수를 설정하세요.'
+          : '<br><br><strong>How to fix:</strong><br>1. Install Claude CLI: <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank">Installation Guide</a><br>2. Or set ANTHROPIC_API_KEY environment variable before starting the dashboard.';
       }
-      document.getElementById('pmResults').innerHTML = `<div class="pm-loading" style="color:var(--color-fail)">${esc(msg)}${guidance}</div>`;
-      showToast('Error: ' + msg, 'error');
+      document.getElementById('pmResults').innerHTML = `<div class="pm-loading" style="color:var(--color-fail)">${esc(e.message)}${guidance}</div>`;
+      showToast('Error: ' + (e.message || 'Unknown'), 'error');
     }
   }
   btn.disabled = false;
@@ -1251,7 +1175,7 @@ const CMD_ACTIONS = [
   { label: { en: 'Go to Kanban', ko: '칸반으로 이동' }, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>', action: () => { closeCmdPalette(); switchView('kanban'); } },
   { label: { en: 'Go to History', ko: '히스토리로 이동' }, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>', action: () => { closeCmdPalette(); switchView('history'); } },
   { label: { en: 'Go to Analytics', ko: '분석으로 이동' }, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>', action: () => { closeCmdPalette(); switchView('analytics'); } },
-  { label: { en: 'Go to User Guide', ko: '가이드로 이동' }, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>', action: () => { closeCmdPalette(); switchView('guide'); } },
+  { label: { en: 'Go to Guide', ko: '가이드로 이동' }, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>', action: () => { closeCmdPalette(); switchView('guide'); } },
   { label: { en: 'Go to Settings', ko: '설정으로 이동' }, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>', action: () => { closeCmdPalette(); switchView('settings'); } },
   { label: { en: 'Toggle Theme', ko: '테마 전환' }, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/></svg>', action: () => { closeCmdPalette(); toggleTheme(); } },
   { label: { en: 'Toggle Language', ko: '언어 전환' }, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>', action: () => { closeCmdPalette(); toggleLang(); } },
@@ -1303,6 +1227,7 @@ function toggleLang() {
   document.documentElement.lang = State.lang;
   document.getElementById('langToggle').textContent = State.lang.toUpperCase();
   localStorage.setItem('looper-lang', State.lang);
+  updateRepoIndicator();
   renderCurrentView();
 }
 
@@ -1332,6 +1257,7 @@ function showToast(msg, type = 'info') {
 /* ========== UTILS ========== */
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function formatDate(iso) { if (!iso) return '—'; try { return new Date(iso).toLocaleDateString(State.lang === 'ko' ? 'ko-KR' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return iso; } }
+
 function relativeTime(iso) {
   if (!iso) return '';
   const diff = Date.now() - new Date(iso).getTime();
@@ -1346,7 +1272,7 @@ function relativeTime(iso) {
 }
 
 function handleGlobalSearch(e) {
-  if (e.key === 'Escape') { e.target.value = ''; State.searchQuery = ''; renderKanban(); return; }
+  if (e.key === 'Escape') { e.target.value = ''; }
   State.searchQuery = e.target.value.trim().toLowerCase();
   if (State.currentView === 'kanban') renderKanban();
 }
@@ -1405,8 +1331,8 @@ async function init() {
   document.getElementById('langToggle').textContent = State.lang.toUpperCase();
   connectWS();
   await Promise.all([loadTasks(), loadLoops(), loadStats(), loadRepos(), loadSettings()]);
-  updateRepoIndicator();
   renderCurrentView();
+  updateRepoIndicator();
   showOnboarding();
 }
 
