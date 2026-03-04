@@ -1,37 +1,16 @@
 const express = require('express');
-const http = require('http');
-const { WebSocketServer } = require('ws');
 const path = require('path');
 
 const taskStore = require('./lib/task-store');
-const gitParser = require('./lib/git-parser');
-const loopRunner = require('./lib/loop-runner');
 const pmAgent = require('./lib/pm-agent');
 
 const app = express();
-const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
 
-const PORT = process.env.PORT || 3000;
+const IS_VERCEL = !!process.env.VERCEL;
 
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-
-// --- WebSocket ---
-const wsClients = new Set();
-
-wss.on('connection', (ws) => {
-  wsClients.add(ws);
-  ws.on('close', () => wsClients.delete(ws));
-});
-
-function broadcast(type, data) {
-  const msg = JSON.stringify({ type, data, timestamp: new Date().toISOString() });
-  for (const ws of wsClients) {
-    if (ws.readyState === 1) ws.send(msg);
-  }
-}
 
 // --- Task API ---
 
@@ -45,21 +24,18 @@ app.post('/api/tasks', (req, res) => {
   const { title, description, priority, labels, column } = req.body;
   if (!title) return res.status(400).json({ error: 'title is required' });
   const task = taskStore.createTask({ title, description, priority, labels, column });
-  broadcast('task:created', task);
   res.status(201).json(task);
 });
 
 app.put('/api/tasks/:id', (req, res) => {
   const task = taskStore.updateTask(req.params.id, req.body);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  broadcast('task:updated', task);
   res.json(task);
 });
 
 app.delete('/api/tasks/:id', (req, res) => {
   const ok = taskStore.deleteTask(req.params.id);
   if (!ok) return res.status(404).json({ error: 'Task not found' });
-  broadcast('task:deleted', { id: req.params.id });
   res.json({ ok: true });
 });
 
@@ -67,42 +43,29 @@ app.post('/api/tasks/bulk', (req, res) => {
   const { ids, updates } = req.body;
   if (!ids || !Array.isArray(ids)) return res.status(400).json({ error: 'ids array required' });
   const results = taskStore.bulkUpdate(ids, updates || {});
-  broadcast('tasks:bulk-updated', results);
   res.json(results);
 });
 
-// --- Loop API ---
+// --- Loop API (local only) ---
 
 app.post('/api/tasks/:id/start-loop', (req, res) => {
+  if (IS_VERCEL) {
+    return res.status(501).json({ error: 'Loop execution is only available locally. Use: cd dashboard && npm start' });
+  }
+  const loopRunner = require('./lib/loop-runner');
   const task = taskStore.getTask(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-
-  if (loopRunner.isRunning(task.id)) {
-    return res.status(409).json({ error: 'Loop already running' });
-  }
-
+  if (loopRunner.isRunning(task.id)) return res.status(409).json({ error: 'Loop already running' });
   try {
     const result = loopRunner.startLoop(task.id, task.title, {
-      onLog: (log) => {
-        broadcast('loop:log', { taskId: task.id, ...log });
-      },
-      onComplete: (result) => {
-        // Update task status based on result
-        const column = result.code === 0 ? 'done' : 'review';
+      onComplete: (r) => {
         taskStore.updateTask(task.id, {
-          loopStatus: result.code === 0 ? 'passed' : 'failed',
-          column
+          loopStatus: r.code === 0 ? 'passed' : 'failed',
+          column: r.code === 0 ? 'done' : 'review'
         });
-        broadcast('loop:complete', { taskId: task.id, ...result });
       }
     });
-
-    taskStore.updateTask(task.id, {
-      loopStatus: 'running',
-      column: 'in-progress'
-    });
-    broadcast('task:updated', taskStore.getTask(task.id));
-
+    taskStore.updateTask(task.id, { loopStatus: 'running', column: 'in-progress' });
     res.json({ started: true, pid: result.pid });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -110,24 +73,18 @@ app.post('/api/tasks/:id/start-loop', (req, res) => {
 });
 
 app.post('/api/tasks/:id/stop-loop', (req, res) => {
+  if (IS_VERCEL) return res.status(501).json({ error: 'Not available on Vercel' });
+  const loopRunner = require('./lib/loop-runner');
   const ok = loopRunner.stopLoop(req.params.id);
-  if (!ok) return res.status(404).json({ error: 'No running loop for this task' });
-
+  if (!ok) return res.status(404).json({ error: 'No running loop' });
   taskStore.updateTask(req.params.id, { loopStatus: 'stopped' });
-  broadcast('task:updated', taskStore.getTask(req.params.id));
   res.json({ stopped: true });
 });
 
 app.get('/api/tasks/:id/loop-status', (req, res) => {
   const task = taskStore.getTask(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-
-  const loops = gitParser.getLoops();
-  const loop = loops.find(l => l.taskName === task.loopTaskName) || null;
-  res.json({
-    running: loopRunner.isRunning(req.params.id),
-    loop
-  });
+  res.json({ running: false, loop: null });
 });
 
 // --- PM Agent API ---
@@ -135,34 +92,40 @@ app.get('/api/tasks/:id/loop-status', (req, res) => {
 app.post('/api/pm/decompose', async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt is required' });
-
   try {
-    broadcast('pm:decomposing', { prompt });
-    const subtasks = await pmAgent.decompose(prompt, {
-      onProgress: (chunk) => broadcast('pm:progress', { chunk })
-    });
-    broadcast('pm:complete', { subtasks });
+    const subtasks = await pmAgent.decompose(prompt);
     res.json({ subtasks });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// --- Git API ---
+// --- Git API (returns empty on Vercel) ---
 
 app.get('/api/git/loops', (req, res) => {
-  const loops = gitParser.getLoops();
-  res.json(loops);
+  if (IS_VERCEL) return res.json([]);
+  try {
+    const gitParser = require('./lib/git-parser');
+    res.json(gitParser.getLoops());
+  } catch { res.json([]); }
 });
 
 app.get('/api/stats', (req, res) => {
-  const gitStats = gitParser.getStats();
   const tasks = taskStore.getAllTasks();
   const tasksByColumn = {};
   for (const col of taskStore.COLUMNS) {
     tasksByColumn[col] = tasks.filter(t => t.column === col).length;
   }
+  let gitStats = { total: 0, passed: 0, failed: 0, inProgress: 0, avgIterations: 0, passRate: 0 };
+  if (!IS_VERCEL) {
+    try { gitStats = require('./lib/git-parser').getStats(); } catch {}
+  }
   res.json({ ...gitStats, tasksByColumn, totalTasks: tasks.length });
+});
+
+// --- Health check ---
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, env: IS_VERCEL ? 'vercel' : 'local', timestamp: new Date().toISOString() });
 });
 
 // --- SPA fallback ---
@@ -170,8 +133,18 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// --- Start ---
-server.listen(PORT, () => {
-  console.log(`Looper Dashboard running at http://localhost:${PORT}`);
-  console.log(`Repository: ${gitParser.getRepoCwd()}`);
-});
+// --- Start (local only) ---
+if (!IS_VERCEL) {
+  const http = require('http');
+  const { WebSocketServer } = require('ws');
+  const server = http.createServer(app);
+  const wss = new WebSocketServer({ server });
+  const wsClients = new Set();
+  wss.on('connection', (ws) => { wsClients.add(ws); ws.on('close', () => wsClients.delete(ws)); });
+  const PORT = process.env.PORT || 3000;
+  server.listen(PORT, () => {
+    console.log(`Looper Dashboard running at http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

@@ -22,11 +22,15 @@ Task to decompose:
  * Returns an array of { title, description, priority }.
  */
 async function decompose(prompt, { onProgress } = {}) {
-  // Try Anthropic API first if key is available
+  // On Vercel or when API key is set, use Anthropic API
   if (process.env.ANTHROPIC_API_KEY) {
     return decomposeViaAPI(prompt, onProgress);
   }
-  // Fall back to Claude CLI
+  // On Vercel without API key, return helpful error
+  if (process.env.VERCEL) {
+    throw new Error('ANTHROPIC_API_KEY environment variable is required for PM Agent on Vercel. Add it in Vercel Dashboard → Settings → Environment Variables.');
+  }
+  // Fall back to Claude CLI (local only)
   return decomposeViaCLI(prompt, onProgress);
 }
 

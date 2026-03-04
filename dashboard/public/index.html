@@ -578,23 +578,44 @@ async function refreshAll() {
 
 /* ========== WEBSOCKET ========== */
 function connectWS() {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  State.ws = new WebSocket(`${proto}//${location.host}`);
-  State.ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    if (msg.type === 'task:created' || msg.type === 'task:updated') {
-      const idx = State.tasks.findIndex(t => t.id === msg.data.id);
-      if (idx >= 0) State.tasks[idx] = msg.data; else State.tasks.push(msg.data);
-      if (State.currentView === 'kanban') renderKanban();
-    } else if (msg.type === 'task:deleted') {
-      State.tasks = State.tasks.filter(t => t.id !== msg.data.id);
-      if (State.currentView === 'kanban') renderKanban();
-    } else if (msg.type === 'loop:log') {
-      const panel = document.getElementById('loopLogContent');
-      if (panel) { panel.textContent += msg.data.message; panel.scrollTop = panel.scrollHeight; }
-    }
-  };
-  State.ws.onclose = () => setTimeout(connectWS, 3000);
+  // Try WebSocket for local, fall back to polling for Vercel
+  try {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    State.ws = new WebSocket(`${proto}//${location.host}`);
+    State.ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'task:created' || msg.type === 'task:updated') {
+        const idx = State.tasks.findIndex(t => t.id === msg.data.id);
+        if (idx >= 0) State.tasks[idx] = msg.data; else State.tasks.push(msg.data);
+        if (State.currentView === 'kanban') renderKanban();
+      } else if (msg.type === 'task:deleted') {
+        State.tasks = State.tasks.filter(t => t.id !== msg.data.id);
+        if (State.currentView === 'kanban') renderKanban();
+      } else if (msg.type === 'loop:log') {
+        const panel = document.getElementById('loopLogContent');
+        if (panel) { panel.textContent += msg.data.message; panel.scrollTop = panel.scrollHeight; }
+      }
+    };
+    State.ws.onerror = () => { startPolling(); };
+    State.ws.onclose = () => setTimeout(connectWS, 5000);
+  } catch {
+    startPolling();
+  }
+}
+
+// Polling fallback for Vercel (no WebSocket support)
+let pollingInterval = null;
+function startPolling() {
+  if (pollingInterval) return;
+  pollingInterval = setInterval(async () => {
+    try {
+      const tasks = await API.get('/api/tasks');
+      if (JSON.stringify(tasks) !== JSON.stringify(State.tasks)) {
+        State.tasks = tasks;
+        renderCurrentView();
+      }
+    } catch {}
+  }, 5000);
 }
 
 /* ========== RENDERING ========== */
