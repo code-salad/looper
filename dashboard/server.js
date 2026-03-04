@@ -273,9 +273,15 @@ app.get('*', (req, res) => {
 });
 
 // --- Start ---
-server.listen(PORT, () => {
-  const activeRepo = repoManager.getActiveRepo();
-  console.log(`Looper Dashboard running at http://localhost:${PORT}`);
-  console.log(`Active repository: ${activeRepo.name} (${activeRepo.path})`);
-  console.log(`PM Agent: ${pmAgent.checkAvailability().message}`);
-});
+// Only listen when running locally (not on Vercel serverless)
+if (!process.env.VERCEL) {
+  server.listen(PORT, () => {
+    const activeRepo = repoManager.getActiveRepo();
+    console.log(`Looper Dashboard running at http://localhost:${PORT}`);
+    console.log(`Active repository: ${activeRepo.name} (${activeRepo.path})`);
+    console.log(`PM Agent: ${pmAgent.checkAvailability().message}`);
+  });
+}
+
+// Export for Vercel serverless
+module.exports = app;

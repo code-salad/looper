@@ -8,738 +8,784 @@
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+/* ========== RESET & VARIABLES (matching main dashboard) ========== */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px;
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px; --radius-xl: 12px;
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
-  --space-5: 20px; --space-6: 24px; --space-8: 32px;
-  --color-primary: #6366f1;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --transition: 150ms ease-out;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.1);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.15);
+  --color-primary: #6366f1; --color-primary-hover: #5457e5;
   --color-plan: #3b82f6; --color-do: #a855f7; --color-check: #f97316;
   --color-pass: #22c55e; --color-fail: #ef4444;
+  --color-critical: #ef4444; --color-high: #f97316; --color-medium: #eab308; --color-low: #6b7280;
 }
 [data-theme="dark"]{
   --bg-primary: #0f1117; --bg-secondary: #1a1d27; --bg-tertiary: #242736;
-  --bg-hover: #2a2d3a; --border-primary: #2a2d3a; --border-secondary: #363a4d;
+  --bg-hover: #2a2d3a; --bg-active: #32364a;
+  --border-primary: #2a2d3a; --border-secondary: #363a4d;
   --text-primary: #e8eaed; --text-secondary: #9ca3af; --text-tertiary: #6b7280;
+  --text-inverse: #0f1117;
+  --shadow-color: rgba(0,0,0,.3);
 }
 [data-theme="light"]{
   --bg-primary: #f8f9fb; --bg-secondary: #ffffff; --bg-tertiary: #f1f3f5;
-  --bg-hover: #e8ebee; --border-primary: #e2e5ea; --border-secondary: #d0d4da;
+  --bg-hover: #e8ebee; --bg-active: #dde0e4;
+  --border-primary: #e2e5ea; --border-secondary: #d0d4da;
   --text-primary: #1a1d27; --text-secondary: #6b7280; --text-tertiary: #9ca3af;
+  --text-inverse: #ffffff;
+  --shadow-color: rgba(0,0,0,.08);
 }
-html{font-size:14px;scroll-behavior:smooth}
-body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-primary);line-height:1.7;padding:0}
-.guide{max-width:780px;margin:0 auto;padding:var(--space-8) var(--space-5) 80px}
-h1{font-size:2rem;font-weight:800;margin-bottom:var(--space-2);color:var(--text-primary)}
-h2{font-size:1.5rem;font-weight:700;margin-top:48px;margin-bottom:var(--space-4);padding-bottom:var(--space-2);border-bottom:2px solid var(--border-primary);color:var(--text-primary)}
-h3{font-size:1.15rem;font-weight:600;margin-top:28px;margin-bottom:var(--space-3);color:var(--text-primary)}
-p{margin-bottom:var(--space-3);color:var(--text-secondary)}
-ul,ol{margin-bottom:var(--space-4);padding-left:24px;color:var(--text-secondary)}
-li{margin-bottom:var(--space-2)}
+
+/* ========== BASE ========== */
+html{font-size:15px;scroll-behavior:smooth}
+body{
+  font-family:var(--font-sans);
+  background:var(--bg-primary);
+  color:var(--text-primary);
+  line-height:1.7;
+  padding:0;margin:0;
+}
 a{color:var(--color-primary);text-decoration:none}
 a:hover{text-decoration:underline}
 strong{color:var(--text-primary)}
-code{font-family:var(--font-mono);background:var(--bg-tertiary);padding:1px 6px;border-radius:3px;font-size:.9em;color:var(--color-primary)}
-pre{background:var(--bg-tertiary);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:var(--space-4);margin-bottom:var(--space-4);overflow-x:auto;font-family:var(--font-mono);font-size:.85rem;line-height:1.6;color:var(--text-primary)}
-.subtitle{font-size:1.1rem;color:var(--text-secondary);margin-bottom:var(--space-6)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-primary);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--border-secondary)}
 
-/* Steps */
-.step{display:flex;gap:var(--space-4);margin-bottom:var(--space-5);padding:var(--space-4);background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:var(--radius-lg)}
-.step-num{width:36px;height:36px;min-width:36px;background:var(--color-primary);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1rem}
-.step-content{flex:1}
-.step-content h4{font-size:1rem;font-weight:600;margin-bottom:var(--space-1)}
-.step-content p{margin-bottom:var(--space-2)}
+/* ========== BILINGUAL VISIBILITY ========== */
+[lang="ko"] .en,
+[lang="en"] .ko{display:none}
+[lang="ko"] .ko,
+[lang="en"] .en{display:revert}
 
-/* Info/Warning boxes */
-.info-box{padding:var(--space-4);border-radius:var(--radius-md);margin-bottom:var(--space-4);font-size:.9rem}
-.info-box.tip{background:rgba(99,102,241,.1);border-left:3px solid var(--color-primary)}
-.info-box.warning{background:rgba(249,115,22,.1);border-left:3px solid var(--color-check)}
-.info-box.success{background:rgba(34,197,94,.1);border-left:3px solid var(--color-pass)}
+/* ========== LANGUAGE TOGGLE (floating) ========== */
+.lang-toggle-float{
+  position:fixed;top:var(--space-5);right:var(--space-5);z-index:100;
+  display:flex;
+  background:var(--bg-secondary);
+  border:1px solid var(--border-primary);
+  border-radius:var(--radius-lg);
+  overflow:hidden;
+  box-shadow:var(--shadow-md);
+}
+.lang-toggle-float button{
+  font-family:var(--font-sans);
+  font-size:.8rem;font-weight:600;
+  padding:var(--space-2) var(--space-4);
+  border:none;background:none;
+  color:var(--text-secondary);cursor:pointer;
+  transition:all var(--transition);
+}
+.lang-toggle-float button.active{background:var(--color-primary);color:#fff}
+.lang-toggle-float button:hover:not(.active){background:var(--bg-hover);color:var(--text-primary)}
 
-/* Flow diagram */
-.flow{display:flex;align-items:center;justify-content:center;gap:var(--space-3);margin:var(--space-5) 0;flex-wrap:wrap}
-.flow-step{padding:var(--space-3) var(--space-5);border-radius:var(--radius-md);font-weight:600;font-size:.9rem;text-align:center;min-width:100px}
-.flow-step.plan{background:rgba(59,130,246,.15);color:var(--color-plan);border:1px solid rgba(59,130,246,.3)}
-.flow-step.do{background:rgba(168,85,247,.15);color:var(--color-do);border:1px solid rgba(168,85,247,.3)}
-.flow-step.check{background:rgba(249,115,22,.15);color:var(--color-check);border:1px solid rgba(249,115,22,.3)}
-.flow-step.pass{background:rgba(34,197,94,.15);color:var(--color-pass);border:1px solid rgba(34,197,94,.3)}
-.flow-arrow{color:var(--text-tertiary);font-size:1.2rem}
+/* ========== LAYOUT ========== */
+.guide-wrapper{max-width:820px;margin:0 auto;padding:var(--space-10) var(--space-6) 80px}
 
-/* Keyboard shortcut badge */
-kbd{font-family:var(--font-mono);background:var(--bg-tertiary);border:1px solid var(--border-secondary);padding:2px 6px;border-radius:3px;font-size:.8rem;color:var(--text-secondary)}
+/* ========== HERO ========== */
+.hero{text-align:center;padding:var(--space-10) 0 var(--space-8);border-bottom:1px solid var(--border-primary);margin-bottom:var(--space-8)}
+.hero-logo{
+  width:56px;height:56px;
+  background:var(--color-primary);border-radius:var(--radius-xl);
+  display:inline-flex;align-items:center;justify-content:center;
+  margin-bottom:var(--space-4);
+}
+.hero-logo svg{width:30px;height:30px;fill:#fff}
+.hero h1{font-size:2rem;font-weight:800;margin-bottom:var(--space-2)}
+.hero p{color:var(--text-secondary);font-size:1.05rem;max-width:540px;margin:0 auto}
 
-/* Language toggle */
-.lang-btn{position:fixed;bottom:20px;right:20px;width:48px;height:48px;border-radius:50%;background:var(--color-primary);color:white;border:none;font-size:.85rem;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.3);z-index:100;font-family:var(--font-sans)}
-.lang-btn:hover{transform:scale(1.05)}
+/* ========== TABLE OF CONTENTS ========== */
+.toc{
+  background:var(--bg-secondary);border:1px solid var(--border-primary);
+  border-radius:var(--radius-lg);padding:var(--space-6);margin-bottom:var(--space-8);
+}
+.toc h2{font-size:1rem;font-weight:700;margin-bottom:var(--space-4);color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em}
+.toc ol{list-style:none;counter-reset:toc-counter;padding:0;margin:0}
+.toc ol li{counter-increment:toc-counter;margin-bottom:var(--space-2)}
+.toc ol li a{
+  display:flex;align-items:center;gap:var(--space-3);
+  padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);
+  color:var(--text-primary);font-weight:500;transition:background var(--transition);
+}
+.toc ol li a:hover{background:var(--bg-hover);text-decoration:none}
+.toc ol li a::before{
+  content:counter(toc-counter);
+  display:inline-flex;align-items:center;justify-content:center;
+  width:26px;height:26px;flex-shrink:0;
+  background:var(--bg-tertiary);border:1px solid var(--border-primary);border-radius:50%;
+  font-size:.75rem;font-weight:700;color:var(--color-primary);
+}
 
-/* TOC */
-.toc{background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:var(--radius-lg);padding:var(--space-5);margin-bottom:var(--space-6)}
-.toc h3{margin-top:0;font-size:1rem}
-.toc ol{margin-bottom:0}
-.toc li{margin-bottom:var(--space-1)}
-.toc a{color:var(--text-secondary);font-size:.9rem}
-.toc a:hover{color:var(--color-primary)}
+/* ========== SECTIONS ========== */
+.section{margin-bottom:var(--space-10)}
+.section-anchor{display:block;position:relative;top:-80px;visibility:hidden}
+.section > h2{
+  font-size:1.5rem;font-weight:700;
+  margin-bottom:var(--space-6);padding-bottom:var(--space-3);
+  border-bottom:2px solid var(--color-primary);
+  display:flex;align-items:center;gap:var(--space-3);
+}
+.section-number{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:34px;height:34px;flex-shrink:0;
+  background:var(--color-primary);border-radius:50%;
+  color:#fff;font-size:.9rem;font-weight:700;
+}
+.section h3{font-size:1.15rem;font-weight:600;margin-top:var(--space-6);margin-bottom:var(--space-3);color:var(--text-primary)}
+.section h4{font-size:1rem;font-weight:600;margin-top:var(--space-5);margin-bottom:var(--space-2);color:var(--text-secondary)}
+.section p,.section > ul > li,.section > ol > li{color:var(--text-secondary);margin-bottom:var(--space-2)}
+.section ul,.section ol{padding-left:var(--space-6);margin-bottom:var(--space-4)}
+.section ul > li{list-style-type:disc}
+.section ol > li{list-style-type:decimal}
 
-/* Glossary */
-.glossary-item{padding:var(--space-3) 0;border-bottom:1px solid var(--border-primary)}
-.glossary-item:last-child{border-bottom:none}
-.glossary-term{font-weight:600;color:var(--text-primary);margin-bottom:2px}
-.glossary-def{font-size:.9rem;color:var(--text-secondary)}
+/* ========== STEP INDICATORS ========== */
+.steps{counter-reset:step-counter;list-style:none;padding:0;margin:var(--space-4) 0}
+.steps > li{
+  counter-increment:step-counter;
+  position:relative;padding-left:52px;margin-bottom:var(--space-6);min-height:36px;
+}
+.steps > li::before{
+  content:counter(step-counter);
+  position:absolute;left:0;top:0;
+  display:flex;align-items:center;justify-content:center;
+  width:36px;height:36px;
+  background:var(--bg-tertiary);border:2px solid var(--color-primary);border-radius:50%;
+  font-size:.85rem;font-weight:700;color:var(--color-primary);
+}
+.steps > li::after{
+  content:'';position:absolute;left:17px;top:40px;
+  width:2px;height:calc(100% - 24px);background:var(--border-primary);
+}
+.steps > li:last-child::after{display:none}
+.steps > li strong{display:block;color:var(--text-primary);font-size:1rem;margin-bottom:var(--space-1)}
+.steps > li p,.steps > li ul{margin-top:var(--space-1)}
+.steps > li ul{padding-left:var(--space-5)}
+.steps > li ul li{list-style-type:disc;color:var(--text-secondary);margin-bottom:var(--space-1)}
 
-/* Kanban demo */
-.demo-kanban{display:flex;gap:var(--space-2);margin:var(--space-4) 0;overflow-x:auto}
-.demo-col{min-width:120px;flex:1;background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:var(--radius-md);padding:var(--space-2)}
-.demo-col-header{font-size:.75rem;font-weight:600;text-align:center;padding:var(--space-1);margin-bottom:var(--space-1);color:var(--text-tertiary)}
-.demo-card{background:var(--bg-tertiary);border:1px solid var(--border-primary);border-radius:var(--radius-sm);padding:var(--space-2);margin-bottom:var(--space-1);font-size:.7rem}
+/* ========== CODE BLOCKS ========== */
+code{
+  font-family:var(--font-mono);font-size:.85em;
+  background:var(--bg-tertiary);padding:2px 6px;
+  border-radius:var(--radius-sm);border:1px solid var(--border-primary);
+}
+pre{
+  background:#0d1117;color:#e6edf3;
+  border:1px solid var(--border-primary);border-radius:var(--radius-md);
+  padding:var(--space-4) var(--space-5);overflow-x:auto;
+  margin:var(--space-3) 0 var(--space-4);
+  font-family:var(--font-mono);font-size:.85rem;line-height:1.6;
+}
+pre code{background:none;border:none;padding:0;font-size:inherit;color:inherit}
+.code-label{
+  display:inline-block;font-size:.7rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text-tertiary);background:var(--bg-tertiary);
+  border:1px solid var(--border-primary);border-bottom:none;
+  border-radius:var(--radius-sm) var(--radius-sm) 0 0;
+  padding:var(--space-1) var(--space-3);margin-bottom:-1px;position:relative;z-index:1;
+}
+.code-label + pre{border-radius:0 var(--radius-md) var(--radius-md) var(--radius-md);margin-top:0}
 
-@media(max-width:600px){
-  .guide{padding:var(--space-4)}
+/* ========== INFO / TIP / WARNING BOXES ========== */
+.info-box{
+  border-radius:var(--radius-md);padding:var(--space-4) var(--space-5);
+  margin:var(--space-4) 0;display:flex;gap:var(--space-3);
+  align-items:flex-start;font-size:.9rem;line-height:1.5;
+}
+.info-box .ib-icon{flex-shrink:0;width:20px;height:20px;margin-top:2px}
+.info-box .ib-body{flex:1}
+.info-box .ib-body p{margin:0 0 var(--space-1);color:inherit}
+.info-box .ib-body p:last-child{margin-bottom:0}
+.info-box.tip{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.25);color:var(--text-primary)}
+.info-box.tip .ib-icon{color:var(--color-primary)}
+.info-box.warning{background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.25);color:var(--text-primary)}
+.info-box.warning .ib-icon{color:#eab308}
+.info-box.success{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:var(--text-primary)}
+.info-box.success .ib-icon{color:var(--color-pass)}
+
+/* ========== FLOW DIAGRAM ========== */
+.flow{display:flex;align-items:center;justify-content:center;gap:0;margin:var(--space-5) 0;flex-wrap:wrap}
+.flow-node{
+  background:var(--bg-secondary);border:2px solid var(--border-primary);
+  border-radius:var(--radius-md);padding:var(--space-3) var(--space-5);
+  font-weight:600;font-size:.9rem;text-align:center;min-width:100px;
+}
+.flow-node.plan{border-color:var(--color-plan);color:var(--color-plan)}
+.flow-node.do{border-color:var(--color-do);color:var(--color-do)}
+.flow-node.check{border-color:var(--color-check);color:var(--color-check)}
+.flow-node.pass{border-color:var(--color-pass);color:var(--color-pass)}
+.flow-node.fail{border-color:var(--color-fail);color:var(--color-fail)}
+.flow-node.neutral{border-color:var(--text-tertiary);color:var(--text-tertiary)}
+.flow-arrow{color:var(--text-tertiary);font-size:1.3rem;padding:0 var(--space-2);flex-shrink:0}
+.flow-branch{display:flex;flex-direction:column;align-items:center;gap:var(--space-2)}
+.flow-label{font-size:.7rem;color:var(--text-tertiary);font-weight:500;text-transform:uppercase;letter-spacing:.03em}
+
+/* ========== KEYBOARD SHORTCUT TABLE ========== */
+.shortcut-table{width:100%;border-collapse:collapse;margin:var(--space-4) 0}
+.shortcut-table th{
+  text-align:left;padding:var(--space-3) var(--space-4);
+  font-size:.8rem;font-weight:600;color:var(--text-tertiary);
+  text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid var(--border-primary);
+}
+.shortcut-table td{padding:var(--space-3) var(--space-4);border-bottom:1px solid var(--border-primary);font-size:.9rem}
+.shortcut-table tr:hover td{background:var(--bg-hover)}
+kbd{
+  display:inline-block;font-family:var(--font-mono);font-size:.8em;
+  background:var(--bg-tertiary);border:1px solid var(--border-secondary);
+  border-radius:var(--radius-sm);padding:2px 8px;
+  box-shadow:0 1px 0 var(--border-secondary);min-width:24px;text-align:center;
+}
+
+/* ========== GLOSSARY ========== */
+.glossary-grid{display:grid;grid-template-columns:1fr;gap:var(--space-3);margin-top:var(--space-4)}
+.glossary-item{
+  background:var(--bg-secondary);border:1px solid var(--border-primary);
+  border-radius:var(--radius-md);padding:var(--space-4) var(--space-5);
+}
+.glossary-item dt{font-weight:700;font-size:.95rem;color:var(--color-primary);margin-bottom:var(--space-1)}
+.glossary-item dd{color:var(--text-secondary);font-size:.9rem;margin:0}
+
+/* ========== RESPONSIVE ========== */
+@media(max-width:640px){
+  .guide-wrapper{padding:var(--space-6) var(--space-4) 60px}
+  .hero h1{font-size:1.5rem}
+  .hero p{font-size:.9rem}
+  .section > h2{font-size:1.2rem}
   .flow{flex-direction:column}
   .flow-arrow{transform:rotate(90deg)}
+  .lang-toggle-float{top:var(--space-3);right:var(--space-3)}
+  .steps > li{padding-left:44px}
 }
 </style>
 </head>
 <body>
-<div class="guide">
 
-<!-- Language content containers -->
-<div id="content-en">
-
-<h1>Looper User Guide</h1>
-<p class="subtitle">A complete guide to managing automated coding tasks with Looper Dashboard</p>
-
-<div class="toc">
-<h3>Table of Contents</h3>
-<ol>
-<li><a href="#what-is-looper">What is Looper?</a></li>
-<li><a href="#prerequisites">Prerequisites</a></li>
-<li><a href="#dashboard-quickstart">Dashboard Quick Start</a></li>
-<li><a href="#connecting-repo">Connecting a Repository</a></li>
-<li><a href="#creating-tasks">Creating Tasks</a></li>
-<li><a href="#running-loops">Running a Loop</a></li>
-<li><a href="#monitoring">Monitoring Progress</a></li>
-<li><a href="#cli-guide">CLI Guide (Without Dashboard)</a></li>
-<li><a href="#shortcuts">Keyboard Shortcuts</a></li>
-<li><a href="#troubleshooting">Troubleshooting</a></li>
-<li><a href="#glossary">Glossary</a></li>
-</ol>
+<!-- ===== LANGUAGE TOGGLE ===== -->
+<div class="lang-toggle-float" role="radiogroup" aria-label="Language">
+  <button id="btn-en" class="active" onclick="setLang('en')" aria-label="English">EN</button>
+  <button id="btn-ko" onclick="setLang('ko')" aria-label="Korean">KO</button>
 </div>
 
-<h2 id="what-is-looper">1. What is Looper?</h2>
-<p>Looper is an <strong>automated coding assistant</strong> that works like having a tireless developer on your team. You describe a task in plain language, and Looper automatically:</p>
+<div class="guide-wrapper">
 
-<div class="flow">
-<div class="flow-step plan">Plan</div>
-<div class="flow-arrow">&rarr;</div>
-<div class="flow-step do">Do</div>
-<div class="flow-arrow">&rarr;</div>
-<div class="flow-step check">Check</div>
-<div class="flow-arrow">&rarr;</div>
-<div class="flow-step pass">Done!</div>
-</div>
+<!-- ==================== HERO ==================== -->
+<header class="hero">
+  <div class="hero-logo">
+    <svg viewBox="0 0 24 24"><path d="M12 4V2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10h-2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8v2l4-3-4-3z"/></svg>
+  </div>
+  <h1>
+    <span class="en">Looper User Guide</span>
+    <span class="ko">Looper 사용자 가이드</span>
+  </h1>
+  <p>
+    <span class="en">A complete guide to managing automated coding tasks with the Looper Dashboard and CLI.</span>
+    <span class="ko">Looper 대시보드와 CLI를 사용하여 자동화된 코딩 태스크를 관리하는 완벽한 가이드입니다.</span>
+  </p>
+</header>
 
-<ol>
-<li><strong>Plan</strong> &mdash; Analyzes the task and creates a step-by-step plan</li>
-<li><strong>Do</strong> &mdash; Writes the actual code changes</li>
-<li><strong>Check</strong> &mdash; Runs tests, linting, and type checking to verify the work</li>
-</ol>
-<p>If the Check phase finds problems, Looper automatically loops back to fix them. This continues until everything passes.</p>
+<!-- ==================== TABLE OF CONTENTS ==================== -->
+<nav class="toc">
+  <h2>
+    <span class="en">Contents</span>
+    <span class="ko">목차</span>
+  </h2>
+  <ol>
+    <li><a href="#getting-started"><span class="en">Getting Started</span><span class="ko">시작하기</span></a></li>
+    <li><a href="#dashboard-guide"><span class="en">Dashboard Guide</span><span class="ko">대시보드 가이드</span></a></li>
+    <li><a href="#cli-guide"><span class="en">CLI Guide (Without Dashboard)</span><span class="ko">CLI 가이드 (대시보드 없이)</span></a></li>
+    <li><a href="#shortcuts"><span class="en">Keyboard Shortcuts</span><span class="ko">키보드 단축키</span></a></li>
+    <li><a href="#troubleshooting"><span class="en">Troubleshooting</span><span class="ko">문제 해결</span></a></li>
+    <li><a href="#glossary"><span class="en">Glossary</span><span class="ko">용어 설명</span></a></li>
+  </ol>
+</nav>
 
-<div class="info-box tip">
-<strong>For PMs & Planners:</strong> You don't need to write code. Just describe what you want in natural language, and Looper handles the rest. Use the Dashboard to manage tasks visually with a Kanban board.
-</div>
 
-<h2 id="prerequisites">2. Prerequisites</h2>
-<ul>
-<li><strong>Claude CLI</strong> &mdash; The AI engine. <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank">Install Guide</a></li>
-<li><strong>Node.js 18+</strong> &mdash; Required for the dashboard. <a href="https://nodejs.org" target="_blank">Download</a></li>
-<li><strong>Git</strong> &mdash; For version control. Usually pre-installed on Mac/Linux.</li>
-</ul>
+<!-- ==================== 1. GETTING STARTED ==================== -->
+<section class="section">
+  <span class="section-anchor" id="getting-started"></span>
+  <h2><span class="section-number">1</span> <span class="en">Getting Started</span><span class="ko">시작하기</span></h2>
 
-<h2 id="dashboard-quickstart">3. Dashboard Quick Start</h2>
+  <h3><span class="en">What is Looper?</span><span class="ko">Looper란 무엇인가요?</span></h3>
+  <p>
+    <span class="en">Looper is an AI-powered coding assistant that automates development tasks using a <strong>Plan-Do-Check</strong> loop. You describe what you want built in plain language, and Looper's AI agent will plan the work, write the code, then verify it by running tests, linters, and type checks. If verification fails, it automatically tries again with fixes until everything passes. Think of it as an autonomous developer you can assign tasks to &mdash; no coding knowledge required.</span>
+    <span class="ko">Looper는 <strong>Plan-Do-Check</strong> 루프를 사용하여 개발 태스크를 자동화하는 AI 기반 코딩 어시스턴트입니다. 원하는 작업을 일반 언어로 설명하면, Looper의 AI 에이전트가 작업을 계획하고, 코드를 작성한 다음, 테스트, 린터, 타입 검사를 실행하여 검증합니다. 검증에 실패하면 모든 것이 통과할 때까지 자동으로 수정을 시도합니다. 태스크를 할당할 수 있는 자율적인 개발자라고 생각하시면 됩니다 &mdash; 코딩 지식이 필요하지 않습니다.</span>
+  </p>
 
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>Install Dependencies</h4>
-<p>Open your terminal and run:</p>
-<pre>cd dashboard
-npm install</pre>
-</div>
-</div>
+  <div class="flow">
+    <div class="flow-node plan"><span class="en">Plan</span><span class="ko">계획</span></div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-node do"><span class="en">Do</span><span class="ko">실행</span></div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-node check"><span class="en">Check</span><span class="ko">검증</span></div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-branch">
+      <div class="flow-node pass"><span class="en">PASS &rarr; Done</span><span class="ko">PASS &rarr; 완료</span></div>
+      <div class="flow-label"><span class="en">or</span><span class="ko">또는</span></div>
+      <div class="flow-node fail"><span class="en">FAIL &rarr; Retry</span><span class="ko">FAIL &rarr; 재시도</span></div>
+    </div>
+  </div>
 
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>Start the Dashboard</h4>
-<pre>npm start</pre>
-<p>You'll see: <code>Looper Dashboard running at http://localhost:3000</code></p>
-</div>
-</div>
+  <h3><span class="en">What You Need</span><span class="ko">필요한 것</span></h3>
+  <ul>
+    <li><span class="en"><strong>Claude CLI</strong> &mdash; The Claude Code command-line tool must be installed on your system. This is the AI engine that powers Looper.</span><span class="ko"><strong>Claude CLI</strong> &mdash; Claude Code 커맨드라인 도구가 시스템에 설치되어 있어야 합니다. Looper를 구동하는 AI 엔진입니다.</span></li>
+    <li><span class="en"><strong>Node.js</strong> (v18 or later) &mdash; Required to run the dashboard web interface.</span><span class="ko"><strong>Node.js</strong> (v18 이상) &mdash; 대시보드 웹 인터페이스를 실행하는 데 필요합니다.</span></li>
+    <li><span class="en"><strong>Git</strong> &mdash; Looper uses Git for version control and tracking loop history through commit metadata.</span><span class="ko"><strong>Git</strong> &mdash; Looper는 버전 관리와 커밋 메타데이터를 통한 루프 히스토리 추적을 위해 Git을 사용합니다.</span></li>
+  </ul>
 
-<div class="step">
-<div class="step-num">3</div>
-<div class="step-content">
-<h4>Open in Browser</h4>
-<p>Go to <strong>http://localhost:3000</strong> in your web browser. You'll see the Kanban board.</p>
-</div>
-</div>
+  <h3><span class="en">Quick Start</span><span class="ko">빠른 시작</span></h3>
+  <ol class="steps">
+    <li>
+      <strong><span class="en">Install the Looper plugin</span><span class="ko">Looper 플러그인 설치</span></strong>
+      <span class="code-label">Terminal</span>
+      <pre><code>claude plugin install vikyw89/looper</code></pre>
+    </li>
+    <li>
+      <strong><span class="en">Start the Dashboard</span><span class="ko">대시보드 시작</span></strong>
+      <span class="code-label">Terminal</span>
+      <pre><code>cd dashboard
+npm install
+npm start</code></pre>
+    </li>
+    <li>
+      <strong><span class="en">Open the Dashboard</span><span class="ko">대시보드 열기</span></strong>
+      <p><span class="en">Open your browser and go to <a href="http://localhost:3000" target="_blank">http://localhost:3000</a>. You will see the Kanban board ready for use.</span><span class="ko">브라우저를 열고 <a href="http://localhost:3000" target="_blank">http://localhost:3000</a>으로 이동하세요. 사용할 준비가 된 칸반 보드가 표시됩니다.</span></p>
+    </li>
+  </ol>
+</section>
 
-<div class="info-box tip">
-<strong>Tip:</strong> If you have an Anthropic API key, you can set it before starting for better PM Agent performance:<br>
-<code>ANTHROPIC_API_KEY=sk-ant-... npm start</code>
-</div>
 
-<h2 id="connecting-repo">4. Connecting a Repository</h2>
-<p>Before running loops, you need to tell Looper which code repository to work on.</p>
+<!-- ==================== 2. DASHBOARD GUIDE ==================== -->
+<section class="section">
+  <span class="section-anchor" id="dashboard-guide"></span>
+  <h2><span class="section-number">2</span> <span class="en">Dashboard Guide</span><span class="ko">대시보드 가이드</span></h2>
 
-<h3>Option A: Add a Local Repository</h3>
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>Go to Settings</h4>
-<p>Click <strong>Settings</strong> in the sidebar (gear icon), or click the repository indicator in the header.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>Enter the Path</h4>
-<p>In the <strong>Repositories</strong> section, type the full path to your project folder (e.g., <code>/home/user/my-project</code>) and click <strong>Add Repository</strong>.</p>
-</div>
-</div>
+  <!-- 2.1 Installing & Launching -->
+  <h3><span class="en">2.1 &mdash; Installing &amp; Launching</span><span class="ko">2.1 &mdash; 설치 &amp; 실행</span></h3>
+  <ol class="steps">
+    <li>
+      <strong><span class="en">Navigate to the dashboard folder</span><span class="ko">대시보드 폴더로 이동</span></strong>
+      <span class="code-label">Terminal</span>
+      <pre><code>cd dashboard</code></pre>
+    </li>
+    <li>
+      <strong><span class="en">Install dependencies</span><span class="ko">의존성 설치</span></strong>
+      <span class="code-label">Terminal</span>
+      <pre><code>npm install</code></pre>
+    </li>
+    <li>
+      <strong><span class="en">Start the server</span><span class="ko">서버 시작</span></strong>
+      <span class="code-label">Terminal</span>
+      <pre><code>npm start</code></pre>
+      <p><span class="en">The dashboard will be available at <strong>http://localhost:3000</strong>.</span><span class="ko">대시보드가 <strong>http://localhost:3000</strong>에서 사용 가능합니다.</span></p>
+    </li>
+  </ol>
+  <div class="info-box tip">
+    <svg class="ib-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    <div class="ib-body"><p><span class="en"><strong>Tip:</strong> You only need to run <code>npm install</code> once. After that, just use <code>npm start</code> to launch the dashboard each time.</span><span class="ko"><strong>팁:</strong> <code>npm install</code>은 한 번만 실행하면 됩니다. 이후에는 <code>npm start</code>만 사용하여 대시보드를 실행하세요.</span></p></div>
+  </div>
 
-<h3>Option B: Connect GitHub</h3>
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>Create a GitHub Token</h4>
-<p>Go to <a href="https://github.com/settings/tokens" target="_blank">GitHub Settings &gt; Developer settings &gt; Personal access tokens</a>. Create a token with <strong>repo</strong> permission.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>Connect in Settings</h4>
-<p>In <strong>Settings &gt; GitHub Integration</strong>, paste your token and click <strong>Connect</strong>.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">3</div>
-<div class="step-content">
-<h4>Browse & Clone</h4>
-<p>Enter your GitHub username or organization name, click <strong>Browse Repos</strong>, then click <strong>Clone &amp; Add</strong> on the repository you want.</p>
-</div>
-</div>
+  <!-- 2.2 Connecting a Repository -->
+  <h3><span class="en">2.2 &mdash; Connecting a Repository</span><span class="ko">2.2 &mdash; 저장소 연결</span></h3>
+  <p><span class="en">Before creating tasks, you need to connect a code repository that Looper will work on.</span><span class="ko">태스크를 생성하기 전에 Looper가 작업할 코드 저장소를 연결해야 합니다.</span></p>
+  <ol class="steps">
+    <li>
+      <strong><span class="en">Open Settings</span><span class="ko">설정 열기</span></strong>
+      <p><span class="en">Click the <strong>Settings</strong> item in the left sidebar (gear icon), then scroll to the <strong>Repositories</strong> section.</span><span class="ko">왼쪽 사이드바에서 <strong>Settings</strong> 항목(톱니바퀴 아이콘)을 클릭한 다음, <strong>Repositories</strong> 섹션으로 스크롤하세요.</span></p>
+    </li>
+    <li>
+      <strong><span class="en">Add a repository</span><span class="ko">저장소 추가</span></strong>
+      <p><span class="en">Choose one of two methods:</span><span class="ko">두 가지 방법 중 하나를 선택하세요:</span></p>
+      <ul>
+        <li><span class="en"><strong>Option A &mdash; Local Path:</strong> Type the full path to a Git repository already on your computer (e.g. <code>/home/user/my-project</code>) and click <strong>Add Repository</strong>.</span><span class="ko"><strong>옵션 A &mdash; 로컬 경로:</strong> 컴퓨터에 이미 있는 Git 저장소의 전체 경로를 입력하고 (예: <code>/home/user/my-project</code>) <strong>Add Repository</strong>를 클릭하세요.</span></li>
+        <li><span class="en"><strong>Option B &mdash; GitHub:</strong> In the GitHub Integration section, connect your GitHub account, browse your repositories, then click <strong>Clone &amp; Add</strong> on the one you want.</span><span class="ko"><strong>옵션 B &mdash; GitHub:</strong> GitHub 연동 섹션에서 GitHub 계정을 연결하고, 저장소를 찾아 원하는 저장소에서 <strong>Clone &amp; Add</strong>를 클릭하세요.</span></li>
+      </ul>
+    </li>
+    <li>
+      <strong><span class="en">Activate the repository</span><span class="ko">저장소 활성화</span></strong>
+      <p><span class="en">After adding, click <strong>Activate</strong> next to the repository name. The active repository is highlighted and will be used for all new tasks and loops.</span><span class="ko">추가 후, 저장소 이름 옆의 <strong>Activate</strong>를 클릭하세요. 활성화된 저장소가 강조 표시되며 모든 새 태스크와 루프에 사용됩니다.</span></p>
+    </li>
+  </ol>
 
-<h2 id="creating-tasks">5. Creating Tasks</h2>
+  <!-- 2.3 Creating Tasks -->
+  <h3><span class="en">2.3 &mdash; Creating Tasks</span><span class="ko">2.3 &mdash; 태스크 생성</span></h3>
+  <p><span class="en">There are two ways to create tasks in the dashboard:</span><span class="ko">대시보드에서 태스크를 생성하는 두 가지 방법이 있습니다:</span></p>
 
-<h3>Manual Task Creation</h3>
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>Click "+ New Task"</h4>
-<p>On the Kanban board, click the <strong>+ New Task</strong> button (or press <kbd>N</kbd>).</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>Fill in Details</h4>
-<p>Enter a <strong>title</strong> (e.g., "Add user authentication"), an optional <strong>description</strong>, set <strong>priority</strong>, and add <strong>labels</strong>.</p>
-</div>
-</div>
+  <h4><span class="en">Method A: Manual Creation</span><span class="ko">방법 A: 수동 생성</span></h4>
+  <ol class="steps">
+    <li>
+      <strong><span class="en">Click "+ New Task"</span><span class="ko">"+ New Task" 클릭</span></strong>
+      <p><span class="en">Click the <strong>+ New Task</strong> button in the top-right corner of the Kanban board, or press the <kbd>N</kbd> key.</span><span class="ko">칸반 보드 오른쪽 상단의 <strong>+ New Task</strong> 버튼을 클릭하거나, <kbd>N</kbd> 키를 누르세요.</span></p>
+    </li>
+    <li>
+      <strong><span class="en">Fill in the details</span><span class="ko">세부 사항 입력</span></strong>
+      <ul>
+        <li><span class="en"><strong>Title</strong> &mdash; A short, descriptive name (e.g. "Add user login page").</span><span class="ko"><strong>제목</strong> &mdash; 짧고 설명적인 이름 (예: "사용자 로그인 페이지 추가").</span></li>
+        <li><span class="en"><strong>Description</strong> &mdash; A detailed explanation of what needs to be done. The more detail you provide, the better the AI will perform.</span><span class="ko"><strong>설명</strong> &mdash; 수행해야 할 작업에 대한 자세한 설명. 더 자세한 설명을 제공할수록 AI의 성능이 향상됩니다.</span></li>
+        <li><span class="en"><strong>Priority</strong> &mdash; Choose Critical, High, Medium, or Low.</span><span class="ko"><strong>우선순위</strong> &mdash; Critical, High, Medium, Low 중 선택하세요.</span></li>
+      </ul>
+    </li>
+    <li>
+      <strong><span class="en">Submit</span><span class="ko">제출</span></strong>
+      <p><span class="en">Click <strong>Create Task</strong>. The task appears in the <strong>Backlog</strong> column of the Kanban board.</span><span class="ko"><strong>Create Task</strong>를 클릭하세요. 태스크가 칸반 보드의 <strong>Backlog</strong> 열에 나타납니다.</span></p>
+    </li>
+  </ol>
 
-<h3>PM Agent (AI-Powered Task Decomposition)</h3>
-<p>PM Agent takes a high-level description and automatically breaks it into smaller, actionable subtasks.</p>
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>Switch to PM Agent Tab</h4>
-<p>In the New Task dialog, click the <strong>PM Agent</strong> tab.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>Describe Your Goal</h4>
-<p>Write a high-level description of what you want to build. For example:<br>
-<em>"Build a user registration system with email verification, password reset, and profile management"</em></p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">3</div>
-<div class="step-content">
-<h4>Click "Decompose with AI"</h4>
-<p>PM Agent will analyze your description and generate 3-7 subtasks with titles, descriptions, and priorities.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">4</div>
-<div class="step-content">
-<h4>Review & Add</h4>
-<p>Review the generated subtasks, uncheck any you don't want, then click <strong>Add All to Board</strong>.</p>
-</div>
-</div>
+  <h4><span class="en">Method B: PM Agent (AI-Powered Decomposition)</span><span class="ko">방법 B: PM 에이전트 (AI 기반 분해)</span></h4>
+  <p><span class="en">The PM Agent lets you describe a large feature and have AI break it into smaller, actionable subtasks automatically.</span><span class="ko">PM 에이전트를 사용하면 큰 기능을 설명하고 AI가 자동으로 더 작고 실행 가능한 하위 태스크로 분해하게 할 수 있습니다.</span></p>
+  <ol class="steps">
+    <li>
+      <strong><span class="en">Open the PM Agent tab</span><span class="ko">PM 에이전트 탭 열기</span></strong>
+      <p><span class="en">Click <strong>PM Agent</strong> in the sidebar navigation.</span><span class="ko">사이드바 네비게이션에서 <strong>PM Agent</strong>를 클릭하세요.</span></p>
+    </li>
+    <li>
+      <strong><span class="en">Describe your goal</span><span class="ko">목표 설명</span></strong>
+      <p><span class="en">Write a high-level description of the feature or change you want. For example: <em>"Add user authentication with email and password, including login, signup, and password reset pages."</em></span><span class="ko">원하는 기능이나 변경 사항에 대한 상위 수준의 설명을 작성하세요. 예: <em>"이메일과 비밀번호를 사용한 사용자 인증을 추가하고, 로그인, 회원가입, 비밀번호 재설정 페이지를 포함합니다."</em></span></p>
+    </li>
+    <li>
+      <strong><span class="en">Click "Decompose with AI"</span><span class="ko">"Decompose with AI" 클릭</span></strong>
+      <p><span class="en">The PM Agent analyzes your description and generates a set of subtasks, each with its own title, description, and priority.</span><span class="ko">PM 에이전트가 설명을 분석하고 각각 제목, 설명, 우선순위가 있는 하위 태스크 세트를 생성합니다.</span></p>
+    </li>
+    <li>
+      <strong><span class="en">Review and create</span><span class="ko">검토 및 생성</span></strong>
+      <p><span class="en">Review the generated subtasks. You can edit or remove any you do not need. Then click <strong>Create Tasks</strong> to add them all to the Kanban board.</span><span class="ko">생성된 하위 태스크를 검토하세요. 필요하지 않은 것은 수정하거나 제거할 수 있습니다. 그런 다음 <strong>Create Tasks</strong>를 클릭하여 모두 칸반 보드에 추가하세요.</span></p>
+    </li>
+  </ol>
+  <div class="info-box tip">
+    <svg class="ib-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    <div class="ib-body"><p><span class="en"><strong>Tip:</strong> The PM Agent works best when you describe the <em>what</em> and <em>why</em>, not the <em>how</em>. Let the AI figure out the implementation details.</span><span class="ko"><strong>팁:</strong> PM 에이전트는 <em>어떻게</em>가 아닌 <em>무엇을</em>, <em>왜</em>를 설명할 때 가장 잘 작동합니다. 구현 세부 사항은 AI에게 맡기세요.</span></p></div>
+  </div>
 
-<h2 id="running-loops">6. Running a Loop</h2>
+  <!-- 2.4 Managing the Kanban Board -->
+  <h3><span class="en">2.4 &mdash; Managing the Kanban Board</span><span class="ko">2.4 &mdash; 칸반 보드 관리</span></h3>
+  <p><span class="en">The Kanban board is your main workspace for tracking tasks. Tasks flow through five columns:</span><span class="ko">칸반 보드는 태스크를 추적하는 메인 작업 공간입니다. 태스크는 다섯 개의 열을 통해 흐릅니다:</span></p>
 
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>Click on a Task</h4>
-<p>Click any task card on the Kanban board to open the detail panel.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>Click "Start Loop"</h4>
-<p>Click the <strong>Start Loop</strong> button. The task will move to "In Progress" automatically.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">3</div>
-<div class="step-content">
-<h4>Watch Progress</h4>
-<p>The detail panel shows real-time agent logs. You'll see the AI planning, writing code, and running checks.</p>
-</div>
-</div>
+  <div class="flow" style="margin-bottom:var(--space-5)">
+    <div class="flow-node neutral">Backlog</div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-node plan">Planning</div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-node do">In Progress</div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-node check">Review</div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-node pass">Done</div>
+  </div>
 
-<div class="info-box success">
-<strong>When the loop completes:</strong> If all checks pass, the task moves to <strong>Done</strong>. If something needs attention, it moves to <strong>Review</strong>.
-</div>
+  <ul>
+    <li><span class="en"><strong>Drag &amp; drop</strong> task cards between columns to change their status manually.</span><span class="ko">태스크 카드를 열 사이에 <strong>드래그 앤 드롭</strong>하여 상태를 수동으로 변경하세요.</span></li>
+    <li><span class="en"><strong>Click a task card</strong> to open the detail panel on the right side, where you can view the full description, loop history timeline, and more.</span><span class="ko"><strong>태스크 카드를 클릭</strong>하면 오른쪽에 디테일 패널이 열리며, 전체 설명, 루프 히스토리 타임라인 등을 확인할 수 있습니다.</span></li>
+    <li><span class="en"><strong>Edit or delete</strong> tasks using the small action buttons that appear when you hover over a task card.</span><span class="ko">태스크 카드 위에 마우스를 올리면 나타나는 작은 액션 버튼을 사용하여 태스크를 <strong>수정하거나 삭제</strong>할 수 있습니다.</span></li>
+  </ul>
 
-<h2 id="monitoring">7. Monitoring Progress</h2>
+  <!-- 2.5 Running a Loop -->
+  <h3><span class="en">2.5 &mdash; Running a Loop</span><span class="ko">2.5 &mdash; 루프 실행</span></h3>
+  <p><span class="en">This is where Looper does its core work. A loop assigns an AI agent to automatically plan, code, and verify your task.</span><span class="ko">여기서 Looper가 핵심 작업을 수행합니다. 루프는 AI 에이전트를 할당하여 태스크를 자동으로 계획, 코딩, 검증합니다.</span></p>
+  <ol class="steps">
+    <li>
+      <strong><span class="en">Select a task</span><span class="ko">태스크 선택</span></strong>
+      <p><span class="en">Click on any task card in the Kanban board to open the detail panel.</span><span class="ko">칸반 보드에서 태스크 카드를 클릭하여 디테일 패널을 여세요.</span></p>
+    </li>
+    <li>
+      <strong><span class="en">Click "Start Loop"</span><span class="ko">"Start Loop" 클릭</span></strong>
+      <p><span class="en">Press the <strong>Start Loop</strong> button in the detail panel. The AI agent begins working immediately.</span><span class="ko">디테일 패널에서 <strong>Start Loop</strong> 버튼을 누르세요. AI 에이전트가 즉시 작업을 시작합니다.</span></p>
+    </li>
+    <li>
+      <strong><span class="en">Watch real-time progress</span><span class="ko">실시간 진행 상황 확인</span></strong>
+      <p><span class="en">The detail panel shows live updates as the agent works through each phase:</span><span class="ko">디테일 패널에 에이전트가 각 단계를 수행하면서 실시간 업데이트가 표시됩니다:</span></p>
+      <ul>
+        <li><span class="en"><strong style="color:var(--color-plan)">Plan</strong> &mdash; The agent analyzes the task and codebase, then creates a step-by-step implementation plan.</span><span class="ko"><strong style="color:var(--color-plan)">Plan</strong> &mdash; 에이전트가 태스크와 코드베이스를 분석하고 단계별 구현 계획을 작성합니다.</span></li>
+        <li><span class="en"><strong style="color:var(--color-do)">Do</strong> &mdash; The agent writes and modifies code according to the plan.</span><span class="ko"><strong style="color:var(--color-do)">Do</strong> &mdash; 에이전트가 계획에 따라 코드를 작성하고 수정합니다.</span></li>
+        <li><span class="en"><strong style="color:var(--color-check)">Check</strong> &mdash; The agent verifies the work by running tests, linters, type checkers, and the build process.</span><span class="ko"><strong style="color:var(--color-check)">Check</strong> &mdash; 에이전트가 테스트, 린터, 타입 체커, 빌드 프로세스를 실행하여 작업을 검증합니다.</span></li>
+      </ul>
+    </li>
+    <li>
+      <strong><span class="en">Review the result</span><span class="ko">결과 확인</span></strong>
+      <p><span class="en">When the loop finishes:</span><span class="ko">루프가 완료되면:</span></p>
+      <ul>
+        <li><span class="en"><strong style="color:var(--color-pass)">PASS</strong> &mdash; All checks succeeded. The task automatically moves to the <strong>Done</strong> column.</span><span class="ko"><strong style="color:var(--color-pass)">PASS</strong> &mdash; 모든 검사를 통과했습니다. 태스크가 자동으로 <strong>Done</strong> 열로 이동합니다.</span></li>
+        <li><span class="en"><strong style="color:var(--color-fail)">FAIL</strong> (after maximum retries) &mdash; The task moves to the <strong>Review</strong> column for your attention.</span><span class="ko"><strong style="color:var(--color-fail)">FAIL</strong> (최대 재시도 후) &mdash; 태스크가 주의가 필요한 <strong>Review</strong> 열로 이동합니다.</span></li>
+      </ul>
+    </li>
+  </ol>
+  <div class="info-box success">
+    <svg class="ib-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    <div class="ib-body"><p><span class="en"><strong>Good to know:</strong> Each loop iteration is recorded as a Git commit with special metadata (Loop-Phase, Loop-Iteration, Loop-Verdict). You can always review the AI's changes through Git history.</span><span class="ko"><strong>알아두세요:</strong> 각 루프 반복은 특별한 메타데이터(Loop-Phase, Loop-Iteration, Loop-Verdict)와 함께 Git 커밋으로 기록됩니다. Git 히스토리를 통해 언제든지 AI의 변경 사항을 검토할 수 있습니다.</span></p></div>
+  </div>
 
-<h3>Loop History</h3>
-<p>Click <strong>Loop History</strong> in the sidebar to see all past loops. Click any row to see the full Plan-Do-Check timeline.</p>
+  <!-- 2.6 Monitoring Progress -->
+  <h3><span class="en">2.6 &mdash; Monitoring Progress</span><span class="ko">2.6 &mdash; 진행 상황 모니터링</span></h3>
+  <p><span class="en">The dashboard provides two dedicated views for tracking progress beyond the Kanban board:</span><span class="ko">대시보드는 칸반 보드 외에 진행 상황을 추적하기 위한 두 가지 전용 뷰를 제공합니다:</span></p>
 
-<h3>Analytics</h3>
-<p>Click <strong>Analytics</strong> to see statistics: pass rate, average iterations, task distribution across columns.</p>
+  <h4><span class="en">Loop History</span><span class="ko">루프 히스토리</span></h4>
+  <p><span class="en">Click <strong>Loop History</strong> in the sidebar to see a chronological table of all past loops. Each entry shows:</span><span class="ko">사이드바에서 <strong>Loop History</strong>를 클릭하면 모든 과거 루프의 시간순 테이블을 볼 수 있습니다. 각 항목에는 다음이 표시됩니다:</span></p>
+  <ul>
+    <li><span class="en">The task name and when the loop ran</span><span class="ko">태스크 이름과 루프 실행 시간</span></li>
+    <li><span class="en">Number of iterations the loop needed</span><span class="ko">루프에 필요했던 반복 횟수</span></li>
+    <li><span class="en">Final verdict (<strong style="color:var(--color-pass)">PASS</strong> or <strong style="color:var(--color-fail)">FAIL</strong>)</span><span class="ko">최종 판정 (<strong style="color:var(--color-pass)">PASS</strong> 또는 <strong style="color:var(--color-fail)">FAIL</strong>)</span></li>
+    <li><span class="en">A clickable timeline showing each Plan/Do/Check phase</span><span class="ko">각 Plan/Do/Check 단계를 보여주는 클릭 가능한 타임라인</span></li>
+  </ul>
 
-<h3>Kanban Board</h3>
-<p>The board gives you a visual overview. Drag tasks between columns to update their status manually.</p>
+  <h4><span class="en">Analytics</span><span class="ko">분석</span></h4>
+  <p><span class="en">Click <strong>Analytics</strong> in the sidebar for summary statistics about your project:</span><span class="ko">사이드바에서 <strong>Analytics</strong>를 클릭하면 프로젝트에 대한 요약 통계를 확인할 수 있습니다:</span></p>
+  <ul>
+    <li><span class="en"><strong>Pass rate</strong> &mdash; Percentage of loops that passed successfully.</span><span class="ko"><strong>통과율</strong> &mdash; 성공적으로 통과한 루프의 비율.</span></li>
+    <li><span class="en"><strong>Average iterations</strong> &mdash; How many Plan-Do-Check cycles the AI typically needs per task.</span><span class="ko"><strong>평균 반복 횟수</strong> &mdash; AI가 태스크당 일반적으로 필요로 하는 Plan-Do-Check 사이클 수.</span></li>
+    <li><span class="en"><strong>Task distribution</strong> &mdash; Breakdown of tasks by status column and priority level.</span><span class="ko"><strong>태스크 분포</strong> &mdash; 상태 열 및 우선순위 수준별 태스크 분류.</span></li>
+  </ul>
+</section>
 
-<div class="demo-kanban">
-<div class="demo-col"><div class="demo-col-header">Backlog</div><div class="demo-card">Add OAuth login</div><div class="demo-card">Update docs</div></div>
-<div class="demo-col"><div class="demo-col-header">Planning</div><div class="demo-card">Design API</div></div>
-<div class="demo-col"><div class="demo-col-header">In Progress</div><div class="demo-card" style="border-left:2px solid var(--color-do)">Add auth</div></div>
-<div class="demo-col"><div class="demo-col-header">Review</div></div>
-<div class="demo-col"><div class="demo-col-header">Done</div><div class="demo-card" style="border-left:2px solid var(--color-pass)">Setup DB</div></div>
-</div>
 
-<h2 id="cli-guide">8. CLI Guide (Without Dashboard)</h2>
-<p>You can use Looper directly from the command line without the dashboard.</p>
+<!-- ==================== 3. CLI GUIDE ==================== -->
+<section class="section">
+  <span class="section-anchor" id="cli-guide"></span>
+  <h2><span class="section-number">3</span> <span class="en">CLI Guide (Without Dashboard)</span><span class="ko">CLI 가이드 (대시보드 없이)</span></h2>
+  <p><span class="en">If you prefer working in the terminal, or do not need the visual dashboard, you can use Looper directly from the command line.</span><span class="ko">터미널에서 작업하는 것을 선호하거나 시각적 대시보드가 필요하지 않은 경우, 커맨드라인에서 직접 Looper를 사용할 수 있습니다.</span></p>
 
-<h3>Install the Plugin</h3>
-<pre># Install from GitHub
-claude plugin install vikyw89/looper
+  <!-- 3.1 Install -->
+  <h3><span class="en">3.1 &mdash; Install the Plugin</span><span class="ko">3.1 &mdash; 플러그인 설치</span></h3>
+  <span class="code-label">Terminal</span>
+  <pre><code>claude plugin install vikyw89/looper</code></pre>
+  <p><span class="en">This installs Looper as a plugin for the Claude CLI. You only need to run this once.</span><span class="ko">이렇게 하면 Looper가 Claude CLI의 플러그인으로 설치됩니다. 한 번만 실행하면 됩니다.</span></p>
 
-# Or install from a local checkout
-claude plugin install /path/to/looper/plugins/looper</pre>
-
-<h3>Run a Loop</h3>
-<pre># Start Claude Code
+  <!-- 3.2 Run a Loop -->
+  <h3><span class="en">3.2 &mdash; Run a Loop</span><span class="ko">3.2 &mdash; 루프 실행</span></h3>
+  <p><span class="en">Navigate to your project directory, start the Claude CLI, then invoke the loop skill:</span><span class="ko">프로젝트 디렉토리로 이동하고, Claude CLI를 시작한 다음, 루프 스킬을 호출하세요:</span></p>
+  <span class="code-label">Terminal</span>
+  <pre><code>cd /path/to/your/project
 claude
+> /loop "Add user authentication with JWT"</code></pre>
+  <p><span class="en">Replace the text in quotes with a description of your task. Be specific and detailed for best results.</span><span class="ko">따옴표 안의 텍스트를 태스크 설명으로 바꾸세요. 최상의 결과를 위해 구체적이고 자세하게 작성하세요.</span></p>
+  <div class="info-box tip">
+    <svg class="ib-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    <div class="ib-body"><p><span class="en"><strong>Tip:</strong> Write clear, specific task descriptions. Instead of <em>"fix the bug"</em>, try <em>"Fix the login form validation error that occurs when the email field is left empty."</em></span><span class="ko"><strong>팁:</strong> 명확하고 구체적인 태스크 설명을 작성하세요. <em>"버그 수정"</em> 대신 <em>"이메일 필드를 비워두었을 때 발생하는 로그인 폼 유효성 검사 오류를 수정하세요."</em>와 같이 작성하세요.</span></p></div>
+  </div>
 
-# Then use the /loop command
-&gt; /loop "Add user authentication with JWT tokens"</pre>
-<p>The loop will automatically run Plan &rarr; Do &rarr; Check cycles until the task passes.</p>
+  <!-- 3.3 Understanding Output -->
+  <h3><span class="en">3.3 &mdash; Understanding Output</span><span class="ko">3.3 &mdash; 출력 이해하기</span></h3>
+  <p><span class="en">When you run a loop, the CLI displays progress through each phase:</span><span class="ko">루프를 실행하면 CLI에 각 단계의 진행 상황이 표시됩니다:</span></p>
+  <ol class="steps">
+    <li>
+      <strong style="color:var(--color-plan)"><span class="en">Plan Phase</span><span class="ko">Plan 단계</span></strong>
+      <p><span class="en">The Planner agent analyzes your task description and the current codebase, then creates a detailed implementation plan.</span><span class="ko">Planner 에이전트가 태스크 설명과 현재 코드베이스를 분석한 다음, 상세한 구현 계획을 작성합니다.</span></p>
+    </li>
+    <li>
+      <strong style="color:var(--color-do)"><span class="en">Do Phase</span><span class="ko">Do 단계</span></strong>
+      <p><span class="en">The Doer agent writes code, creates or modifies files, and commits changes according to the plan.</span><span class="ko">Doer 에이전트가 계획에 따라 코드를 작성하고, 파일을 생성 또는 수정하고, 변경 사항을 커밋합니다.</span></p>
+    </li>
+    <li>
+      <strong style="color:var(--color-check)"><span class="en">Check Phase</span><span class="ko">Check 단계</span></strong>
+      <p><span class="en">The Checker agent verifies the work by running your project's test suite, linter, type checker, and build process.</span><span class="ko">Checker 에이전트가 프로젝트의 테스트 스위트, 린터, 타입 체커, 빌드 프로세스를 실행하여 작업을 검증합니다.</span></p>
+      <ul>
+        <li><span class="en">If checks <strong style="color:var(--color-pass)">PASS</strong> &mdash; the task is complete and all changes are committed to Git.</span><span class="ko">검사를 <strong style="color:var(--color-pass)">PASS</strong>하면 &mdash; 태스크가 완료되고 모든 변경 사항이 Git에 커밋됩니다.</span></li>
+        <li><span class="en">If checks <strong style="color:var(--color-fail)">FAIL</strong> &mdash; the loop returns to the Plan phase with error details and tries again automatically.</span><span class="ko">검사를 <strong style="color:var(--color-fail)">FAIL</strong>하면 &mdash; 루프가 오류 세부 정보와 함께 Plan 단계로 돌아가 자동으로 다시 시도합니다.</span></li>
+      </ul>
+    </li>
+  </ol>
 
-<h3>Understanding Output</h3>
-<p>During execution, you'll see:</p>
-<ul>
-<li><strong>Planner</strong> analyzing the codebase and creating a step-by-step plan</li>
-<li><strong>Doer</strong> writing code changes and committing them</li>
-<li><strong>Checker</strong> running tests, lint, typecheck, and build</li>
-<li>A <strong>PASS</strong> or <strong>FAIL</strong> verdict from the Checker</li>
-</ul>
+  <!-- 3.4 Viewing History -->
+  <h3><span class="en">3.4 &mdash; Viewing History</span><span class="ko">3.4 &mdash; 히스토리 보기</span></h3>
+  <p><span class="en">Every loop iteration creates Git commits with special trailers. You can filter your Git log to see only loop-related commits:</span><span class="ko">모든 루프 반복은 특별한 트레일러가 포함된 Git 커밋을 생성합니다. Git 로그를 필터링하여 루프 관련 커밋만 볼 수 있습니다:</span></p>
+  <span class="code-label">Terminal</span>
+  <pre><code>git log --grep="Loop-Phase:"</code></pre>
+  <p><span class="en">Each commit message includes these metadata trailers:</span><span class="ko">각 커밋 메시지에는 다음 메타데이터 트레일러가 포함됩니다:</span></p>
+  <ul>
+    <li><span class="en"><code>Loop-Phase: plan|do|check</code> &mdash; Which phase produced this commit.</span><span class="ko"><code>Loop-Phase: plan|do|check</code> &mdash; 이 커밋을 생성한 단계.</span></li>
+    <li><span class="en"><code>Loop-Iteration: 1</code> &mdash; The iteration number (starts at 1).</span><span class="ko"><code>Loop-Iteration: 1</code> &mdash; 반복 번호 (1부터 시작).</span></li>
+    <li><span class="en"><code>Loop-Verdict: PASS|FAIL</code> &mdash; The check result (only present on Check-phase commits).</span><span class="ko"><code>Loop-Verdict: PASS|FAIL</code> &mdash; 검사 결과 (Check 단계 커밋에만 존재).</span></li>
+  </ul>
+  <div class="info-box tip">
+    <svg class="ib-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    <div class="ib-body"><p><span class="en"><strong>Tip:</strong> The dashboard reads these same Git commits to display Loop History. You can switch between CLI and dashboard workflows seamlessly.</span><span class="ko"><strong>팁:</strong> 대시보드는 이와 동일한 Git 커밋을 읽어 루프 히스토리를 표시합니다. CLI와 대시보드 워크플로우를 원활하게 전환할 수 있습니다.</span></p></div>
+  </div>
+</section>
 
-<h3>Viewing Loop History via Git</h3>
-<p>All loop activity is tracked in git commits with special trailers:</p>
-<pre># See all loop commits
-git log --grep="Loop-Phase:"
 
-# Each commit has trailers like:
-# Loop-Phase: plan|do|check
-# Loop-Iteration: 1
-# Loop-Verdict: PASS (only on check commits)</pre>
+<!-- ==================== 4. KEYBOARD SHORTCUTS ==================== -->
+<section class="section">
+  <span class="section-anchor" id="shortcuts"></span>
+  <h2><span class="section-number">4</span> <span class="en">Keyboard Shortcuts</span><span class="ko">키보드 단축키</span></h2>
+  <p><span class="en">Use these shortcuts to navigate the dashboard more quickly:</span><span class="ko">대시보드를 더 빠르게 탐색하려면 다음 단축키를 사용하세요:</span></p>
+  <table class="shortcut-table">
+    <thead>
+      <tr>
+        <th><span class="en">Shortcut</span><span class="ko">단축키</span></th>
+        <th><span class="en">Action</span><span class="ko">동작</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><kbd>Ctrl</kbd> + <kbd>K</kbd>&ensp;/&ensp;<kbd>Cmd</kbd> + <kbd>K</kbd></td>
+        <td><span class="en">Open the command palette &mdash; search tasks, switch views, and run actions</span><span class="ko">커맨드 팔레트 열기 &mdash; 태스크 검색, 뷰 전환, 액션 실행</span></td>
+      </tr>
+      <tr>
+        <td><kbd>N</kbd></td>
+        <td><span class="en">Create a new task</span><span class="ko">새 태스크 생성</span></td>
+      </tr>
+      <tr>
+        <td><kbd>Esc</kbd></td>
+        <td><span class="en">Close any open modal, panel, or dialog</span><span class="ko">열린 모달, 패널, 또는 대화 상자 닫기</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
 
-<div class="info-box tip">
-<strong>Tip:</strong> The dashboard reads these same git commits to show Loop History, so you can switch between CLI and dashboard seamlessly.
-</div>
 
-<h2 id="shortcuts">9. Keyboard Shortcuts</h2>
-<table style="width:100%;border-collapse:collapse;margin-bottom:var(--space-4)">
-<tr style="border-bottom:1px solid var(--border-primary)"><td style="padding:var(--space-2)"><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td style="padding:var(--space-2)">Open Command Palette</td></tr>
-<tr style="border-bottom:1px solid var(--border-primary)"><td style="padding:var(--space-2)"><kbd>N</kbd></td><td style="padding:var(--space-2)">Create New Task</td></tr>
-<tr style="border-bottom:1px solid var(--border-primary)"><td style="padding:var(--space-2)"><kbd>Esc</kbd></td><td style="padding:var(--space-2)">Close modals and panels</td></tr>
-</table>
+<!-- ==================== 5. TROUBLESHOOTING ==================== -->
+<section class="section">
+  <span class="section-anchor" id="troubleshooting"></span>
+  <h2><span class="section-number">5</span> <span class="en">Troubleshooting</span><span class="ko">문제 해결</span></h2>
 
-<h2 id="troubleshooting">10. Troubleshooting</h2>
+  <div class="info-box warning">
+    <svg class="ib-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div class="ib-body">
+      <p><strong><span class="en">PM Agent not working</span><span class="ko">PM 에이전트가 작동하지 않음</span></strong></p>
+      <p><span class="en">Make sure the Claude CLI is installed and accessible in your PATH. Verify by running <code>which claude</code> in the terminal. If you are using an API key, check that it is correctly set as an environment variable (<code>ANTHROPIC_API_KEY</code>).</span><span class="ko">Claude CLI가 설치되어 있고 PATH에서 접근 가능한지 확인하세요. 터미널에서 <code>which claude</code>를 실행하여 확인하세요. API 키를 사용하는 경우, 환경 변수(<code>ANTHROPIC_API_KEY</code>)로 올바르게 설정되어 있는지 확인하세요.</span></p>
+    </div>
+  </div>
 
-<div class="info-box warning">
-<strong>PM Agent shows "Loading" forever</strong><br>
-Check that Claude CLI is installed (<code>which claude</code>) or set <code>ANTHROPIC_API_KEY</code> environment variable before starting the dashboard.
-</div>
+  <div class="info-box warning">
+    <svg class="ib-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div class="ib-body">
+      <p><strong><span class="en">Loop not starting</span><span class="ko">루프가 시작되지 않음</span></strong></p>
+      <p><span class="en">Ensure a repository is configured and activated in <strong>Settings &gt; Repositories</strong>. The repository must be a valid Git repository. The loop needs an active repository to know where to work.</span><span class="ko"><strong>Settings &gt; Repositories</strong>에서 저장소가 구성되고 활성화되어 있는지 확인하세요. 저장소는 유효한 Git 저장소여야 합니다. 루프는 작업할 위치를 알기 위해 활성 저장소가 필요합니다.</span></p>
+    </div>
+  </div>
 
-<div class="info-box warning">
-<strong>Loop won't start</strong><br>
-Make sure a repository is configured in Settings. The repository must be a valid git repository.
-</div>
+  <div class="info-box warning">
+    <svg class="ib-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div class="ib-body">
+      <p><strong><span class="en">Dashboard not loading</span><span class="ko">대시보드가 로드되지 않음</span></strong></p>
+      <p><span class="en">Verify that Node.js (v18 or later) is installed by running <code>node --version</code>. Then run <code>npm install</code> in the <code>dashboard</code> directory to reinstall dependencies. Finally, run <code>npm start</code> and check for error messages in the terminal output.</span><span class="ko"><code>node --version</code>을 실행하여 Node.js(v18 이상)가 설치되어 있는지 확인하세요. 그런 다음 <code>dashboard</code> 디렉토리에서 <code>npm install</code>을 실행하여 의존성을 재설치하세요. 마지막으로 <code>npm start</code>를 실행하고 터미널 출력에서 오류 메시지를 확인하세요.</span></p>
+    </div>
+  </div>
 
-<div class="info-box warning">
-<strong>Dashboard won't load</strong><br>
-Make sure Node.js is installed (<code>node --version</code>), then run <code>npm install</code> in the dashboard directory.
-</div>
+  <div class="info-box warning">
+    <svg class="ib-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <div class="ib-body">
+      <p><strong><span class="en">Loop keeps failing</span><span class="ko">루프가 계속 실패함</span></strong></p>
+      <p><span class="en">Check the Loop History view for detailed error messages. Common causes include: missing project dependencies (run your project's install command first), pre-existing test failures in the codebase, or overly broad task descriptions. Try breaking large tasks into smaller, focused ones using the PM Agent.</span><span class="ko">Loop History 뷰에서 상세한 오류 메시지를 확인하세요. 일반적인 원인: 프로젝트 의존성 누락(먼저 프로젝트의 install 명령 실행), 코드베이스의 기존 테스트 실패, 또는 지나치게 광범위한 태스크 설명. PM 에이전트를 사용하여 큰 태스크를 더 작고 집중된 태스크로 나눠 보세요.</span></p>
+    </div>
+  </div>
+</section>
 
-<div class="info-box warning">
-<strong>"Claude CLI not found" error</strong><br>
-Install Claude CLI: <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank">https://docs.anthropic.com/en/docs/claude-code</a>
-</div>
 
-<h2 id="glossary">11. Glossary</h2>
-<div class="glossary-item"><div class="glossary-term">Loop</div><div class="glossary-def">An automated Plan-Do-Check cycle that continues until the task passes all checks.</div></div>
-<div class="glossary-item"><div class="glossary-term">PDC (Plan-Do-Check)</div><div class="glossary-def">The methodology Looper uses. Plan the work, Do the work, Check if it's correct.</div></div>
-<div class="glossary-item"><div class="glossary-term">Iteration</div><div class="glossary-def">One complete cycle through Plan &rarr; Do &rarr; Check. A task may need multiple iterations.</div></div>
-<div class="glossary-item"><div class="glossary-term">Verdict</div><div class="glossary-def">The result of a Check phase: PASS (all tests pass) or FAIL (needs fixes).</div></div>
-<div class="glossary-item"><div class="glossary-term">PM Agent</div><div class="glossary-def">An AI assistant that breaks down high-level task descriptions into smaller, actionable subtasks.</div></div>
-<div class="glossary-item"><div class="glossary-term">Kanban Board</div><div class="glossary-def">A visual board with columns (Backlog, Planning, In Progress, Review, Done) for managing tasks.</div></div>
-<div class="glossary-item"><div class="glossary-term">Claude CLI</div><div class="glossary-def">The command-line interface for Claude AI, which powers Looper's code generation.</div></div>
+<!-- ==================== 6. GLOSSARY ==================== -->
+<section class="section">
+  <span class="section-anchor" id="glossary"></span>
+  <h2><span class="section-number">6</span> <span class="en">Glossary</span><span class="ko">용어 설명</span></h2>
 
-</div><!-- end content-en -->
+  <div class="glossary-grid">
+    <dl class="glossary-item">
+      <dt>Loop</dt>
+      <dd><span class="en">An automated Plan-Do-Check cycle where an AI agent plans the work, writes the code, and verifies the result. If verification fails, it loops again.</span><span class="ko">AI 에이전트가 작업을 계획하고, 코드를 작성하고, 결과를 검증하는 자동화된 Plan-Do-Check 사이클. 검증에 실패하면 다시 루프합니다.</span></dd>
+    </dl>
+    <dl class="glossary-item">
+      <dt>PDC (Plan-Do-Check)</dt>
+      <dd><span class="en">The core methodology Looper uses. Each iteration goes through three phases: planning the approach, doing the coding, and checking the results.</span><span class="ko">Looper가 사용하는 핵심 방법론. 각 반복은 접근 방식 계획, 코딩 실행, 결과 검증의 세 단계를 거칩니다.</span></dd>
+    </dl>
+    <dl class="glossary-item">
+      <dt>Iteration</dt>
+      <dd><span class="en">One complete cycle through Plan, Do, and Check. If the Check phase fails, a new iteration begins. Iteration numbers start at 1.</span><span class="ko">Plan, Do, Check를 거치는 하나의 완전한 사이클. Check 단계가 실패하면 새로운 반복이 시작됩니다. 반복 번호는 1부터 시작합니다.</span></dd>
+    </dl>
+    <dl class="glossary-item">
+      <dt>Verdict</dt>
+      <dd><span class="en">The result of the Check phase &mdash; either <strong style="color:var(--color-pass)">PASS</strong> (all tests, lint, and type checks succeeded) or <strong style="color:var(--color-fail)">FAIL</strong> (one or more checks did not pass).</span><span class="ko">Check 단계의 결과 &mdash; <strong style="color:var(--color-pass)">PASS</strong> (모든 테스트, 린트, 타입 검사 성공) 또는 <strong style="color:var(--color-fail)">FAIL</strong> (하나 이상의 검사 미통과).</span></dd>
+    </dl>
+    <dl class="glossary-item">
+      <dt>PM Agent</dt>
+      <dd><span class="en">An AI-powered project management assistant that takes a high-level feature description and automatically decomposes it into smaller, actionable subtasks suitable for individual loops.</span><span class="ko">상위 수준의 기능 설명을 받아 개별 루프에 적합한 더 작고 실행 가능한 하위 태스크로 자동 분해하는 AI 기반 프로젝트 관리 어시스턴트.</span></dd>
+    </dl>
+    <dl class="glossary-item">
+      <dt>Kanban Board</dt>
+      <dd><span class="en">A visual task management board with columns representing workflow stages: Backlog, Planning, In Progress, Review, and Done.</span><span class="ko">워크플로우 단계를 나타내는 열이 있는 시각적 태스크 관리 보드: Backlog, Planning, In Progress, Review, Done.</span></dd>
+    </dl>
+    <dl class="glossary-item">
+      <dt>Worktree</dt>
+      <dd><span class="en">A separate Git working directory that Looper creates for each loop session, allowing the AI agent to work without interfering with your main branch.</span><span class="ko">Looper가 각 루프 세션에 대해 생성하는 별도의 Git 작업 디렉토리로, AI 에이전트가 메인 브랜치를 방해하지 않고 작업할 수 있게 합니다.</span></dd>
+    </dl>
+  </div>
+</section>
 
-<div id="content-ko" style="display:none">
-
-<h1>Looper 사용자 가이드</h1>
-<p class="subtitle">Looper 대시보드로 자동화된 코딩 태스크를 관리하는 완전 가이드</p>
-
-<div class="toc">
-<h3>목차</h3>
-<ol>
-<li><a href="#ko-what">Looper란?</a></li>
-<li><a href="#ko-prereq">사전 요구사항</a></li>
-<li><a href="#ko-quickstart">대시보드 빠른 시작</a></li>
-<li><a href="#ko-repo">저장소 연결</a></li>
-<li><a href="#ko-tasks">태스크 생성</a></li>
-<li><a href="#ko-loops">루프 실행</a></li>
-<li><a href="#ko-monitor">진행 상황 모니터링</a></li>
-<li><a href="#ko-cli">CLI 가이드 (대시보드 없이)</a></li>
-<li><a href="#ko-shortcuts">키보드 단축키</a></li>
-<li><a href="#ko-trouble">문제 해결</a></li>
-<li><a href="#ko-glossary">용어 설명</a></li>
-</ol>
-</div>
-
-<h2 id="ko-what">1. Looper란?</h2>
-<p>Looper는 팀에 지치지 않는 개발자가 있는 것과 같은 <strong>자동화된 코딩 어시스턴트</strong>입니다. 태스크를 일반 언어로 설명하면 Looper가 자동으로 처리합니다:</p>
-
-<div class="flow">
-<div class="flow-step plan">Plan (계획)</div>
-<div class="flow-arrow">&rarr;</div>
-<div class="flow-step do">Do (실행)</div>
-<div class="flow-arrow">&rarr;</div>
-<div class="flow-step check">Check (검증)</div>
-<div class="flow-arrow">&rarr;</div>
-<div class="flow-step pass">완료!</div>
-</div>
-
-<ol>
-<li><strong>Plan</strong> &mdash; 태스크를 분석하고 단계별 계획을 수립합니다</li>
-<li><strong>Do</strong> &mdash; 실제 코드를 작성합니다</li>
-<li><strong>Check</strong> &mdash; 테스트, 린팅, 타입 체크를 실행하여 작업을 검증합니다</li>
-</ol>
-<p>Check 단계에서 문제가 발견되면 Looper가 자동으로 다시 루프를 돌며 수정합니다. 모든 검증을 통과할 때까지 계속됩니다.</p>
-
-<div class="info-box tip">
-<strong>PM &amp; 기획자를 위한 안내:</strong> 코드를 직접 작성할 필요가 없습니다. 원하는 것을 자연어로 설명하면 Looper가 나머지를 처리합니다. 대시보드의 칸반 보드를 사용하여 태스크를 시각적으로 관리하세요.
-</div>
-
-<h2 id="ko-prereq">2. 사전 요구사항</h2>
-<ul>
-<li><strong>Claude CLI</strong> &mdash; AI 엔진. <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank">설치 가이드</a></li>
-<li><strong>Node.js 18+</strong> &mdash; 대시보드 실행에 필요. <a href="https://nodejs.org" target="_blank">다운로드</a></li>
-<li><strong>Git</strong> &mdash; 버전 관리용. Mac/Linux에는 보통 사전 설치되어 있습니다.</li>
-</ul>
-
-<h2 id="ko-quickstart">3. 대시보드 빠른 시작</h2>
-
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>의존성 설치</h4>
-<p>터미널을 열고 다음을 실행하세요:</p>
-<pre>cd dashboard
-npm install</pre>
-</div>
-</div>
-
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>대시보드 시작</h4>
-<pre>npm start</pre>
-<p>다음 메시지가 표시됩니다: <code>Looper Dashboard running at http://localhost:3000</code></p>
-</div>
-</div>
-
-<div class="step">
-<div class="step-num">3</div>
-<div class="step-content">
-<h4>브라우저에서 열기</h4>
-<p>웹 브라우저에서 <strong>http://localhost:3000</strong>으로 이동합니다. 칸반 보드가 표시됩니다.</p>
-</div>
-</div>
-
-<div class="info-box tip">
-<strong>팁:</strong> Anthropic API 키가 있으면 시작 전에 설정하면 PM Agent 성능이 향상됩니다:<br>
-<code>ANTHROPIC_API_KEY=sk-ant-... npm start</code>
-</div>
-
-<h2 id="ko-repo">4. 저장소 연결</h2>
-<p>루프를 실행하기 전에 작업할 코드 저장소를 Looper에 알려줘야 합니다.</p>
-
-<h3>방법 A: 로컬 저장소 추가</h3>
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>설정으로 이동</h4>
-<p>사이드바에서 <strong>설정</strong>을 클릭하거나 헤더의 저장소 표시기를 클릭합니다.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>경로 입력</h4>
-<p><strong>저장소</strong> 섹션에서 프로젝트 폴더의 전체 경로를 입력하고 (예: <code>/home/user/my-project</code>) <strong>저장소 추가</strong>를 클릭합니다.</p>
-</div>
-</div>
-
-<h3>방법 B: GitHub 연결</h3>
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>GitHub 토큰 생성</h4>
-<p><a href="https://github.com/settings/tokens" target="_blank">GitHub Settings &gt; Developer settings &gt; Personal access tokens</a>에서 <strong>repo</strong> 권한이 있는 토큰을 생성합니다.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>설정에서 연결</h4>
-<p><strong>설정 &gt; GitHub 연동</strong>에서 토큰을 붙여넣고 <strong>연결</strong>을 클릭합니다.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">3</div>
-<div class="step-content">
-<h4>탐색 & 클론</h4>
-<p>GitHub 유저명이나 조직명을 입력하고 <strong>저장소 탐색</strong>을 클릭한 후, 원하는 저장소에서 <strong>클론 & 추가</strong>를 클릭합니다.</p>
-</div>
-</div>
-
-<h2 id="ko-tasks">5. 태스크 생성</h2>
-
-<h3>수동 태스크 생성</h3>
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>"+ 새 태스크" 클릭</h4>
-<p>칸반 보드에서 <strong>+ 새 태스크</strong> 버튼을 클릭합니다 (또는 <kbd>N</kbd> 키를 누릅니다).</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>상세 정보 입력</h4>
-<p><strong>제목</strong> (예: "사용자 인증 추가"), 선택적으로 <strong>설명</strong>을 입력하고, <strong>우선순위</strong>를 설정하고, <strong>라벨</strong>을 추가합니다.</p>
-</div>
-</div>
-
-<h3>PM Agent (AI 기반 태스크 분해)</h3>
-<p>PM Agent는 상위 수준의 설명을 받아 자동으로 작은 실행 가능한 서브태스크로 분해합니다.</p>
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>PM Agent 탭으로 전환</h4>
-<p>새 태스크 대화 상자에서 <strong>PM Agent</strong> 탭을 클릭합니다.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>목표 설명</h4>
-<p>구현하고 싶은 것을 상위 수준으로 설명합니다. 예시:<br>
-<em>"이메일 인증, 비밀번호 재설정, 프로필 관리를 포함한 사용자 등록 시스템 구축"</em></p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">3</div>
-<div class="step-content">
-<h4>"AI로 분해하기" 클릭</h4>
-<p>PM Agent가 설명을 분석하고 제목, 설명, 우선순위가 포함된 3-7개의 서브태스크를 생성합니다.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">4</div>
-<div class="step-content">
-<h4>검토 & 추가</h4>
-<p>생성된 서브태스크를 검토하고, 원하지 않는 것은 체크 해제한 후 <strong>전체 보드에 추가</strong>를 클릭합니다.</p>
-</div>
-</div>
-
-<h2 id="ko-loops">6. 루프 실행</h2>
-
-<div class="step">
-<div class="step-num">1</div>
-<div class="step-content">
-<h4>태스크 클릭</h4>
-<p>칸반 보드에서 태스크 카드를 클릭하여 상세 패널을 엽니다.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">2</div>
-<div class="step-content">
-<h4>"루프 시작" 클릭</h4>
-<p><strong>루프 시작</strong> 버튼을 클릭합니다. 태스크가 자동으로 "진행 중"으로 이동합니다.</p>
-</div>
-</div>
-<div class="step">
-<div class="step-num">3</div>
-<div class="step-content">
-<h4>진행 상황 확인</h4>
-<p>상세 패널에서 실시간 에이전트 로그를 볼 수 있습니다. AI가 계획을 세우고, 코드를 작성하고, 검증하는 과정을 확인할 수 있습니다.</p>
-</div>
-</div>
-
-<div class="info-box success">
-<strong>루프 완료 시:</strong> 모든 검증을 통과하면 태스크가 <strong>완료</strong>로 이동합니다. 주의가 필요하면 <strong>리뷰</strong>로 이동합니다.
-</div>
-
-<h2 id="ko-monitor">7. 진행 상황 모니터링</h2>
-
-<h3>루프 히스토리</h3>
-<p>사이드바에서 <strong>루프 히스토리</strong>를 클릭하면 모든 과거 루프를 볼 수 있습니다. 각 행을 클릭하면 전체 Plan-Do-Check 타임라인을 확인할 수 있습니다.</p>
-
-<h3>분석</h3>
-<p><strong>분석</strong>을 클릭하면 통계를 볼 수 있습니다: 통과율, 평균 이터레이션 수, 컬럼별 태스크 분포.</p>
-
-<h3>칸반 보드</h3>
-<p>보드는 시각적 개요를 제공합니다. 태스크를 컬럼 간에 드래그하여 상태를 수동으로 업데이트할 수 있습니다.</p>
-
-<h2 id="ko-cli">8. CLI 가이드 (대시보드 없이)</h2>
-<p>대시보드 없이 명령줄에서 직접 Looper를 사용할 수 있습니다.</p>
-
-<h3>플러그인 설치</h3>
-<pre># GitHub에서 설치
-claude plugin install vikyw89/looper
-
-# 또는 로컬 체크아웃에서 설치
-claude plugin install /path/to/looper/plugins/looper</pre>
-
-<h3>루프 실행</h3>
-<pre># Claude Code 시작
-claude
-
-# /loop 명령어 사용
-&gt; /loop "JWT 토큰을 이용한 사용자 인증 추가"</pre>
-<p>루프가 자동으로 Plan &rarr; Do &rarr; Check 사이클을 태스크가 통과할 때까지 실행합니다.</p>
-
-<h3>출력 이해하기</h3>
-<ul>
-<li><strong>Planner</strong>가 코드베이스를 분석하고 단계별 계획을 수립합니다</li>
-<li><strong>Doer</strong>가 코드 변경을 작성하고 커밋합니다</li>
-<li><strong>Checker</strong>가 테스트, 린트, 타입체크, 빌드를 실행합니다</li>
-<li>Checker가 <strong>PASS</strong> 또는 <strong>FAIL</strong> 판정을 내립니다</li>
-</ul>
-
-<h3>Git을 통한 루프 히스토리 보기</h3>
-<pre># 모든 루프 커밋 보기
-git log --grep="Loop-Phase:"
-
-# 각 커밋에는 다음과 같은 트레일러가 있습니다:
-# Loop-Phase: plan|do|check
-# Loop-Iteration: 1
-# Loop-Verdict: PASS (check 커밋에만)</pre>
-
-<div class="info-box tip">
-<strong>팁:</strong> 대시보드는 이와 동일한 git 커밋을 읽어 루프 히스토리를 표시하므로, CLI와 대시보드를 원활하게 전환할 수 있습니다.
-</div>
-
-<h2 id="ko-shortcuts">9. 키보드 단축키</h2>
-<table style="width:100%;border-collapse:collapse;margin-bottom:var(--space-4)">
-<tr style="border-bottom:1px solid var(--border-primary)"><td style="padding:var(--space-2)"><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td style="padding:var(--space-2)">명령 팔레트 열기</td></tr>
-<tr style="border-bottom:1px solid var(--border-primary)"><td style="padding:var(--space-2)"><kbd>N</kbd></td><td style="padding:var(--space-2)">새 태스크 생성</td></tr>
-<tr style="border-bottom:1px solid var(--border-primary)"><td style="padding:var(--space-2)"><kbd>Esc</kbd></td><td style="padding:var(--space-2)">모달 및 패널 닫기</td></tr>
-</table>
-
-<h2 id="ko-trouble">10. 문제 해결</h2>
-
-<div class="info-box warning">
-<strong>PM Agent가 "로딩 중"에서 멈춤</strong><br>
-Claude CLI가 설치되어 있는지 확인하세요 (<code>which claude</code>) 또는 대시보드 시작 전에 <code>ANTHROPIC_API_KEY</code> 환경변수를 설정하세요.
-</div>
-
-<div class="info-box warning">
-<strong>루프가 시작되지 않음</strong><br>
-설정에서 저장소가 구성되어 있는지 확인하세요. 저장소는 유효한 git 저장소여야 합니다.
-</div>
-
-<div class="info-box warning">
-<strong>대시보드가 로드되지 않음</strong><br>
-Node.js가 설치되어 있는지 확인하세요 (<code>node --version</code>), 그 다음 dashboard 디렉토리에서 <code>npm install</code>을 실행하세요.
-</div>
-
-<div class="info-box warning">
-<strong>"Claude CLI를 찾을 수 없음" 오류</strong><br>
-Claude CLI를 설치하세요: <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank">https://docs.anthropic.com/en/docs/claude-code</a>
-</div>
-
-<h2 id="ko-glossary">11. 용어 설명</h2>
-<div class="glossary-item"><div class="glossary-term">루프 (Loop)</div><div class="glossary-def">모든 검증을 통과할 때까지 계속되는 자동화된 Plan-Do-Check 사이클입니다.</div></div>
-<div class="glossary-item"><div class="glossary-term">PDC (Plan-Do-Check)</div><div class="glossary-def">Looper가 사용하는 방법론입니다. 작업을 계획하고, 실행하고, 올바른지 검증합니다.</div></div>
-<div class="glossary-item"><div class="glossary-term">이터레이션 (Iteration)</div><div class="glossary-def">Plan &rarr; Do &rarr; Check를 한 번 완전히 거치는 것입니다. 태스크에 여러 이터레이션이 필요할 수 있습니다.</div></div>
-<div class="glossary-item"><div class="glossary-term">판정 (Verdict)</div><div class="glossary-def">Check 단계의 결과: PASS (모든 테스트 통과) 또는 FAIL (수정 필요).</div></div>
-<div class="glossary-item"><div class="glossary-term">PM Agent</div><div class="glossary-def">상위 수준 태스크 설명을 더 작고 실행 가능한 서브태스크로 분해하는 AI 어시스턴트입니다.</div></div>
-<div class="glossary-item"><div class="glossary-term">칸반 보드 (Kanban Board)</div><div class="glossary-def">태스크를 관리하기 위한 컬럼 (백로그, 계획, 진행 중, 리뷰, 완료)이 있는 시각적 보드입니다.</div></div>
-<div class="glossary-item"><div class="glossary-term">Claude CLI</div><div class="glossary-def">Looper의 코드 생성을 구동하는 Claude AI의 명령줄 인터페이스입니다.</div></div>
-
-</div><!-- end content-ko -->
-
-</div>
-
-<button class="lang-btn" id="guideLangBtn" onclick="toggleGuideLang()">EN</button>
+</div><!-- .guide-wrapper -->
 
 <script>
-const guideLang = localStorage.getItem('looper-lang') || 'en';
-let currentGuideLang = guideLang;
+(function() {
+  var STORAGE_KEY = 'looper-lang';
 
-function applyGuideLang() {
-  document.getElementById('content-en').style.display = currentGuideLang === 'en' ? '' : 'none';
-  document.getElementById('content-ko').style.display = currentGuideLang === 'ko' ? '' : 'none';
-  document.getElementById('guideLangBtn').textContent = currentGuideLang === 'en' ? 'KO' : 'EN';
-}
+  function setLang(lang) {
+    document.documentElement.lang = lang;
+    document.getElementById('btn-en').className = (lang === 'en') ? 'active' : '';
+    document.getElementById('btn-ko').className = (lang === 'ko') ? 'active' : '';
+    try { localStorage.setItem(STORAGE_KEY, lang); } catch(e) {}
+  }
 
-function toggleGuideLang() {
-  currentGuideLang = currentGuideLang === 'en' ? 'ko' : 'en';
-  localStorage.setItem('looper-lang', currentGuideLang);
-  applyGuideLang();
-}
+  // Expose to global scope for onclick handlers
+  window.setLang = setLang;
 
-// Sync theme with parent
-const parentTheme = localStorage.getItem('looper-theme') || 'dark';
-document.documentElement.dataset.theme = parentTheme;
+  // Initialise from localStorage
+  var saved = null;
+  try { saved = localStorage.getItem(STORAGE_KEY); } catch(e) {}
+  setLang(saved === 'ko' ? 'ko' : 'en');
 
-// Listen for theme changes from parent
-window.addEventListener('storage', (e) => {
-  if (e.key === 'looper-theme') document.documentElement.dataset.theme = e.newValue;
-  if (e.key === 'looper-lang') { currentGuideLang = e.newValue; applyGuideLang(); }
-});
+  // ===== Sync theme with parent dashboard =====
+  function syncTheme() {
+    // Try reading from parent document (same-origin iframe)
+    try {
+      var parentTheme = window.parent.document.documentElement.getAttribute('data-theme');
+      if (parentTheme) {
+        document.documentElement.setAttribute('data-theme', parentTheme);
+        return;
+      }
+    } catch(e) { /* cross-origin, ignore */ }
+    // Fallback: read from localStorage
+    try {
+      var stored = localStorage.getItem('looper-theme');
+      if (stored) document.documentElement.setAttribute('data-theme', stored);
+    } catch(e) {}
+  }
+  syncTheme();
 
-applyGuideLang();
+  // Listen for theme changes via postMessage from parent
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'theme-change' && e.data.theme) {
+      document.documentElement.setAttribute('data-theme', e.data.theme);
+    }
+  });
+
+  // Listen for storage events (theme or lang changes from other tabs/frames)
+  window.addEventListener('storage', function(e) {
+    if (e.key === 'looper-theme' && e.newValue) {
+      document.documentElement.setAttribute('data-theme', e.newValue);
+    }
+    if (e.key === STORAGE_KEY && e.newValue) {
+      setLang(e.newValue);
+    }
+  });
+
+  // Poll parent theme periodically as fallback
+  setInterval(syncTheme, 2000);
+
+  // ===== Smooth scroll for TOC and anchor links =====
+  document.querySelectorAll('a[href^="#"]').forEach(function(link) {
+    link.addEventListener('click', function(e) {
+      var href = this.getAttribute('href');
+      if (href && href.charAt(0) === '#') {
+        var target = document.getElementById(href.substring(1));
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    });
+  });
+})();
 </script>
 </body>
 </html>
