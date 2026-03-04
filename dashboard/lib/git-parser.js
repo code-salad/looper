@@ -15,13 +15,11 @@ function exec(cmd, cwd) {
 }
 
 function getRepoCwd() {
-  // Use the parent directory of the dashboard as the repo root
-  // Or allow override via LOOPER_REPO_DIR env var
   return process.env.LOOPER_REPO_DIR || path.resolve(__dirname, '..', '..');
 }
 
-function parseLoopCommits() {
-  const cwd = getRepoCwd();
+function parseLoopCommits(repoCwd) {
+  const cwd = repoCwd || getRepoCwd();
 
   // Fetch all loop commits with structured delimiters
   const raw = exec(
@@ -124,9 +122,10 @@ function getFileStats(hash, cwd) {
 /**
  * Group commits into loop structures:
  * { taskName, status, totalIterations, iterations: [{ number, plan, do, check }] }
+ * @param {string} [repoCwd] - Optional repo path override
  */
-function getLoops() {
-  const commits = parseLoopCommits();
+function getLoops(repoCwd) {
+  const commits = parseLoopCommits(repoCwd);
 
   // Group by scope (task name)
   const grouped = {};
@@ -171,8 +170,8 @@ function getLoops() {
   return loops.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
 
-function getStats() {
-  const loops = getLoops();
+function getStats(repoCwd) {
+  const loops = getLoops(repoCwd);
   const total = loops.length;
   const passed = loops.filter(l => l.status === 'passed').length;
   const failed = loops.filter(l => l.status === 'failed').length;
