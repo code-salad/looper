@@ -1,6 +1,4 @@
 const { spawn } = require('child_process');
-const path = require('path');
-const { getRepoCwd } = require('./git-parser');
 
 // Track running loop processes
 const runningLoops = new Map();
@@ -9,24 +7,26 @@ const runningLoops = new Map();
  * Start a loop for a task.
  * @param {string} taskId - Task ID
  * @param {string} taskTitle - Task description for the loop
- * @param {function} onLog - Callback for log messages
- * @param {function} onComplete - Callback when loop finishes
+ * @param {object} options - { cwd, onLog, onComplete }
  */
-function startLoop(taskId, taskTitle, { onLog, onComplete } = {}) {
+function startLoop(taskId, taskTitle, { cwd, onLog, onComplete } = {}) {
   if (runningLoops.has(taskId)) {
     throw new Error('Loop already running for this task');
   }
 
-  const cwd = getRepoCwd();
+  if (!cwd) {
+    throw new Error('No repository directory specified. Please configure a repository in Settings.');
+  }
+
   const loopCmd = `/looper:loop "${taskTitle.replace(/"/g, '\\"')}"`;
 
-  const proc = spawn('claude', ['-p', loopCmd], {
+  const proc = spawn('claude', ['-p', loopCmd, '--output-format', 'text'], {
     cwd,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env }
   });
 
-  runningLoops.set(taskId, { proc, startedAt: new Date().toISOString() });
+  runningLoops.set(taskId, { proc, startedAt: new Date().toISOString(), cwd });
 
   proc.stdout.on('data', (data) => {
     const msg = data.toString();
@@ -73,7 +73,8 @@ function getRunningLoops() {
   return Array.from(runningLoops.entries()).map(([id, info]) => ({
     taskId: id,
     pid: info.proc.pid,
-    startedAt: info.startedAt
+    startedAt: info.startedAt,
+    cwd: info.cwd
   }));
 }
 
