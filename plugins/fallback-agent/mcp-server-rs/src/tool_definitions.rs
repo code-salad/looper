@@ -156,7 +156,10 @@ pub fn build_list_tools_result(agents: &HashMap<String, AgentDefinition>) -> Lis
     ListToolsResult {
         meta: None,
         next_cursor: None,
-        tools: vec![build_agent_fallback_tool(agents), build_agent_fallback_status_tool()],
+        tools: vec![
+            build_agent_fallback_tool(agents),
+            build_agent_fallback_status_tool(),
+        ],
     }
 }
 

@@ -93,6 +93,7 @@ pub fn is_plugin_dir(dir: &Path) -> bool {
 /// Discover agent definitions by scanning:
 ///   1. CLAUDE_PLUGIN_ROOT/agents/*.md  (own plugin)
 ///   2. Sibling plugins — handles both flat and versioned cache layouts
+///   3. ~/.claude/agents/*.md — user agents, loaded with an empty namespace (no prefix)
 pub fn discover_agents() -> HashMap<String, AgentDefinition> {
     let mut agents: HashMap<String, AgentDefinition> = HashMap::new();
     let plugin_root = match std::env::var("CLAUDE_PLUGIN_ROOT") {
@@ -191,7 +192,19 @@ pub fn discover_agents() -> HashMap<String, AgentDefinition> {
     scan_for_siblings(&parent, &mut scan_targets, &mut visited);
     scan_for_siblings(&grandparent, &mut scan_targets, &mut visited);
 
-    // 3. Parse agent files from all discovered directories
+    // 3. User agents from ~/.claude/agents/
+    if let Ok(home) = std::env::var("HOME") {
+        let user_agents_dir = PathBuf::from(home).join(".claude").join("agents");
+        if user_agents_dir.is_dir() {
+            crate::log(&format!(
+                "Scanning user agents: {}",
+                user_agents_dir.display()
+            ));
+            scan_targets.push((user_agents_dir, String::new()));
+        }
+    }
+
+    // 4. Parse agent files from all discovered directories
     for (dir, namespace) in &scan_targets {
         let entries = match fs::read_dir(dir) {
             Ok(e) => e,
@@ -379,5 +392,58 @@ mod tests {
         // Edit and NotebookEdit should still be disallowed
         assert!(result.contains(&"Edit".to_string()));
         assert!(result.contains(&"NotebookEdit".to_string()));
+    }
+
+    #[test]
+    fn test_discover_user_agents_graceful_skip() {
+        // Set HOME to a nonexistent directory; discover_agents() must not panic or error.
+        // Also point CLAUDE_PLUGIN_ROOT to a nonexistent path to isolate this test.
+        let tmp = std::env::temp_dir().join("looper_test_graceful_skip_no_home");
+        std::env::set_var("HOME", tmp.to_str().unwrap());
+        std::env::set_var("CLAUDE_PLUGIN_ROOT", "/nonexistent_plugin_root_xyz");
+
+        // Should return an empty map without panicking.
+        let agents = discover_agents();
+
+        // No user agents should be loaded (the .claude/agents dir doesn't exist).
+        assert!(
+            agents.is_empty(),
+            "Expected no agents when ~/.claude/agents does not exist"
+        );
+    }
+
+    #[test]
+    fn test_discover_user_agents_loads_md() {
+        use std::fs;
+
+        // Build a temp dir tree: {tmp}/.claude/agents/my-agent.md
+        let tmp = std::env::temp_dir().join("looper_test_user_agents_loads_md");
+        let agents_dir = tmp.join(".claude").join("agents");
+        fs::create_dir_all(&agents_dir).expect("create agents dir");
+
+        let agent_content =
+            "---\nname: my-agent\ndescription: A user agent\nmodel: sonnet\n---\n\nDo the thing.";
+        fs::write(agents_dir.join("my-agent.md"), agent_content).expect("write agent file");
+
+        std::env::set_var("HOME", tmp.to_str().unwrap());
+        std::env::set_var("CLAUDE_PLUGIN_ROOT", "/nonexistent_plugin_root_xyz");
+
+        let agents = discover_agents();
+
+        // Clean up before assertions in case they panic.
+        let _ = fs::remove_dir_all(&tmp);
+
+        assert!(
+            agents.contains_key("my-agent"),
+            "Expected 'my-agent' to be discovered with an empty namespace; got: {:?}",
+            agents.keys().collect::<Vec<_>>()
+        );
+        let agent = &agents["my-agent"];
+        assert_eq!(agent.name, "my-agent");
+        // Empty namespace means qualified_name == name (no colon prefix).
+        assert_eq!(
+            agent.qualified_name, "my-agent",
+            "qualified_name should equal name when namespace is empty"
+        );
     }
 }
