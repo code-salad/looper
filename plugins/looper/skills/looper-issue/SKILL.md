@@ -40,7 +40,7 @@ gh auth status
 ## Phase 1: Fetch Open Unassigned Issues
 
 ```bash
-gh issue list --state open --assignee "" --limit 20 \
+gh issue list --state open --search "no:assignee" --limit 20 \
   --json number,title,labels,body,createdAt
 ```
 
