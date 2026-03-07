@@ -37,11 +37,32 @@ gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'
 **Gate:** Abort with a clear message if:
 - Not in a git repo
 - `gh` is not authenticated
-- Current branch IS the default branch (main/master) — prompt the user to create a feature branch first
+
+**Branch resolution:**
+- If `CURRENT_BRANCH` != GitHub default branch → set `BASE_BRANCH` = GitHub default branch (normal case)
+- If `CURRENT_BRANCH` == GitHub default branch → do NOT abort. Instead:
+  1. Look for a plausible base branch by checking if alternative branches exist (locally or on remote):
+     ```bash
+     # If GitHub default IS main/master, check for develop or release
+     # If GitHub default is something else (e.g., alpha), check for main or master first
+     for candidate in main master develop release; do
+       if [ "$candidate" != "$CURRENT_BRANCH" ]; then
+         if git rev-parse --verify "$candidate" >/dev/null 2>&1 || \
+            git rev-parse --verify "origin/$candidate" >/dev/null 2>&1; then
+           BASE_BRANCH="$candidate"
+           break
+         fi
+       fi
+     done
+     ```
+  2. If a plausible base is found, set `BASE_BRANCH` to that and inform the user:
+     "Current branch is the GitHub default. Using `<base>` as PR target."
+  3. If no plausible base is found, prompt the user to specify a `--base <branch>` target.
+     Do not proceed until the user provides one.
 
 Store:
 - `CURRENT_BRANCH` = current branch name
-- `BASE_BRANCH` = default branch (main, master, etc.)
+- `BASE_BRANCH` = resolved base branch (may differ from the GitHub default branch)
 
 ---
 
@@ -49,22 +70,40 @@ Store:
 
 ### 1a. Collect change information (run in parallel)
 
+First, resolve the base ref to use in diff/log commands. The local branch ref may not exist
+(e.g., when `BASE_BRANCH` is `main` but no local `main` branch has been checked out):
+
+```bash
+# Resolve the base ref: prefer local branch, fall back to remote tracking branch
+if git rev-parse --verify "$BASE_BRANCH" >/dev/null 2>&1; then
+  BASE_REF="$BASE_BRANCH"
+elif git rev-parse --verify "origin/$BASE_BRANCH" >/dev/null 2>&1; then
+  BASE_REF="origin/$BASE_BRANCH"
+else
+  # Fetch the base branch from remote and use the remote tracking ref
+  git fetch origin "$BASE_BRANCH" 2>/dev/null
+  BASE_REF="origin/$BASE_BRANCH"
+fi
+```
+
+Then run these commands in parallel using `$BASE_REF` for all diff/log operations:
+
 ```bash
 # All changes: staged + unstaged + untracked
 git status
 
 # Diff of all changes against the base branch
-git diff $BASE_BRANCH...HEAD
+git diff $BASE_REF...HEAD
 
 # Unstaged/staged working tree changes
 git diff
 git diff --cached
 
 # Commit log since divergence from base
-git log --oneline $BASE_BRANCH..HEAD
+git log --oneline $BASE_REF..HEAD
 
 # Files changed summary
-git diff --stat $BASE_BRANCH...HEAD
+git diff --stat $BASE_REF...HEAD
 ```
 
 ### 1b. Understand the codebase architecture
@@ -73,7 +112,7 @@ Use the Glob and Read tools to understand the project:
 
 1. **Identify the project type** — look for package.json, Cargo.toml, go.mod, pyproject.toml, *.csproj, etc.
 2. **Read key config files** — understand the tech stack, frameworks, dependencies.
-3. **Read the files that were changed** — use `git diff --name-only $BASE_BRANCH...HEAD` to get the list, then Read each file (or the most important ones if there are many).
+3. **Read the files that were changed** — use `git diff --name-only $BASE_REF...HEAD` to get the list, then Read each file (or the most important ones if there are many).
 4. **Read surrounding context** — for each changed file, read related files (imports, callers, tests) to understand the before/after architecture.
 
 ### 1c. Discover and run tests/checks
@@ -374,7 +413,7 @@ Check status manually: gh pr checks $PR_NUMBER
 | Push rejected | Ask user: rebase, merge, or force push? |
 | PR already exists for this branch | Print existing PR URL, ask if user wants to update it |
 | `gh` not installed or not authenticated | Abort with install/auth instructions |
-| On default branch | Abort: "Create a feature branch first." |
+| On default branch | Detect alternate base branch (main/master/develop) or prompt user for `--base` target. Do not abort. |
 | Sensitive files detected in diff | Warn user, exclude from staging, list them |
 | CI checks fail | Report which checks failed, show failed log output, print PR URL |
 | CI checks time out (>20 min) | Report timeout, print PR URL, give manual check command |
