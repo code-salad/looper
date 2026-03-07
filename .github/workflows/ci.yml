@@ -18,7 +18,7 @@ jobs:
 
       - name: Lint all bash scripts
         run: |
-          for script in plugins/looper/skills/loop/scripts/*; do
+          for script in plugins/looper/skills/looper/scripts/*; do
             shellcheck "$script"
           done
 
@@ -37,7 +37,7 @@ jobs:
       - name: Check scripts are executable
         run: |
           status=0
-          for script in plugins/looper/skills/loop/scripts/*; do
+          for script in plugins/looper/skills/looper/scripts/*; do
             if [ ! -x "$script" ]; then
               echo "ERROR: $script is not executable"
               status=1
@@ -51,7 +51,7 @@ jobs:
           for file in plugins/looper/agents/planner.md \
                       plugins/looper/agents/doer.md \
                       plugins/looper/agents/checker.md \
-                      plugins/looper/skills/loop/SKILL.md \
+                      plugins/looper/skills/looper/SKILL.md \
                       README.md \
                       CLAUDE.md; do
             if [ ! -f "$file" ]; then
