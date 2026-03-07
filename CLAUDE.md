@@ -10,7 +10,7 @@ Checker) in a loop until the Checker issues a PASS verdict.
 
 ```bash
 # From GitHub
-claude plugin install vikyw89/looper
+claude plugin install code-salad/looper
 
 # Local install from a checkout
 claude plugin install /path/to/looper/plugins/looper
