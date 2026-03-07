@@ -69,6 +69,27 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
   6. If new conflicts appear, repeat until the rebase completes.
 - **Exit 2 (error):** Warn and continue — the loop can still proceed without sync.
 
+### 4c. Assign GitHub issue (if referenced)
+
+Check if `$ARGUMENTS` contains a GitHub issue reference. Look for:
+- A GitHub issue URL matching `https://github.com/.+/issues/(\d+)`
+- A hash-prefixed issue number like `#123`
+- A plain issue number at the start of the arguments (e.g., "42 fix the bug")
+
+If an issue reference is found, extract the issue number and assign it to
+the current user:
+
+```bash
+gh issue edit <NUMBER> --add-assignee @me
+# If the issue URL included a repo (owner/repo), add: --repo owner/repo
+```
+
+- **Success:** Log "Assigned issue #<NUMBER> to current user." and continue.
+- **Failure:** Warn "Could not assign issue #<NUMBER>. Continuing anyway."
+  Do NOT abort — the loop should proceed regardless.
+
+If no issue reference is found in `$ARGUMENTS`, skip this step silently.
+
 ### 5. Build project context
 
 Read the following files (skip any that don't exist) and assemble them into `PROJECT_CONTEXT`:
@@ -130,6 +151,7 @@ Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
 - **ITERATION:** ${ITERATION}
 - **TASK_PROMPT:** ${TASK_PROMPT}
 - **SCRIPTS_DIR:** ${SCRIPTS_DIR}
+- **WORKTREE_DIR:** ${WORKTREE_DIR}
 
 ## Prior Loop Context
 
