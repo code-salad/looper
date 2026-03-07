@@ -44,7 +44,7 @@ Looper는 개발 전체 사이클을 자동화하는 Claude Code 플러그인입
 ### 1. 설치
 
 ```bash
-claude plugin install vikyw89/looper
+claude plugin install code-salad/looper
 ```
 
 ### 2. 첫 루프 실행
