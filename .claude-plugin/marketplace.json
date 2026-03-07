@@ -1,8 +1,8 @@
 {
-  "name": "vikyw89-looper",
+  "name": "code-salad-looper",
   "description": "Plan-Do-Check loop orchestrator and nested subagent toolkit for Claude Code",
   "owner": {
-    "name": "vikyw89"
+    "name": "code-salad"
   },
   "plugins": [
     {
@@ -10,7 +10,7 @@
       "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
       "version": "0.18.0",
       "author": {
-        "name": "vikyw89"
+        "name": "code-salad"
       },
       "source": "./plugins/looper",
       "category": "development"
@@ -20,7 +20,7 @@
       "description": "Nested subagent — spawns fresh Claude processes with full tool access for unlimited nesting",
       "version": "0.18.0",
       "author": {
-        "name": "vikyw89"
+        "name": "code-salad"
       },
       "source": "./plugins/fallback-agent",
       "category": "development",
