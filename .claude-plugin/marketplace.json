@@ -16,6 +16,16 @@
       "category": "development"
     },
     {
+      "name": "webscraping",
+      "description": "End-to-end web scraping toolkit — domain recon, method selection, .NET 10 implementation, anti-detection, and proxy management",
+      "version": "0.1.0",
+      "author": {
+        "name": "code-salad"
+      },
+      "source": "./plugins/webscraping",
+      "category": "development"
+    },
+    {
       "name": "fallback-agent",
       "description": "Nested subagent — spawns fresh Claude processes with full tool access for unlimited nesting",
       "version": "0.21.1",
