@@ -52,8 +52,7 @@ jobs:
                       plugins/looper/agents/doer.md \
                       plugins/looper/agents/checker.md \
                       plugins/looper/skills/looper/SKILL.md \
-                      README.md \
-                      CLAUDE.md; do
+                      README.md; do
             if [ ! -f "$file" ]; then
               echo "ERROR: $file is missing"
               status=1

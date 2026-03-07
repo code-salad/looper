@@ -13,5 +13,15 @@
     "recon",
     "dotnet",
     "playwright"
+  ],
+  "agents": [
+    {
+      "name": "recon",
+      "path": "agents/recon.md"
+    },
+    {
+      "name": "webscraping",
+      "path": "agents/webscraping.md"
+    }
   ]
 }
