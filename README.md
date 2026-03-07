@@ -44,7 +44,7 @@ No manual intervention required. Just describe what you want, and Looper handles
 ### 1. Install
 
 ```bash
-claude plugin install vikyw89/looper
+claude plugin install code-salad/looper
 ```
 
 ### 2. Run your first loop
