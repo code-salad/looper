@@ -1,6 +1,6 @@
 ---
-name: loop
-description: Use this skill when the user wants to run an iterative Plan-Do-Check agent loop. Three agents (Planner, Doer, Checker) cycle until the Checker passes the work. Triggered by "/loop" followed by a task description.
+name: looper
+description: Use this skill when the user wants to run an iterative Plan-Do-Check agent loop. Three agents (Planner, Doer, Checker) cycle until the Checker passes the work. Triggered by "/looper" followed by a task description.
 tools: Bash, Read, Edit, Write, Grep, Glob, Agent
 ---
 
@@ -39,7 +39,7 @@ Resolve `SCRIPTS_DIR` and `REPO_ROOT` before entering the worktree:
 
 ```bash
 REPO_ROOT=$(git rev-parse --show-toplevel)
-SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:-${REPO_ROOT}}/skills/loop/scripts"
+SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:-${REPO_ROOT}}/skills/looper/scripts"
 ```
 
 Create an isolated worktree (handles gitignore, create-or-resume, and dirty-state warnings):
@@ -195,5 +195,5 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
   (e.g. `git worktree remove <path>`).
 - **FAIL (max iterations):** Report that max iterations were reached. Show
   the last checker verdict: `git log --grep="Loop-Verdict: FAIL" -1 --format="%B"`
-- **Resumable:** Running `/loop` again with the same task resumes automatically
+- **Resumable:** Running `/looper` again with the same task resumes automatically
   via step 6.

@@ -12,7 +12,7 @@ controller, spawning Agent subagents directly from the main Claude Code session.
 ┌─────────────────────────────────────────────────────────┐
 │  Main Agent (user's Claude Code session)                │
 │                                                         │
-│  1. User invokes /loop skill                            │
+│  1. User invokes /looper skill                            │
 │  2. SKILL.md builds project context                     │
 │  3. SKILL.md runs PDC loop via Agent subagents           │
 │  4. Reads verdict from git log after each iteration     │
@@ -31,7 +31,7 @@ controller, spawning Agent subagents directly from the main Claude Code session.
 
 ```mermaid
 flowchart TD
-    A["Main Agent"] -->|"Invokes /loop skill"| B["SKILL.md orchestrator"]
+    A["Main Agent"] -->|"Invokes /looper skill"| B["SKILL.md orchestrator"]
     B --> P
 
     subgraph LOOP ["PDC Loop (managed by SKILL.md)"]
@@ -48,7 +48,7 @@ flowchart TD
     EXIT --> PR["Main Agent: Create PR"]
     PR --> CI{CI checks pass?}
     CI -->|"Yes"| DONE["Done"]
-    CI -->|"No"| RESUME["Re-run /loop with CI failure context"]
+    CI -->|"No"| RESUME["Re-run /looper with CI failure context"]
     RESUME --> P
 ```
 
@@ -131,7 +131,7 @@ If any convention is violated, fix it or flag it in your verdict.
 
 ## Components
 
-### 1. Skill Entry Point & Orchestrator (`/loop` → SKILL.md)
+### 1. Skill Entry Point & Orchestrator (`/looper` → SKILL.md)
 
 The SKILL.md file serves as both the entry point and the loop orchestrator.
 When invoked from the main Claude Code session, it:
@@ -677,7 +677,7 @@ After the loop exits with PASS:
 2. **Main agent monitors CI** using `gh run watch` or `gh pr checks`
 3. **If CI fails:**
    - Extract the failure details
-   - Re-invoke `/loop` with the same task description
+   - Re-invoke `/looper` with the same task description
    - The loop detects prior iterations via git log and resumes
    - The Planner receives the CI failure as prior context
    - Loop resumes until Checker passes again

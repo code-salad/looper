@@ -53,7 +53,7 @@ Extract the bug description from `$ARGUMENTS`. If `$ARGUMENTS` is empty or not p
 Run `detect-stack` (from the loop skill scripts) to gather project tech stack:
 
 ```bash
-bash "$(dirname "$(dirname "$0")")/loop/scripts/detect-stack"
+bash "$(dirname "$(dirname "$0")")/looper/scripts/detect-stack"
 ```
 
 If `detect-stack` is not available, manually collect:
@@ -80,7 +80,7 @@ If the bug description mentions specific files, stack traces, or line numbers, u
 Run the `detect-issue-template` script to find bug report templates:
 
 ```bash
-bash "$(dirname "$(dirname "$0")")/loop/scripts/detect-issue-template"
+bash "$(dirname "$(dirname "$0")")/looper/scripts/detect-issue-template"
 ```
 
 The script returns JSON with `template_found`, `template_type`, `template_path`, and `template_content`.

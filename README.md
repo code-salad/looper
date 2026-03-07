@@ -50,7 +50,7 @@ claude plugin install vikyw89/looper
 ### 2. Run your first loop
 
 ```
-/looper:loop "add input validation to the login endpoint"
+/looper "add input validation to the login endpoint"
 ```
 
 ### 3. Watch it work

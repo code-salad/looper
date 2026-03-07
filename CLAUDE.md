@@ -16,7 +16,7 @@ claude plugin install vikyw89/looper
 claude plugin install /path/to/looper/plugins/looper
 
 # Or use the skill directly if developing in this repo
-/loop "task description"
+/looper "task description"
 ```
 
 ## Project Structure
@@ -31,8 +31,8 @@ plugins/
       plugin.json          Plugin manifest
     agents/                Agent definitions (planner, doer, checker)
     skills/
-      loop/                The loop skill
-        SKILL.md           User-invocable entry point (/loop) and loop orchestrator
+      looper/              The loop skill
+        SKILL.md           User-invocable entry point (/looper) and loop orchestrator
         scripts/           Helper scripts for agents
           detect-stack     Auto-detect project tech stack
           run-tests        Run test suite
@@ -68,7 +68,7 @@ docs/                      Design docs and flow diagrams
 /loop "description of what to do"
 ```
 
-The `/loop` skill handles worktree creation, context building, iteration
+The `/looper` skill handles worktree creation, context building, iteration
 management, and agent orchestration automatically.
 
 ## Dependencies
