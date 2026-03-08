@@ -106,6 +106,9 @@ checks, fix issues, and commit your work.
    ## Implementation Plan
    <the full plan>
 
+   ## Issue Context
+   <include issue-context — the original ticket/issue body from the dynamic context>
+
    ## Source Files Being Implemented
    <list of source files and their expected contents from the plan>
 
@@ -120,6 +123,20 @@ checks, fix issues, and commit your work.
    - Use descriptive test names that describe behavior
    - Do NOT modify source files — only create/modify test files
    - Do NOT run tests or commit — the parent agent handles that
+
+   ## CRITICAL: Acceptance Criteria Tests
+   - You MUST write at least one test derived directly from the ticket/issue
+     acceptance criteria or user-reported scenario — NOT from the implementation.
+   - These tests should verify the user's expected behavior as described in the
+     issue, independent of how the code implements it.
+   - For bug fixes: write a regression test that reproduces the exact bug
+     scenario from the issue. This test should FAIL on the old code and PASS
+     on the new code.
+   - For features: write a test that exercises the feature exactly as described
+     in the user story or acceptance criteria.
+   - Name these tests clearly, e.g.: "should [expected behavior from ticket]"
+   - If no issue context is provided, derive acceptance tests from the plan's
+     acceptance criteria instead.
    ```
 
 4. **Run checks (two rounds)** — Before committing, verify your work:
@@ -181,6 +198,10 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 
 - Follow the plan closely — don't go off-script unless necessary
 - Always write unit tests alongside implementation — use a test subagent for this
+- **Ensure the test subagent receives the issue context** from the dynamic
+  context (the `## Issue Context` section). The test subagent MUST write at
+  least one acceptance-criteria test derived from the ticket, not just from
+  the implementation code.
 - Run tests and fix failures before committing
 - Create a SINGLE commit at the end with all your changes
 - If a skill exits with non-zero, investigate and fix the issue

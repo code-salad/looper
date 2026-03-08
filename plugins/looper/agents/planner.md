@@ -21,7 +21,7 @@ modify any project files — only commit a plan as a git commit message.
    If this is not iteration 1, study the loop context carefully. Understand what
    was attempted, what worked, what failed, and what the Checker's feedback was.
 
-2. **Gather context and explore in parallel** — Launch all three tracks as
+2. **Gather context and explore in parallel** — Launch all four tracks as
    separate tool calls in a single message:
    - **Track A (Bash):** Run `$SCRIPTS_DIR/git-loop-context` and
      `$SCRIPTS_DIR/detect-stack` as two parallel Bash calls
@@ -29,8 +29,23 @@ modify any project files — only commit a plan as a git commit message.
      source directory, test directory
    - **Track C (AgentFallback/Explore):** If iteration > 1, spawn an Explore subagent to
      investigate files referenced in the Checker's prior feedback
+   - **Track D (AgentFallback — Reproduce/Observe):** If iteration 1 AND the
+     task is a bug fix or involves changing runtime behavior of a web app/API/CLI,
+     spawn a subagent to **observe the current behavior before planning**:
+     1. Run `$SCRIPTS_DIR/detect-stack` to identify the project type
+     2. If web app/API: install deps (`$SCRIPTS_DIR/install-deps`), start the
+        dev server on `$LOOPER_DEV_PORT` (e.g., `PORT=$LOOPER_DEV_PORT npm run dev &`),
+        wait for ready, then exercise the affected endpoints/pages with `curl` or
+        the `/agent-browser` skill. Record exact responses, status codes, and
+        error messages observed.
+     3. If CLI: run with inputs described in the issue/task. Record output.
+     4. Kill the dev server when done.
+     5. Report: "Current behavior: <what actually happens>" vs
+        "Expected behavior: <from the issue/task description>"
+     6. If the bug cannot be reproduced, report that — it changes the plan.
+     This subagent has: Read, Bash, Glob, Grep, Skill.
 
-   All three tracks MUST be launched as separate tool calls in one message to
+   All tracks MUST be launched as separate tool calls in one message to
    maximize parallelism.
 
 3. **Deep exploration (parallel)** — If the task involves multiple areas
@@ -109,7 +124,14 @@ modify any project files — only commit a plan as a git commit message.
    - Verify the APIs, functions, and patterns mentioned in the plan match what's
      in the codebase
    - Check that dependencies and imports referenced are real
-   - Report: [BLOCKER] for phantom files/APIs, [WARNING] for questionable assumptions
+   - If the plan makes assumptions about runtime behavior (e.g., "this endpoint
+     returns X", "this function is called when Y"), verify those assumptions by
+     reading the code paths or, for web apps/APIs, starting the dev server on
+     `$LOOPER_DEV_PORT` and testing with curl. Flag incorrect assumptions.
+   - Cross-check the plan against the reproduction results from Track D
+     (if available) — does the plan address the actual observed behavior?
+   - Report: [BLOCKER] for phantom files/APIs or incorrect runtime assumptions,
+     [WARNING] for questionable assumptions
 
    **Subagent 2 — Completeness Reviewer:**
    - Check plan covers all aspects of the task prompt
@@ -173,3 +195,12 @@ The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.
 - If prior iterations failed, address the specific feedback from the Checker
 - Scope tightly — do not gold-plate. One iteration should be completable by the Doer in a single commit
 - State explicit acceptance criteria so the Checker can issue PASS with confidence
+- **Ground the plan in the issue context.** If an issue body is provided in the
+  dynamic context, derive acceptance criteria from the user's actual reported
+  scenario — not just from code reading. The plan must address the specific
+  behavior described in the issue.
+- **Include reproduction results.** If Track D (Reproduce/Observe) ran, include
+  the observed current behavior in the plan so the Doer understands what is
+  actually happening vs. what should happen.
+- **Always use `$LOOPER_DEV_PORT`** when starting dev servers for observation.
+  Never use the project's default port.

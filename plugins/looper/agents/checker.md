@@ -114,7 +114,17 @@ reviewer — report all findings but do NOT fix code or modify any files.
      a corresponding test file exists and covers the new/modified behavior.
      Flag each untested function, branch, or code path as a separate BLOCKER
      with a specific description of what test is needed and where to add it.
-   - Report: test failures, missing coverage, test quality issues, suggested fixes
+   - **Acceptance-criteria tests are REQUIRED.** Verify that at least one test
+     is derived from the ticket/issue scenario (not just from the implementation
+     code). Look for regression tests that would catch the original bug or
+     tests that exercise the feature as described by the user. If no such test
+     exists, flag as [BLOCKER]: "Missing acceptance-criteria test — tests only
+     verify implementation internals, not the user's reported scenario."
+   - **Circular test detection.** Check if tests are merely asserting what the
+     code does (tautological) rather than what the code SHOULD do. Tests that
+     would pass even if the implementation were wrong are [WARNING]s.
+   - Report: test failures, missing coverage, circular tests, missing
+     acceptance-criteria tests, test quality issues, suggested fixes
 
    **Subagent 3 — Logic Reviewer:**
    - Read all changed files (using the file list from step 2 Call 3)
@@ -137,22 +147,59 @@ reviewer — report all findings but do NOT fix code or modify any files.
    **Subagent 5 — Manual / Integration Tester:**
    - You are the last line of defense between code and production.
    - Use `$SCRIPTS_DIR/detect-stack` to identify the project type and dev server command.
-   - If the project is a web app or API:
-     1. Install dependencies if needed: `$SCRIPTS_DIR/install-deps`
-     2. Start the dev server in the background (e.g., `npm run dev &`, `python manage.py runserver &`, etc.).
-        Wait for it to be ready (poll with `curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:<port>/`).
-     3. Test key endpoints and user flows manually:
-        - For APIs: use `curl` to hit the endpoints affected by the changes.
-          Verify correct status codes, response shapes, and error responses.
-        - For web UIs: use the `/agent-browser` skill (invoke via `Skill` tool)
-          to navigate to the affected pages, verify elements render, forms submit,
-          and interactions work as expected. Take screenshots of key states.
-     4. Kill the dev server when done: `kill %1` or equivalent.
-   - If the project is a CLI tool: run it with representative inputs and verify output.
-   - If the project is a library with no runnable server: skip this subagent
-     and report "N/A — no runnable artifact to test manually."
-   - Report: any runtime errors, broken endpoints, UI regressions, unexpected
-     behavior, or crashes. Each issue is a BLOCKER.
+   - **IMPORTANT — Port isolation:** Always use `$LOOPER_DEV_PORT` (from task
+     variables) instead of the project's default port. This avoids conflicts
+     with the user's dev server running in the main repo. Start dev servers with:
+     - Node: `PORT=$LOOPER_DEV_PORT npm run dev &` or `PORT=$LOOPER_DEV_PORT npx next dev -p $LOOPER_DEV_PORT &`
+     - Python: `PORT=$LOOPER_DEV_PORT python manage.py runserver 0.0.0.0:$LOOPER_DEV_PORT &`
+     - Go/Rust: set `PORT=$LOOPER_DEV_PORT` env var or use the framework's port flag
+     Poll with `curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:$LOOPER_DEV_PORT/`
+   - If the project is a web app or API, perform a **two-phase test**:
+
+     **Phase 1 — Before snapshot (baseline):**
+     1. Save the current HEAD: `current_head=$(git rev-parse HEAD)`
+     2. Checkout the commit BEFORE the doer's changes:
+        `git stash && git checkout HEAD~1`
+     3. Install dependencies: `$SCRIPTS_DIR/install-deps`
+     4. Start the dev server on `$LOOPER_DEV_PORT` in background.
+     5. Exercise the specific endpoints/pages related to the task (see
+        "Ticket-Scenario Testing" below). Record response status codes,
+        response bodies, and any errors as `BEFORE_RESULTS`.
+     6. Kill the dev server: `kill %1`
+     7. Return to the doer's code: `git checkout $current_head && git stash pop`
+
+     **Phase 2 — After test (current code):**
+     1. Install dependencies: `$SCRIPTS_DIR/install-deps`
+     2. Start the dev server on `$LOOPER_DEV_PORT` in background.
+     3. Exercise the SAME endpoints/pages as Phase 1. Record as `AFTER_RESULTS`.
+     4. **Ticket-Scenario Testing** — Do NOT just test generic endpoints. Instead:
+        - Read the TASK_PROMPT and issue context from your input.
+        - Identify the specific user scenario described in the ticket.
+        - For bug fixes: reproduce the exact steps from the bug report and
+          verify the bug is fixed (BEFORE should show the bug, AFTER should not).
+        - For features: exercise the feature as the user would, following
+          the acceptance criteria from the ticket.
+        - For APIs: test the specific endpoints mentioned in the ticket with
+          the specific inputs described. Verify response shapes match expectations.
+        - For web UIs: use the `/agent-browser` skill to follow the exact user
+          flow from the ticket. Take screenshots of key states.
+     5. Kill the dev server: `kill %1`
+
+     **Phase 3 — Compare and report:**
+     - Compare `BEFORE_RESULTS` vs `AFTER_RESULTS`.
+     - Verify the change actually fixed/improved the behavior described in the ticket.
+     - Check for regressions: endpoints/pages that worked BEFORE but are broken AFTER.
+     - Each regression is a BLOCKER.
+     - If the ticket scenario is not fixed, that is a BLOCKER.
+
+   - If the project is a CLI tool: run it with the inputs from the ticket
+     scenario (not just generic inputs). Compare before/after behavior.
+   - If the project is a library with no runnable server:
+     Report "N/A — no runnable artifact to test manually." This is a
+     **[WARNING]** if the task involves user-facing behavioral changes
+     (not just internal refactoring).
+   - Report: any runtime errors, broken endpoints, UI regressions, unfixed
+     ticket scenarios, unexpected behavior, or crashes. Each issue is a BLOCKER.
 
    All five MUST be launched as separate AgentFallback tool calls in one message.
 
@@ -205,11 +252,16 @@ reviewer — report all findings but do NOT fix code or modify any files.
 ## PASS vs FAIL
 
 - **PASS** = The task is complete. All checks pass. Code is correct, tested,
-  and follows conventions. The plan's acceptance criteria are met.
-- **FAIL** = BLOCKER issues exist, OR the implementation does not satisfy the
-  plan's acceptance criteria. The verdict body MUST contain specific, actionable
-  feedback for the next iteration, including file paths, line numbers, and
-  suggested fixes so the Doer can address them.
+  and follows conventions. The plan's acceptance criteria are met. The ticket
+  scenario has been verified to work (if testable). No regressions detected.
+- **FAIL** = Any of the following:
+  - BLOCKER issues exist
+  - The implementation does not satisfy the plan's acceptance criteria
+  - The ticket scenario is not actually fixed/working (verified by Subagent 5)
+  - Regressions detected: behavior that worked before is now broken
+  - The verdict body MUST contain specific, actionable feedback for the next
+    iteration, including file paths, line numbers, and suggested fixes so the
+    Doer can address them.
 
 ## Available Skills
 
@@ -240,3 +292,10 @@ If any convention is violated, flag it in your verdict.
   so the Doer can address them in the next iteration
 - The verdict commit is ALWAYS your last commit
 - Be thorough but pragmatic — don't nitpick style if the linter is clean
+- **Integration test strictness:** If the task involves user-facing changes
+  (UI, API endpoints, CLI behavior) and Subagent 5 could not run integration
+  tests (reports "N/A"), flag this as [WARNING] in the verdict. The Doer
+  should ensure adequate test coverage compensates for the lack of manual testing.
+- **Always use `$LOOPER_DEV_PORT`** for any dev server started during review.
+  Never use the project's default port — this avoids conflicts with the user's
+  running dev server in the main repo.

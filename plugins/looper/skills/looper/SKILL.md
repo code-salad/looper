@@ -69,26 +69,31 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
   6. If new conflicts appear, repeat until the rebase completes.
 - **Exit 2 (error):** Warn and continue — the loop can still proceed without sync.
 
-### 4c. Assign GitHub issue (if referenced)
+### 4c. Assign GitHub issue and fetch issue body (if referenced)
 
 Check if `$ARGUMENTS` contains a GitHub issue reference. Look for:
 - A GitHub issue URL matching `https://github.com/.+/issues/(\d+)`
 - A hash-prefixed issue number like `#123`
 - A plain issue number at the start of the arguments (e.g., "42 fix the bug")
 
-If an issue reference is found, extract the issue number and assign it to
-the current user:
+If an issue reference is found, extract the issue number and:
 
-```bash
-gh issue edit <NUMBER> --add-assignee @me
-# If the issue URL included a repo (owner/repo), add: --repo owner/repo
-```
+1. **Assign the issue:**
+   ```bash
+   gh issue edit <NUMBER> --add-assignee @me
+   # If the issue URL included a repo (owner/repo), add: --repo owner/repo
+   ```
+   - **Success:** Log "Assigned issue #<NUMBER> to current user." and continue.
+   - **Failure:** Warn "Could not assign issue #<NUMBER>. Continuing anyway."
+     Do NOT abort — the loop should proceed regardless.
 
-- **Success:** Log "Assigned issue #<NUMBER> to current user." and continue.
-- **Failure:** Warn "Could not assign issue #<NUMBER>. Continuing anyway."
-  Do NOT abort — the loop should proceed regardless.
+2. **Fetch the full issue body** for use as grounding context by all agents:
+   ```bash
+   ISSUE_BODY=$(gh issue view <NUMBER> --json title,body,labels --template '## Issue #{{.number}}: {{.title}}{{"\n\n"}}### Labels{{"\n"}}{{range .labels}}- {{.name}}{{"\n"}}{{end}}{{"\n"}}### Description{{"\n"}}{{.body}}')
+   ```
+   - If fetch fails, set `ISSUE_BODY=""` and continue.
 
-If no issue reference is found in `$ARGUMENTS`, skip this step silently.
+If no issue reference is found in `$ARGUMENTS`, set `ISSUE_BODY=""` and skip this step silently.
 
 ### 5. Build project context
 
@@ -131,7 +136,20 @@ For each iteration from `START_ITERATION` to `MAX_ITERATIONS`:
 LOOP_CONTEXT=$($SCRIPTS_DIR/git-loop-context --task "$TASK_NAME" --iteration $ITERATION)
 ```
 
-#### 7b. Build the agent context prompt
+#### 7b. Generate isolated dev port
+
+To avoid port conflicts with the user's main development server (since the loop
+runs in a worktree), generate an isolated port for this loop's dev server:
+
+```bash
+# Pick a deterministic but isolated port: hash the task name into 10000-60000 range
+LOOPER_DEV_PORT=$(( ( $(echo "$TASK_NAME" | cksum | cut -d' ' -f1) % 50000 ) + 10000 ))
+```
+
+This port is passed to agents so the Checker's integration tests don't collide
+with the user's running dev server.
+
+#### 7c. Build the agent context prompt
 
 Construct a context string passed to each subagent:
 
@@ -152,6 +170,11 @@ Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
 - **TASK_PROMPT:** ${TASK_PROMPT}
 - **SCRIPTS_DIR:** ${SCRIPTS_DIR}
 - **WORKTREE_DIR:** ${WORKTREE_DIR}
+- **LOOPER_DEV_PORT:** ${LOOPER_DEV_PORT}
+
+## Issue Context
+
+${ISSUE_BODY:-No issue linked. Use the TASK_PROMPT above as the source of requirements.}
 
 ## Prior Loop Context
 
@@ -159,22 +182,24 @@ ${LOOP_CONTEXT}
 ```
 
 Where `TASK_PROMPT` is the original `$ARGUMENTS` text from the user.
+`ISSUE_BODY` is the full GitHub issue body fetched in step 4c (empty if no issue was linked).
+`LOOPER_DEV_PORT` is an isolated port for dev servers to avoid conflicts with the user's environment.
 
-#### 7c. Spawn agents
+#### 7d. Spawn agents
 
 For each phase, print a progress header and spawn the agent. Wait for each
 to complete before proceeding to the next.
 
 1. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
-   `Agent(subagent_type="looper:planner", prompt=<context from 7b>)`
+   `Agent(subagent_type="looper:planner", prompt=<context from 7c>)`
 
 2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase ===`
-   `Agent(subagent_type="looper:doer", prompt=<context from 7b>)`
+   `Agent(subagent_type="looper:doer", prompt=<context from 7c>)`
 
 3. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`
-   `Agent(subagent_type="looper:checker", prompt=<context from 7b>)`
+   `Agent(subagent_type="looper:checker", prompt=<context from 7c>)`
 
-#### 7d. Read verdict
+#### 7e. Read verdict
 
 ```bash
 VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \
@@ -184,7 +209,7 @@ VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \
 - **PASS:** Break out of the loop, proceed to step 8.
 - **FAIL** (or no verdict): Report and continue to next iteration.
 
-### 7e. Sync with remote before PR
+### 7f. Sync with remote before PR
 
 After the loop completes with PASS, sync one more time to ensure the PR will have
 no merge conflicts with the default remote branch.

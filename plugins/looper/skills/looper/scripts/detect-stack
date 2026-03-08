@@ -278,6 +278,57 @@ else
     ecosystems_json="[${ecosystems_json:1}]"
 fi
 
+# --- Detect dev server command and default port ---
+dev_command="none"
+dev_port="none"
+
+if [ -f "package.json" ] && command -v jq &>/dev/null; then
+    dev_script=$(jq -r '.scripts.dev // .scripts.start // ""' package.json 2>/dev/null || true)
+    if [ -n "$dev_script" ]; then
+        # Prefer "dev" script name, fall back to "start"
+        if jq -e '.scripts.dev' package.json &>/dev/null; then
+            dev_command="dev"
+        else
+            dev_command="start"
+        fi
+
+        # Extract port from script flags (--port, -p)
+        port_from_script=$(echo "$dev_script" | grep -oE '(-p|--port)\s*[0-9]+' | grep -oE '[0-9]+' | head -1 || true)
+        if [ -n "$port_from_script" ]; then
+            dev_port="$port_from_script"
+        fi
+    fi
+fi
+
+# Framework-specific default ports (fallback when not specified in scripts)
+if [ "$dev_port" = "none" ]; then
+    case "$framework" in
+        next)      dev_port="3000" ;;
+        react)     dev_port="3000" ;;
+        vue)       dev_port="5173" ;;
+        svelte)    dev_port="5173" ;;
+        angular)   dev_port="4200" ;;
+        express)   dev_port="3000" ;;
+        fastify)   dev_port="3000" ;;
+        hono)      dev_port="3000" ;;
+        django)    dev_port="8000" ;;
+        fastapi)   dev_port="8000" ;;
+        flask)     dev_port="5000" ;;
+        gin)       dev_port="8080" ;;
+        echo)      dev_port="8080" ;;
+        fiber)     dev_port="3000" ;;
+    esac
+fi
+
+# Python framework dev commands
+if [ "$dev_command" = "none" ]; then
+    case "$framework" in
+        django)  dev_command="manage.py runserver" ;;
+        fastapi) dev_command="uvicorn" ;;
+        flask)   dev_command="flask run" ;;
+    esac
+fi
+
 # --- Output JSON ---
 cat <<EOF
 {
@@ -291,6 +342,8 @@ cat <<EOF
   "build_tool": "${build_tool}",
   "framework": "${framework}",
   "ci": "${ci}",
+  "dev_command": "${dev_command}",
+  "dev_port": "${dev_port}",
   "ecosystems": ${ecosystems_json}
 }
 EOF
