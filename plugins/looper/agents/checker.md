@@ -299,25 +299,18 @@ If any convention is violated, flag it in your verdict.
 - **Always use `$LOOPER_DEV_PORT`** for any dev server started during review.
   Never use the project's default port — this avoids conflicts with the user's
   running dev server in the main repo.
-- **Unrelated bugs:** If your review subagents discover bugs that are unrelated
-  to the current task (e.g., pre-existing security vulnerabilities, broken
-  functionality in unmodified code, flaky tests in other modules), do NOT
-  include them in the PASS/FAIL verdict — they are out of scope. Instead,
-  spawn a fire-and-forget AgentFallback subagent to file each as a GitHub issue:
+- **Unrelated bugs or improvements:** If your review subagents discover bugs
+  or issues unrelated to the current task (e.g., pre-existing vulnerabilities,
+  broken functionality in unmodified code, flaky tests in other modules), do
+  NOT include them in the PASS/FAIL verdict — they are out of scope. Instead,
+  spawn a fire-and-forget `looper:issue-creator` subagent for each:
   ```
-  File a GitHub bug report for an unrelated bug found during code review.
-  Use `gh issue create` to create the issue.
-
-  Bug details:
-  - File(s): <file paths where the bug was found>
-  - Description: <what the bug is>
-  - Observed behavior: <what happens>
-  - Expected behavior: <what should happen>
-  - How it was found: discovered while reviewing task "<TASK_NAME>"
-
-  Create the issue with title "bug: <concise description>" and label "bug"
-  (if the label exists). Include reproduction steps if possible.
-  Do NOT assign the issue — it will be picked up separately.
+  Type: bug (or feature/improvement)
+  File(s): <file paths>
+  Description: <what the issue is>
+  Observed behavior: <what happens>
+  Expected behavior: <what should happen>
+  Found by: Checker agent during task "<TASK_NAME>"
   ```
   Do not wait for the subagent. Continue with your verdict — only judge the
   Doer's work against the current task's scope.

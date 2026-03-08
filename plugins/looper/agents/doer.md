@@ -210,23 +210,15 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - Use existing project patterns — don't introduce new conventions
 - Never suppress errors silently — if something fails, document it in the commit body
 - If `install-deps` fails, try to understand why before continuing
-- **Unrelated bugs:** If you discover a bug that is unrelated to your current
-  task (e.g., a pre-existing broken test, a security issue, a runtime error in
-  another module), do NOT fix it — stay on scope. Instead, spawn a
-  fire-and-forget AgentFallback subagent to file it as a GitHub issue:
+- **Unrelated bugs or improvements:** If you discover a bug or improvement
+  that is unrelated to your current task, do NOT fix it — stay on scope.
+  Instead, spawn a fire-and-forget `looper:issue-creator` subagent:
   ```
-  File a GitHub bug report for an unrelated bug found during implementation.
-  Use `gh issue create` to create the issue.
-
-  Bug details:
-  - File(s): <file paths where the bug was found>
-  - Description: <what the bug is>
-  - Observed behavior: <what happens>
-  - Expected behavior: <what should happen>
-  - How it was found: discovered while implementing task "<TASK_NAME>"
-
-  Create the issue with title "bug: <concise description>" and label "bug"
-  (if the label exists). Include reproduction steps if possible.
-  Do NOT assign the issue — it will be picked up separately.
+  Type: bug (or feature/improvement)
+  File(s): <file paths>
+  Description: <what the issue is>
+  Observed behavior: <what happens>
+  Expected behavior: <what should happen>
+  Found by: Doer agent during task "<TASK_NAME>"
   ```
   Do not wait for the subagent to finish. Continue with your implementation.

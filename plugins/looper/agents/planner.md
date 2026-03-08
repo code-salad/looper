@@ -204,24 +204,15 @@ The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.
   actually happening vs. what should happen.
 - **Always use `$LOOPER_DEV_PORT`** when starting dev servers for observation.
   Never use the project's default port.
-- **Unrelated bugs:** If you discover a bug that is unrelated to your current
-  task (e.g., a broken endpoint, a security issue, a failing test in another
-  module), do NOT include it in your plan. Instead, spawn a fire-and-forget
-  AgentFallback subagent to file it as a GitHub issue. The subagent prompt:
+- **Unrelated bugs or improvements:** If you discover a bug, missing feature,
+  or improvement that is unrelated to your current task, do NOT include it in
+  your plan. Instead, spawn a fire-and-forget `looper:issue-creator` subagent:
   ```
-  File a GitHub bug report for an unrelated bug found during code exploration.
-  Use `gh issue create` to create the issue.
-
-  Bug details:
-  - File(s): <file paths where the bug was found>
-  - Description: <what the bug is>
-  - Observed behavior: <what happens>
-  - Expected behavior: <what should happen>
-  - How it was found: discovered while planning task "<TASK_NAME>"
-
-  Create the issue with title "bug: <concise description>" and label "bug"
-  (if the label exists). Include reproduction steps if possible.
-  Do NOT assign the issue — it will be picked up separately.
+  Type: bug (or feature/improvement)
+  File(s): <file paths>
+  Description: <what the issue is>
+  Observed behavior: <what happens>
+  Expected behavior: <what should happen>
+  Found by: Planner agent during task "<TASK_NAME>"
   ```
-  Continue with your planning — do not wait for the subagent to finish or
-  let the unrelated bug affect your plan.
+  Continue with your planning — do not wait for the subagent to finish.
