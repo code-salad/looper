@@ -404,6 +404,52 @@ Check status manually: gh pr checks $PR_NUMBER
 
 ---
 
+## Phase 6: Squash Merge (if CI passed)
+
+After CI passes, squash-merge the PR and clean up.
+
+### 6a. Squash merge
+
+Only proceed if ALL CI checks passed in Phase 5. If any check failed or timed out, skip this phase entirely.
+
+```bash
+gh pr merge $PR_NUMBER --squash --delete-branch
+```
+
+If the merge fails (e.g., merge conflicts, branch protection rules), report the error to the user and do NOT retry. The user may need to resolve conflicts or adjust branch protection settings.
+
+### 6b. Clean up worktree
+
+If the `$WORKTREE_DIR` variable is set (indicating this PR was created from a looper worktree), remove the worktree after a successful merge:
+
+```bash
+# Return to the main repo first
+cd "$(git worktree list --porcelain | head -1 | sed 's/^worktree //')"
+
+# Remove the worktree
+git worktree remove "$WORKTREE_DIR" --force
+```
+
+If worktree removal fails, warn but do not abort — the merge already succeeded.
+
+### 6c. Report final status
+
+**If merge succeeded:**
+```
+✅ PR #<number> squash-merged into <BASE_BRANCH> and branch deleted.
+<PR URL>
+```
+
+**If merge failed:**
+```
+⚠️ PR #<number> CI passed but merge failed: <error reason>
+<PR URL>
+
+Merge manually: gh pr merge <number> --squash
+```
+
+---
+
 ## Error Handling
 
 | Scenario | Action |
@@ -419,6 +465,9 @@ Check status manually: gh pr checks $PR_NUMBER
 | CI checks time out (>20 min) | Report timeout, print PR URL, give manual check command |
 | No CI checks configured | Note "no CI checks configured", print PR URL, complete normally |
 | `gh pr checks --watch` not supported | Fall back to manual polling loop (30s intervals, 40 attempts) |
+| Squash merge fails (conflicts) | Report error, print manual merge command, do NOT retry |
+| Squash merge fails (branch protection) | Report error, suggest user review branch protection settings |
+| Worktree cleanup fails | Warn but do not abort — merge already succeeded |
 
 ---
 

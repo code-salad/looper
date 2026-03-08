@@ -237,10 +237,11 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
 ### 8. Report results
 
 - **PASS:** Report success with iteration count. Invoke `/create-github-pr`.
-  The worktree at `$WORKTREE_DIR` is **preserved** for manual inspection.
-  Do NOT remove it — worktrees persist until the user explicitly cleans up
-  (e.g. `git worktree remove <path>`).
+  The PR skill will wait for CI, squash-merge on success, and clean up the
+  worktree automatically. If CI fails or merge fails, the worktree is preserved
+  for manual inspection.
 - **FAIL (max iterations):** Report that max iterations were reached. Show
   the last checker verdict: `git log --grep="Loop-Verdict: FAIL" -1 --format="%B"`
+  The worktree at `$WORKTREE_DIR` is **preserved** for debugging.
 - **Resumable:** Running `/looper` again with the same task resumes automatically
   via step 6.
