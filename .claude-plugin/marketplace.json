@@ -13,7 +13,13 @@
         "name": "code-salad"
       },
       "source": "./plugins/looper",
-      "category": "development"
+      "category": "development",
+      "mcpServers": {
+        "looper-watcher": {
+          "command": "${CLAUDE_PLUGIN_ROOT}/mcp-server/bin/looper-watcher",
+          "args": []
+        }
+      }
     },
     {
       "name": "webscraping",

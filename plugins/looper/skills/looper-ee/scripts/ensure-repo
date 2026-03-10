@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ensure-repo — Ensure a GitHub repo is cloned locally, return its path
+# Usage: ensure-repo --url <github_issue_url>
+# Outputs JSON to stdout: {"repo_dir": "...", "owner": "...", "repo": "...", "issue_number": "...", "full_repo": "..."}
+# Info/warnings go to stderr.
+
+URL=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --url) URL="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [ -z "$URL" ]; then
+    echo "Usage: ensure-repo --url <github_issue_url>" >&2
+    exit 1
+fi
+
+# Parse URL: https://github.com/<owner>/<repo>/issues/<number>
+if [[ ! "$URL" =~ ^https://github\.com/([^/]+)/([^/]+)/issues/([0-9]+)$ ]]; then
+    echo "Error: Invalid issue URL. Expected: https://github.com/owner/repo/issues/123" >&2
+    exit 1
+fi
+
+OWNER="${BASH_REMATCH[1]}"
+REPO="${BASH_REMATCH[2]}"
+ISSUE_NUMBER="${BASH_REMATCH[3]}"
+FULL_REPO="$OWNER/$REPO"
+
+# Check gh auth
+if ! gh auth status >/dev/null 2>&1; then
+    echo "Error: gh is not authenticated. Run 'gh auth login' first." >&2
+    exit 1
+fi
+
+WORKSPACE_DIR="$HOME/repos"
+REPO_DIR="$WORKSPACE_DIR/$OWNER/$REPO"
+
+if [ -d "$REPO_DIR/.git" ]; then
+    echo "[ensure-repo] Repo exists at $REPO_DIR, fetching latest" >&2
+    git -C "$REPO_DIR" fetch origin >/dev/null 2>&1 || \
+        echo "[ensure-repo] Warning: fetch failed, continuing with existing checkout" >&2
+else
+    echo "[ensure-repo] Cloning $FULL_REPO to $REPO_DIR" >&2
+    mkdir -p "$WORKSPACE_DIR/$OWNER"
+    if ! gh repo clone "$FULL_REPO" "$REPO_DIR" 2>&1 >&2; then
+        echo "Error: Failed to clone $FULL_REPO" >&2
+        exit 1
+    fi
+fi
+
+# Output JSON for the caller
+cat <<EOF
+{"repo_dir":"$REPO_DIR","owner":"$OWNER","repo":"$REPO","issue_number":"$ISSUE_NUMBER","full_repo":"$FULL_REPO"}
+EOF
