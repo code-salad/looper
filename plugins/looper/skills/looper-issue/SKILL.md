@@ -19,25 +19,22 @@ to the current user, and delegates to the existing `looper` skill.
 
 ---
 
-## Phase 0: Preflight Checks
-
-Run these checks:
+## Phase 0: Authenticate GitHub CLI
 
 ```bash
-# Check 1: Confirm inside a git repo
-git rev-parse --is-inside-work-tree
-
-# Check 2: Confirm gh CLI is authenticated
 gh auth status
 ```
 
-**Gate:** Abort with a clear message if:
-- Not in a git repo → "This is not a git repository."
-- `gh` is not authenticated → "Please run `gh auth login` first."
+**Gate:** Abort if `gh` is not authenticated → "Please run `gh auth login` first."
 
 ---
 
-## Phase 1: Fetch Open Unassigned Issues
+## Phase 1: Claim an Issue (before anything else)
+
+Find, select, and assign an issue **immediately** to minimize the race window
+where two parallel invocations could claim the same issue.
+
+### 1a. Fetch open unassigned issues
 
 ```bash
 gh issue list --state open --search "no:assignee" --limit 20 \
@@ -50,14 +47,12 @@ gh issue list --state open --search "no:assignee" --limit 20 \
 
 Store the result as `ISSUES`.
 
----
-
-## Phase 2: Filter Out Blocked Issues
+### 1b. Filter out blocked issues
 
 For each issue in `ISSUES`, apply the three blocking checks below. Remove any
 issue that fails at least one check.
 
-### 2a. Label-based blocking
+#### Label-based blocking
 
 Skip (block) the issue if any of its labels contain "blocked" or "dependencies"
 (case-insensitive match).
@@ -66,7 +61,7 @@ Skip (block) the issue if any of its labels contain "blocked" or "dependencies"
 labels[].name | ascii_downcase | contains("blocked") or contains("dependencies")
 ```
 
-### 2b. Task-list dependency references
+#### Task-list dependency references
 
 Parse the issue body for lines matching either of these patterns:
 - `- [ ] Depends on #N`
@@ -82,7 +77,7 @@ gh issue view N --json state --jq '.state'
 
 If the result is `"OPEN"`, the issue is blocked. Skip it.
 
-### 2c. "Blocked by" references
+#### "Blocked by" references
 
 Parse the issue body for lines matching the pattern:
 - `Blocked by #N` (case-insensitive)
@@ -95,11 +90,9 @@ gh issue view N --json state --jq '.state'
 
 If the result is `"OPEN"`, the issue is blocked. Skip it.
 
----
+### 1c. Select issue
 
-## Phase 3: Select Issue
-
-- If no eligible issues remain after Phase 2, inform the user:
+- If no eligible issues remain after filtering, inform the user:
   > "All open unassigned issues are currently blocked."
   and exit.
 
@@ -108,9 +101,7 @@ If the result is `"OPEN"`, the issue is blocked. Skip it.
 
 Store the selected issue's number as `NUMBER` and its title as `TITLE`.
 
----
-
-## Phase 4: Assign Issue
+### 1d. Assign issue immediately
 
 ```bash
 gh issue edit $NUMBER --add-assignee @me
@@ -120,11 +111,11 @@ gh issue edit $NUMBER --add-assignee @me
   > "Assigned issue #`$NUMBER` to current user."
 - **Failure:** Warn:
   > "Could not assign issue #`$NUMBER`. Continuing anyway."
-  Do NOT abort — proceed to Phase 5 regardless.
+  Do NOT abort — proceed regardless.
 
 ---
 
-## Phase 5: Delegate to Looper
+## Phase 2: Delegate to Looper
 
 Invoke the `looper` skill with the selected issue reference:
 
@@ -143,7 +134,6 @@ This hands off entirely to the existing looper skill, which will:
 
 | Scenario | Action |
 |----------|--------|
-| Not a git repo | Abort: "This is not a git repository." |
 | `gh` not authenticated | Abort: "Please run `gh auth login` first." |
 | `gh issue list` fails | Abort: report the error message from `gh` to the user |
 | No open unassigned issues | Inform: "No open unassigned issues found." and exit |
