@@ -1,12 +1,10 @@
-[English](README.md) | [한국어](README.ko.md)
-
 # Looper
 
 **Plan-Do-Check loop orchestrator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code)**
 
 Three AI agents — Planner, Doer, Checker — iterate in a loop until your code passes all checks, then automatically create a PR.
 
-[![Version](https://img.shields.io/badge/version-0.17.0-blue)](.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.24.2-blue)](.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](.github/workflows/ci.yml)
 
@@ -29,7 +27,6 @@ No manual intervention required. Just describe what you want, and Looper handles
 ## Key Features
 
 - **Automated PDC Loop** — Plan-Do-Check agents iterate until quality passes
-- **PM Agent Dashboard** — Break down complex tasks into subtasks with AI-powered decomposition
 - **Auto Tech Stack Detection** — Supports Node.js, Python, Go, Rust, .NET, and more
 - **Automated Quality Gates** — Tests, linting, type checking, formatting, security scanning
 - **Git-Based State** — All progress tracked via conventional commits with structured trailers
@@ -120,16 +117,6 @@ Every iteration, the Checker agent spawns 5 parallel review subagents:
 - **Code Quality** — Lint, format, security scan, conventions
 - **Integration Tester** — Starts dev server and tests endpoints
 
-### Auto-Generate GitHub Issues
-
-> "Structured bug reports from a description."
-
-```
-/looper:github-bug-report "search results return duplicates when using pagination with filters"
-```
-
-Detects your repo's issue template, fills in environment info, checks for duplicates, and creates a well-structured issue.
-
 ### Multi-Language Project Support
 
 Looper auto-detects your tech stack and uses the right tools:
@@ -212,7 +199,6 @@ git log --grep="Loop-Verdict: PASS" --format="%B" -1
 | Loop | `/looper:loop "task"` | Main PDC loop orchestrator |
 | Git Commit | `/looper:git-commit` | Conventional commit helper |
 | Create PR | `/looper:create-github-pr` | PR with architecture diagrams |
-| Bug Report | `/looper:github-bug-report "desc"` | GitHub issue creation |
 | Worktree | `/looper:initiate-worktree "name"` | Git worktree helper |
 
 ### Utility Scripts
@@ -229,31 +215,6 @@ All scripts auto-detect your tech stack and dispatch to the right tool:
 | `run-build` | Build the project |
 | `install-deps` | Install dependencies |
 | `security-scan` | Security vulnerability scan |
-
----
-
-## Kanban Dashboard
-
-Looper includes a web-based Kanban dashboard for visual task management and loop monitoring.
-
-### Launch
-
-```bash
-cd dashboard
-npm install
-npm start
-# Open http://localhost:3000
-```
-
-### Features
-
-- **Kanban Board** — Drag-and-drop task cards across Backlog, Planning, In Progress, Review, and Done columns
-- **PM Agent** — Enter a high-level prompt and AI decomposes it into subtasks automatically
-- **Live Loop Monitoring** — Watch agent progress in real-time via WebSocket
-- **Loop History** — Browse all past loops with iteration details
-- **Analytics** — Success rates, average iterations, task distribution
-- **Dark/Light Mode** — Enterprise SaaS-grade UI with Pretendard font
-- **EN/KO** — Full bilingual support
 
 ---
 
@@ -275,7 +236,6 @@ LOOPER_MAX_ITERATIONS=5 claude
 - `git`
 - `jq`
 - `gh` (GitHub CLI, optional — required for PR creation)
-- `node` (optional — required for the dashboard)
 
 ## License
 
