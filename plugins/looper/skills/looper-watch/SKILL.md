@@ -1,16 +1,19 @@
 ---
-name: setup-watcher
+name: looper-watch
 description: >-
   Set up a GitHub issue watcher that polls a repo for open unassigned issues
   and automatically works on them via looper. Triggered by
-  "/setup-watcher <owner/repo> [interval_minutes]".
+  "/looper-watch <owner/repo> [interval_minutes]".
 tools: Bash, Read
 ---
 
-# Setup Watcher Skill
+# Looper Watch Skill
 
 Starts a watcher that continuously polls a GitHub repo for open, unassigned,
 non-blocked issues and feeds them to looper-ee.
+
+The first poll runs immediately on setup — no need to wait for the first
+cron interval.
 
 ---
 
@@ -22,7 +25,7 @@ The argument format is: `<owner/repo> [interval_minutes]`
 - `INTERVAL` — optional, polling interval in minutes (default: 10)
 
 **Gate:** If no repo is provided, abort:
-> "Usage: /setup-watcher owner/repo [interval_minutes]"
+> "Usage: /looper-watch owner/repo [interval_minutes]"
 
 ---
 
@@ -51,7 +54,7 @@ Call the `setup_watcher` MCP tool with:
 - `interval_minutes`: the parsed `INTERVAL`
 
 Report the watcher ID and configuration to the user:
-> "Watcher started for `<repo>` polling every `<interval>` minutes. Watcher ID: `<id>`"
+> "Watcher started for `<repo>` polling every `<interval>` minutes. Watcher ID: `<id>`. First poll is running now."
 
 ---
 

@@ -45,7 +45,7 @@ fn build_setup_watcher_tool() -> Tool {
 
     Tool::new(
         "setup_watcher",
-        "Start a watcher that polls a GitHub repo for open, unassigned, non-blocked issues. When an issue is found, it is claimed and fed to 'claude -p /looper-ee <issue_url>'.",
+        "Start a watcher that polls a GitHub repo for open, unassigned, non-blocked issues. The first poll runs immediately on setup, then repeats on the configured interval. When an issue is found, it is claimed and fed to 'claude -p /looper-ee <issue_url>'.",
         Arc::new(input_schema),
     )
 }
