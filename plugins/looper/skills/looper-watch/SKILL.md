@@ -4,7 +4,7 @@ description: >-
   Set up a GitHub issue watcher that polls a repo for open unassigned issues
   and automatically works on them via looper. Triggered by
   "/looper-watch <owner/repo> [interval_minutes]".
-tools: Bash, Read
+tools: Bash, Read, mcp__plugin_looper_looper-watcher__setup_watcher, mcp__plugin_looper_looper-watcher__list_watchers
 ---
 
 # Looper Watch Skill
@@ -49,7 +49,7 @@ gh repo view "$REPO" --json name --jq '.name'
 
 ## Phase 2: Start Watcher
 
-Call the `setup_watcher` MCP tool with:
+Call the `mcp__plugin_looper_looper-watcher__setup_watcher` tool with:
 - `repo`: the parsed `REPO`
 - `interval_minutes`: the parsed `INTERVAL`
 
@@ -60,4 +60,4 @@ Report the watcher ID and configuration to the user:
 
 ## Phase 3: Confirm
 
-Call the `list_watchers` MCP tool to show the user all active watchers.
+Call the `mcp__plugin_looper_looper-watcher__list_watchers` tool to show the user all active watchers.
