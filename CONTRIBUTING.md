@@ -72,7 +72,6 @@ looper/
 │   └── webscraping/         # Web scraping plugin
 │       ├── agents/
 │       └── skills/
-├── docs/                    # Additional documentation
 └── .github/
     └── workflows/
         └── ci.yml           # CI pipeline
