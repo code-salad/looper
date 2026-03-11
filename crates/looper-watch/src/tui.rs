@@ -244,6 +244,9 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
             match key.code {
                 KeyCode::Char('q') => break,
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                KeyCode::Char('p') => {
+                    app.poll_notify.notify_one();
+                }
                 KeyCode::Char('k') => {
                     worker::kill_all_sessions(&repo, state_path, &app).await;
                 }

@@ -17,7 +17,8 @@ pub struct AppState {
     pub last_poll: Arc<Mutex<Option<String>>>,
     pub next_poll: Arc<Mutex<Option<String>>>,
     pub open_issues: Arc<Mutex<Vec<github::Issue>>>,
-    /// Notified when a tmux session ends so `run_loop` can poll immediately.
+    /// Notified when an immediate poll is needed — e.g. when the user presses
+    /// `p` in the TUI or when a tmux session ends.
     pub poll_notify: Arc<Notify>,
 }
 
@@ -46,6 +47,10 @@ impl AppState {
 }
 
 /// Run the poll loop indefinitely.
+///
+/// The sleep between polls can be interrupted by signalling `app.force_poll`,
+/// which causes an immediate extra poll (e.g. when the user presses `p` in the
+/// TUI).
 pub async fn run_loop(cli: &Cli, state_path: &Path, app: &AppState) {
     loop {
         poll_once(cli, state_path, app).await;
@@ -57,11 +62,11 @@ pub async fn run_loop(cli: &Cli, state_path: &Path, app: &AppState) {
             *app.next_poll.lock().await = Some(next.format("%H:%M:%S").to_string());
         }
 
-        // Wake early if a tmux session ends (freeing a concurrency slot).
+        // Wake early if the user presses `p` or a tmux session ends.
         tokio::select! {
             _ = tokio::time::sleep_until(deadline) => {}
             _ = app.poll_notify.notified() => {
-                app.log("session ended — polling immediately").await;
+                app.log("poll requested — polling immediately").await;
             }
         }
     }
@@ -548,23 +553,17 @@ mod tests {
     }
 
     /// Acceptance-criteria test: log timestamps should use local time format HH:MM:SS.
-    ///
-    /// This verifies the format produced by chrono::Local::now().format("%H:%M:%S")
-    /// matches the expected HH:MM:SS pattern (two-digit hour, minute, second separated by colons).
     #[tokio::test]
     async fn should_display_log_timestamp_in_local_time_format() {
         let app = make_app();
-        // Record local time before and after the log call to bracket expected values
         let before = chrono::Local::now();
         app.log("local time check").await;
         let after = chrono::Local::now();
         let lines = app.log_lines.lock().await;
 
-        // Extract timestamp from "[HH:MM:SS] local time check"
         let line = &lines[0];
-        let timestamp = &line[1..9]; // characters between '[' and ']'
+        let timestamp = &line[1..9];
 
-        // Verify format is HH:MM:SS
         let parts: Vec<&str> = timestamp.split(':').collect();
         assert_eq!(
             parts.len(),
@@ -575,7 +574,6 @@ mod tests {
         assert_eq!(parts[1].len(), 2, "minute should be 2 digits");
         assert_eq!(parts[2].len(), 2, "second should be 2 digits");
 
-        // Verify the timestamp falls within the local time window
         let expected_before = before.format("%H:%M:%S").to_string();
         let expected_after = after.format("%H:%M:%S").to_string();
         assert!(
@@ -585,14 +583,8 @@ mod tests {
     }
 
     /// Acceptance-criteria test: last_poll and next_poll should reflect local time.
-    ///
-    /// Verifies that poll_once sets last_poll using local time (chrono::Local::now()),
-    /// and run_loop sets next_poll using local time as well. Both timestamps must
-    /// use HH:MM:SS format consistent with the local timezone.
     #[tokio::test]
     async fn should_format_poll_timestamps_as_local_time_hhmmss() {
-        // Verify that chrono::Local::now() formats in HH:MM:SS correctly —
-        // this is the same call used for last_poll and next_poll.
         let local_time_str = chrono::Local::now().format("%H:%M:%S").to_string();
         let parts: Vec<&str> = local_time_str.split(':').collect();
         assert_eq!(parts.len(), 3, "local time should format as HH:MM:SS");
@@ -608,7 +600,6 @@ mod tests {
             "second should be zero-padded to 2 digits"
         );
 
-        // Verify next_poll computes correctly using Local time
         let interval_secs: i64 = 60;
         let before = chrono::Local::now();
         let next = chrono::Local::now() + chrono::Duration::seconds(interval_secs);
@@ -618,7 +609,6 @@ mod tests {
         let next_parts: Vec<&str> = next_str.split(':').collect();
         assert_eq!(next_parts.len(), 3, "next_poll should format as HH:MM:SS");
 
-        // The next poll time should be approximately interval_secs ahead of now
         let expected_min = (before + chrono::Duration::seconds(interval_secs))
             .format("%H:%M:%S")
             .to_string();
@@ -628,6 +618,79 @@ mod tests {
         assert!(
             next_str >= expected_min && next_str <= expected_max,
             "next_poll '{next_str}' should be between '{expected_min}' and '{expected_max}'"
+        );
+    }
+
+    /// Issue #33 acceptance-criteria test: `poll_notify` Notify is present on
+    /// AppState so the TUI can signal it when the user presses `p`.
+    #[tokio::test]
+    async fn app_state_has_poll_notify() {
+        let app = make_app();
+        app.poll_notify.notify_one();
+        let notified = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            app.poll_notify.notified(),
+        )
+        .await;
+        assert!(
+            notified.is_ok(),
+            "poll_notify.notified() should resolve immediately after notify_one()"
+        );
+    }
+
+    /// Issue #33 regression test: pressing `p` in the TUI should interrupt the
+    /// inter-poll sleep and trigger an immediate re-poll.
+    #[tokio::test]
+    async fn poll_notify_wakes_up_select_before_interval_expires() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let woken = Arc::new(AtomicBool::new(false));
+        let notify = Arc::new(tokio::sync::Notify::new());
+
+        let woken_clone = Arc::clone(&woken);
+        let notify_clone = Arc::clone(&notify);
+
+        let handle = tokio::spawn(async move {
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {},
+                _ = notify_clone.notified() => {
+                    woken_clone.store(true, Ordering::SeqCst);
+                },
+            }
+        });
+
+        tokio::task::yield_now().await;
+        notify.notify_one();
+
+        let result = tokio::time::timeout(std::time::Duration::from_millis(500), handle).await;
+        assert!(
+            result.is_ok(),
+            "task should finish promptly after notify_one"
+        );
+        assert!(
+            woken.load(Ordering::SeqCst),
+            "the notify branch should have been selected, setting woken=true"
+        );
+    }
+
+    /// Issue #33: AppState clones share the same underlying Notify arc,
+    /// so a signal from one clone (TUI) is visible to another (poll loop).
+    #[tokio::test]
+    async fn poll_notify_shared_across_clones() {
+        let app = make_app();
+        let app_clone = app.clone();
+
+        app_clone.poll_notify.notify_one();
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            app.poll_notify.notified(),
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "original AppState should receive notification sent via clone"
         );
     }
 }
