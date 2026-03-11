@@ -17,7 +17,7 @@ jobs:
         crate:
           - looper-watch
           - fallback-agent
-          - looper-watcher
+
         target:
           - x86_64-unknown-linux-gnu
           - aarch64-unknown-linux-gnu

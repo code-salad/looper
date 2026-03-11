@@ -54,7 +54,7 @@ looper/
 │   │   │   ├── doer.md
 │   │   │   ├── checker.md
 │   │   │   └── issue-creator.md
-│   │   ├── mcp-server/      # looper-watcher MCP server
+│   │   ├── .mcp.json        # MCP server configuration
 │   │   └── skills/          # Skill definitions
 │   │       ├── looper/      # Main loop skill
 │   │       │   ├── SKILL.md

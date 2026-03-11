@@ -206,7 +206,7 @@ Looper uses a multi-plugin marketplace architecture. Three plugins ship together
 
 | Plugin | Description |
 |--------|-------------|
-| **looper** | Core PDC loop — agents, skills, scripts, and MCP watcher server |
+| **looper** | Core PDC loop — agents, skills, and scripts |
 | **fallback-agent** | MCP server (Rust) enabling nested subagent spawning from within Claude Code |
 | **webscraping** | Web scraping agents and skills for gathering context from URLs |
 
@@ -216,7 +216,6 @@ Each plugin lives under `plugins/<name>/` and can be installed independently.
 
 | Server | Plugin | Purpose |
 |--------|--------|---------|
-| **looper-watcher** | looper | Watches GitHub repos for open issues and triggers looper-ee |
 | **fallback-agent** | fallback-agent | Provides the `AgentFallback` tool for spawning nested Claude subagents |
 
 ### Agents

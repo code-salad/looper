@@ -4,13 +4,13 @@ description: >-
   Set up a GitHub issue watcher that polls a repo for open unassigned issues
   and automatically works on them via looper. Triggered by
   "/looper-watch <owner/repo> [interval_minutes]".
-tools: Bash, Read, mcp__plugin_looper_looper-watcher__setup_watcher, mcp__plugin_looper_looper-watcher__list_watchers
+tools: Bash, Read
 ---
 
 # Looper Watch Skill
 
-Starts a watcher that continuously polls a GitHub repo for open, unassigned,
-non-blocked issues and feeds them to looper-ee.
+Starts the `looper-watch` standalone binary which continuously polls a GitHub
+repo for open, unassigned, non-blocked issues and feeds them to looper-ee.
 
 The first poll runs immediately on setup — no need to wait for the first
 cron interval.
@@ -45,19 +45,34 @@ gh repo view "$REPO" --json name --jq '.name'
 
 **Gate:** Abort if repo not found.
 
+Check that `looper-watch` is installed:
+
+```bash
+which looper-watch
+```
+
+**Gate:** If not found, tell the user to install it:
+> "looper-watch binary not found. Install it from the releases page or build from `crates/looper-watch`."
+
 ---
 
 ## Phase 2: Start Watcher
 
-Call the `mcp__plugin_looper_looper-watcher__setup_watcher` tool with:
-- `repo`: the parsed `REPO`
-- `interval_minutes`: the parsed `INTERVAL`
+Convert `INTERVAL` from minutes to seconds (multiply by 60). Launch in the background:
 
-Report the watcher ID and configuration to the user:
-> "Watcher started for `<repo>` polling every `<interval>` minutes. Watcher ID: `<id>`. First poll is running now."
+```bash
+looper-watch --repo "$REPO" --interval "$INTERVAL_SECONDS" &
+```
+
+Report to the user:
+> "looper-watch started for `<repo>` polling every `<interval>` minutes. Attach to tmux sessions to observe progress."
 
 ---
 
 ## Phase 3: Confirm
 
-Call the `mcp__plugin_looper_looper-watcher__list_watchers` tool to show the user all active watchers.
+```bash
+looper-watch --repo "$REPO" --once --dry-run
+```
+
+Show the user which issues are currently open and eligible.
