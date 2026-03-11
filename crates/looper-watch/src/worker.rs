@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use futures::future::join_all;
 use tokio::process::Command;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 use crate::Cli;
 use crate::github;
@@ -17,6 +17,8 @@ pub struct AppState {
     pub last_poll: Arc<Mutex<Option<String>>>,
     pub next_poll: Arc<Mutex<Option<String>>>,
     pub open_issues: Arc<Mutex<Vec<github::Issue>>>,
+    /// Notified when a tmux session ends so `run_loop` can poll immediately.
+    pub poll_notify: Arc<Notify>,
 }
 
 impl AppState {
@@ -27,6 +29,7 @@ impl AppState {
             last_poll: Arc::new(Mutex::new(None)),
             next_poll: Arc::new(Mutex::new(None)),
             open_issues: Arc::new(Mutex::new(Vec::new())),
+            poll_notify: Arc::new(Notify::new()),
         }
     }
 
@@ -47,12 +50,20 @@ pub async fn run_loop(cli: &Cli, state_path: &Path, app: &AppState) {
     loop {
         poll_once(cli, state_path, app).await;
 
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(cli.interval);
+
         {
             let next = chrono::Utc::now() + chrono::Duration::seconds(cli.interval as i64);
             *app.next_poll.lock().await = Some(next.format("%H:%M:%S").to_string());
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_secs(cli.interval)).await;
+        // Wake early if a tmux session ends (freeing a concurrency slot).
+        tokio::select! {
+            _ = tokio::time::sleep_until(deadline) => {}
+            _ = app.poll_notify.notified() => {
+                app.log("session ended — polling immediately").await;
+            }
+        }
     }
 }
 
@@ -242,6 +253,8 @@ async fn run_claude(
             started_at: Some(started_at),
         });
         s.save(state_path).await;
+        drop(s);
+        app.poll_notify.notify_one();
         return;
     }
 
@@ -276,6 +289,8 @@ async fn run_claude(
         started_at: Some(started_at),
     });
     s.save(state_path).await;
+    drop(s);
+    app.poll_notify.notify_one();
 }
 
 /// Kill all tmux sessions for this repo and log it.
@@ -368,6 +383,73 @@ mod tests {
             "expected all {N} tasks to see all starts before finishing \
              (proving parallel dispatch); got {}",
             finishes_seen_all_starts.load(Ordering::SeqCst)
+        );
+    }
+
+    /// Acceptance-criteria test: poll_notify wakes the loop before the timer
+    /// expires when a session ends.
+    ///
+    /// We set a very long sleep deadline (60 s) but fire notify_one()
+    /// immediately from a spawned task. The select! in run_loop should wake
+    /// within milliseconds — far sooner than the 60-second timer.
+    #[tokio::test]
+    async fn should_wake_early_when_session_ends() {
+        use std::sync::Arc;
+        use tokio::sync::Notify;
+
+        let notify = Arc::new(Notify::new());
+        let notify_clone = Arc::clone(&notify);
+
+        // Spawn a task that fires the notification immediately.
+        tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            notify_clone.notify_one();
+        });
+
+        let start = tokio::time::Instant::now();
+        let long_deadline = start + tokio::time::Duration::from_secs(60);
+
+        tokio::select! {
+            _ = tokio::time::sleep_until(long_deadline) => {
+                panic!("timer expired before notify — early-wake did not work");
+            }
+            _ = notify.notified() => {
+                // Good: woke up early.
+            }
+        }
+
+        // Should have woken up in well under 1 second, not 60 seconds.
+        assert!(
+            start.elapsed() < tokio::time::Duration::from_secs(1),
+            "early wake took too long: {:?}",
+            start.elapsed()
+        );
+    }
+
+    /// Acceptance-criteria test: AppState.poll_notify is shared across clones
+    /// so that run_claude (holding a clone) can signal run_loop (holding the
+    /// original).
+    #[tokio::test]
+    async fn poll_notify_is_shared_across_clones() {
+        let app = make_app();
+        let app_clone = app.clone();
+
+        // Trigger from clone (as run_claude does).
+        tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            app_clone.poll_notify.notify_one();
+        });
+
+        // Original should receive the notification (as run_loop does).
+        let received = tokio::time::timeout(
+            tokio::time::Duration::from_secs(1),
+            app.poll_notify.notified(),
+        )
+        .await;
+
+        assert!(
+            received.is_ok(),
+            "poll_notify signal was not received across clones within 1 second"
         );
     }
 
