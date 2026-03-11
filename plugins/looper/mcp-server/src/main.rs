@@ -16,7 +16,9 @@ use crate::watcher::WatcherManager;
 
 // ── Debug Logging ────────────────────────────────────────────────────────────
 
-const LOG_FILE: &str = "/tmp/looper-watcher-debug.log";
+fn log_file() -> String {
+    format!("/tmp/looper-watcher-debug-{}.log", std::process::id())
+}
 
 pub fn log(message: &str) {
     use std::fs::OpenOptions;
@@ -29,7 +31,7 @@ pub fn log(message: &str) {
         format!("{}.{:03}", d.as_secs(), d.subsec_millis())
     };
     let log_line = format!("[{}] {}\n", timestamp, message);
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(LOG_FILE) {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file()) {
         let _ = file.write_all(log_line.as_bytes());
     }
 }
@@ -37,8 +39,8 @@ pub fn log(message: &str) {
 fn init_log() {
     use std::fs;
     use std::io::Write;
-    if let Ok(mut file) = fs::File::create(LOG_FILE) {
-        let _ = writeln!(file, "=== Looper Watcher MCP Server Started ===");
+    if let Ok(mut file) = fs::File::create(&log_file()) {
+        let _ = writeln!(file, "=== Looper Watcher MCP Server Started (pid {}) ===", std::process::id());
     }
 }
 
