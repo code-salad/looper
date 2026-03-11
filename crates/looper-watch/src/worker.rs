@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use crate::Cli;
 use crate::github;
-use crate::state::{Entry, State};
+use crate::state::{self, Entry, State};
 
 /// Shared app state for the TUI to read.
 #[derive(Debug, Clone)]
@@ -19,9 +19,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(state: State) -> Self {
+    pub fn new(persisted: State) -> Self {
         Self {
-            state: Arc::new(Mutex::new(state)),
+            state: Arc::new(Mutex::new(persisted)),
             log_lines: Arc::new(Mutex::new(Vec::new())),
             last_poll: Arc::new(Mutex::new(None)),
             next_poll: Arc::new(Mutex::new(None)),
@@ -34,7 +34,6 @@ impl AppState {
         eprintln!("{line}");
         let mut lines = self.log_lines.lock().await;
         lines.push(line);
-        // Keep last 200 lines
         if lines.len() > 200 {
             let excess = lines.len() - 200;
             lines.drain(..excess);
@@ -84,15 +83,15 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
 
     app.log(&format!("found {} open unassigned issue(s)", issues.len())).await;
 
+    // Get live in-progress set from tmux
+    let in_progress = state::in_progress_issues(&cli.repo).await;
+
     // Filter out blocked and already-in-progress issues
     let mut eligible = Vec::new();
     for issue in &issues {
-        {
-            let s: tokio::sync::MutexGuard<'_, State> = app.state.lock().await;
-            if s.is_in_progress(issue.number) {
-                app.log(&format!("#{}: skipping (in progress)", issue.number)).await;
-                continue;
-            }
+        if in_progress.contains(&issue.number) {
+            app.log(&format!("#{}: skipping (tmux session alive)", issue.number)).await;
+            continue;
         }
 
         if github::is_blocked(issue, &cli.repo).await {
@@ -112,13 +111,9 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
     eligible.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     // Determine available slots
-    let in_progress_count = {
-        let s: tokio::sync::MutexGuard<'_, State> = app.state.lock().await;
-        s.in_progress.len()
-    };
-    let available_slots = cli.concurrency.saturating_sub(in_progress_count);
+    let available_slots = cli.concurrency.saturating_sub(in_progress.len());
     if available_slots == 0 {
-        app.log(&format!("max concurrency reached ({}/{})", in_progress_count, cli.concurrency)).await;
+        app.log(&format!("max concurrency reached ({}/{})", in_progress.len(), cli.concurrency)).await;
         return;
     }
 
@@ -139,15 +134,8 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
         }
         app.log(&format!("#{}: assigned to @me", issue.number)).await;
 
-        // Mark in progress and save
-        {
-            let mut s: tokio::sync::MutexGuard<'_, State> = app.state.lock().await;
-            s.mark_in_progress(issue.number);
-            s.save(state_path).await;
-        }
-
-        // Spawn claude in background
-        let issue_url = format!("https://github.com/{}/issues/{}", cli.repo, issue.number);
+        // Spawn claude in tmux
+        let repo = cli.repo.clone();
         let allowed_tools = cli.allowed_tools.clone();
         let app_clone = app.clone();
         let state_path_clone = state_path.to_path_buf();
@@ -156,9 +144,9 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
 
         tokio::spawn(async move {
             run_claude(
+                &repo,
                 issue_number,
                 &issue_title,
-                &issue_url,
                 &allowed_tools,
                 &app_clone,
                 &state_path_clone,
@@ -169,66 +157,35 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
 }
 
 async fn run_claude(
+    repo: &str,
     issue_number: u64,
     issue_title: &str,
-    issue_url: &str,
     allowed_tools: &str,
     app: &AppState,
     state_path: &PathBuf,
 ) {
+    let issue_url = format!("https://github.com/{repo}/issues/{issue_number}");
     let prompt = format!("/looper-ee {issue_url}");
-    let session_name = format!("looper-{issue_number}");
+    let session = state::session_name(repo, issue_number);
 
-    // Try tmux first, fall back to bare process
     let tmux_cmd = format!(
         "claude -p '{}' --allowedTools '{}'",
         prompt.replace('\'', "'\\''"),
         allowed_tools.replace('\'', "'\\''"),
     );
 
-    app.log(&format!("#{issue_number}: spawning in tmux session '{session_name}'")).await;
+    app.log(&format!("#{issue_number}: spawning tmux session '{session}'")).await;
 
     let tmux_result = Command::new("tmux")
-        .args(["new-session", "-d", "-s", &session_name, &tmux_cmd])
+        .args(["new-session", "-d", "-s", &session, &tmux_cmd])
         .output()
         .await;
 
-    let use_tmux = match &tmux_result {
-        Ok(o) if o.status.success() => true,
-        _ => {
-            app.log(&format!("#{issue_number}: tmux unavailable, using bare process")).await;
-            false
-        }
-    };
+    let use_tmux = matches!(&tmux_result, Ok(o) if o.status.success());
 
-    if use_tmux {
-        // Wait for the tmux session to finish
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-            let has = Command::new("tmux")
-                .args(["has-session", "-t", &session_name])
-                .output()
-                .await;
-            match has {
-                Ok(o) if o.status.success() => continue, // still running
-                _ => break,                               // session ended
-            }
-        }
-        // tmux session ended — treat as success (we can't easily get exit code)
-        let outcome = "completed (tmux)".to_string();
-        app.log(&format!("#{issue_number}: {outcome}")).await;
+    if !use_tmux {
+        app.log(&format!("#{issue_number}: tmux failed, using bare process")).await;
 
-        let entry = Entry {
-            issue_number,
-            issue_title: issue_title.to_string(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            outcome,
-            pid: None,
-        };
-        let mut s: tokio::sync::MutexGuard<'_, State> = app.state.lock().await;
-        s.complete(entry);
-        s.save(state_path).await;
-    } else {
         // Bare process fallback
         let result = Command::new("claude")
             .args(["-p", &prompt, "--allowedTools", allowed_tools])
@@ -239,23 +196,60 @@ async fn run_claude(
             Ok(o) if o.status.success() => "success".to_string(),
             Ok(o) => {
                 let stderr = String::from_utf8_lossy(&o.stderr);
-                let truncated: String = stderr.chars().take(200).collect();
-                format!("failed: {truncated}")
+                format!("failed: {}", stderr.chars().take(200).collect::<String>())
             }
             Err(e) => format!("error: {e}"),
         };
 
         app.log(&format!("#{issue_number}: {outcome}")).await;
-
-        let entry = Entry {
+        let mut s = app.state.lock().await;
+        s.add_history(Entry {
             issue_number,
             issue_title: issue_title.to_string(),
             timestamp: chrono::Utc::now().to_rfc3339(),
             outcome,
-            pid: None,
-        };
-        let mut s: tokio::sync::MutexGuard<'_, State> = app.state.lock().await;
-        s.complete(entry);
+        });
         s.save(state_path).await;
+        return;
     }
+
+    // Poll until tmux session ends
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        let has = Command::new("tmux")
+            .args(["has-session", "-t", &session])
+            .output()
+            .await;
+        match has {
+            Ok(o) if o.status.success() => continue,
+            _ => break,
+        }
+    }
+
+    // Cleanup stale session
+    let _ = Command::new("tmux")
+        .args(["kill-session", "-t", &session])
+        .output()
+        .await;
+
+    let outcome = "completed (tmux)".to_string();
+    app.log(&format!("#{issue_number}: {outcome}")).await;
+
+    let mut s = app.state.lock().await;
+    s.add_history(Entry {
+        issue_number,
+        issue_title: issue_title.to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        outcome,
+    });
+    s.save(state_path).await;
+}
+
+/// Kill all tmux sessions for this repo and log it.
+pub async fn kill_all_sessions(repo: &str, state_path: &Path, app: &AppState) {
+    let count = state::kill_all_repo_sessions(repo).await;
+    app.log(&format!("killed {count} tmux session(s)")).await;
+    // Save state in case history was pending
+    let s = app.state.lock().await;
+    s.save(state_path).await;
 }

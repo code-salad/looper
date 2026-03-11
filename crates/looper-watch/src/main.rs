@@ -1,4 +1,5 @@
 mod github;
+mod lock;
 mod state;
 mod tui;
 mod worker;
@@ -60,6 +61,14 @@ fn default_state_path(repo: &str) -> PathBuf {
     base.join(format!("{sanitized}.json"))
 }
 
+fn lock_path(repo: &str) -> PathBuf {
+    let sanitized = repo.replace('/', "-");
+    let base = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join("looper-watch");
+    base.join(format!("{sanitized}.lock"))
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -74,8 +83,25 @@ async fn main() {
         let _ = tokio::fs::create_dir_all(parent).await;
     }
 
+    // Acquire lock (prevent multiple instances on same repo)
+    let lock_file = lock_path(&cli.repo);
+    let _lock = match lock::acquire(&lock_file).await {
+        Ok(guard) => guard,
+        Err(e) => {
+            eprintln!("looper-watch: {e}");
+            std::process::exit(1);
+        }
+    };
+
     let persisted = State::load(&state_path).await;
     let app = AppState::new(persisted);
+
+    // Log how many tmux sessions are already alive for this repo
+    let live = state::in_progress_issues(&cli.repo).await;
+    if !live.is_empty() {
+        let nums: Vec<String> = live.iter().map(|n| format!("#{n}")).collect();
+        eprintln!("looper-watch: resuming with {} live session(s): {}", live.len(), nums.join(", "));
+    }
 
     if cli.once {
         worker::poll_once(&cli, &state_path, &app).await;
@@ -89,27 +115,18 @@ async fn main() {
         );
         worker::run_loop(&cli, &state_path, &app).await;
     } else {
-        // Run poll loop in background, TUI in foreground
         let poll_app = app.clone();
-        let poll_cli_repo = cli.repo.clone();
-        let poll_cli_interval = cli.interval;
-        let poll_cli_concurrency = cli.concurrency;
-        let poll_cli_retries = cli.retries;
-        let poll_cli_allowed_tools = cli.allowed_tools.clone();
-        let poll_cli_dry_run = cli.dry_run;
-        let poll_cli_once = cli.once;
         let poll_state_path = state_path.clone();
 
-        // Clone cli fields into a new Cli for the background task
         let bg_cli = Cli {
-            repo: poll_cli_repo,
-            interval: poll_cli_interval,
-            concurrency: poll_cli_concurrency,
+            repo: cli.repo.clone(),
+            interval: cli.interval,
+            concurrency: cli.concurrency,
             state_file: Some(poll_state_path.clone()),
-            retries: poll_cli_retries,
-            once: poll_cli_once,
-            allowed_tools: poll_cli_allowed_tools,
-            dry_run: poll_cli_dry_run,
+            retries: cli.retries,
+            once: cli.once,
+            allowed_tools: cli.allowed_tools.clone(),
+            dry_run: cli.dry_run,
             headless: true,
         };
 
@@ -117,7 +134,7 @@ async fn main() {
             worker::run_loop(&bg_cli, &poll_state_path, &poll_app).await;
         });
 
-        if let Err(e) = tui::run_tui(app, &cli.repo).await {
+        if let Err(e) = tui::run_tui(app, &cli.repo, &state_path).await {
             eprintln!("TUI error: {e}");
         }
     }
