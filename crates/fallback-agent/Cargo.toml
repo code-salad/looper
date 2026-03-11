@@ -1,12 +1,19 @@
 [package]
-name = "mcp-server-rs"
+name = "fallback-agent"
 version = "3.0.0"
 edition = "2021"
-description = "Fallback Agent MCP Server — Rust rewrite"
+description = "Fallback Agent MCP Server — spawns nested Claude processes"
 
 [[bin]]
-name = "fallback-agent-rs"
+name = "fallback-agent"
 path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
 
 [dependencies]
 rmcp = { version = "0.17.0", features = ["server", "transport-io"] }
