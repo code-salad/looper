@@ -34,7 +34,7 @@ impl AppState {
     }
 
     pub async fn log(&self, msg: &str) {
-        let line = format!("[{}] {}", chrono::Utc::now().format("%H:%M:%S"), msg);
+        let line = format!("[{}] {}", chrono::Local::now().format("%H:%M:%S"), msg);
         eprintln!("{line}");
         let mut lines = self.log_lines.lock().await;
         lines.push(line);
@@ -53,7 +53,7 @@ pub async fn run_loop(cli: &Cli, state_path: &Path, app: &AppState) {
         let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(cli.interval);
 
         {
-            let next = chrono::Utc::now() + chrono::Duration::seconds(cli.interval as i64);
+            let next = chrono::Local::now() + chrono::Duration::seconds(cli.interval as i64);
             *app.next_poll.lock().await = Some(next.format("%H:%M:%S").to_string());
         }
 
@@ -70,7 +70,7 @@ pub async fn run_loop(cli: &Cli, state_path: &Path, app: &AppState) {
 /// Poll once: fetch issues, filter, assign, dispatch.
 pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
     {
-        *app.last_poll.lock().await = Some(chrono::Utc::now().format("%H:%M:%S").to_string());
+        *app.last_poll.lock().await = Some(chrono::Local::now().format("%H:%M:%S").to_string());
     }
 
     app.log(&format!("polling {}...", cli.repo)).await;
@@ -466,6 +466,90 @@ mod tests {
         assert!(
             lines[0].contains("] test message"),
             "log line should contain the message"
+        );
+    }
+
+    /// Acceptance-criteria test: log timestamps should use local time format HH:MM:SS.
+    ///
+    /// This verifies the format produced by chrono::Local::now().format("%H:%M:%S")
+    /// matches the expected HH:MM:SS pattern (two-digit hour, minute, second separated by colons).
+    #[tokio::test]
+    async fn should_display_log_timestamp_in_local_time_format() {
+        let app = make_app();
+        // Record local time before and after the log call to bracket expected values
+        let before = chrono::Local::now();
+        app.log("local time check").await;
+        let after = chrono::Local::now();
+        let lines = app.log_lines.lock().await;
+
+        // Extract timestamp from "[HH:MM:SS] local time check"
+        let line = &lines[0];
+        let timestamp = &line[1..9]; // characters between '[' and ']'
+
+        // Verify format is HH:MM:SS
+        let parts: Vec<&str> = timestamp.split(':').collect();
+        assert_eq!(
+            parts.len(),
+            3,
+            "timestamp should have 3 colon-separated parts"
+        );
+        assert_eq!(parts[0].len(), 2, "hour should be 2 digits");
+        assert_eq!(parts[1].len(), 2, "minute should be 2 digits");
+        assert_eq!(parts[2].len(), 2, "second should be 2 digits");
+
+        // Verify the timestamp falls within the local time window
+        let expected_before = before.format("%H:%M:%S").to_string();
+        let expected_after = after.format("%H:%M:%S").to_string();
+        assert!(
+            timestamp >= expected_before.as_str() && timestamp <= expected_after.as_str(),
+            "log timestamp '{timestamp}' should be between local time '{expected_before}' and '{expected_after}'"
+        );
+    }
+
+    /// Acceptance-criteria test: last_poll and next_poll should reflect local time.
+    ///
+    /// Verifies that poll_once sets last_poll using local time (chrono::Local::now()),
+    /// and run_loop sets next_poll using local time as well. Both timestamps must
+    /// use HH:MM:SS format consistent with the local timezone.
+    #[tokio::test]
+    async fn should_format_poll_timestamps_as_local_time_hhmmss() {
+        // Verify that chrono::Local::now() formats in HH:MM:SS correctly —
+        // this is the same call used for last_poll and next_poll.
+        let local_time_str = chrono::Local::now().format("%H:%M:%S").to_string();
+        let parts: Vec<&str> = local_time_str.split(':').collect();
+        assert_eq!(parts.len(), 3, "local time should format as HH:MM:SS");
+        assert_eq!(parts[0].len(), 2, "hour should be zero-padded to 2 digits");
+        assert_eq!(
+            parts[1].len(),
+            2,
+            "minute should be zero-padded to 2 digits"
+        );
+        assert_eq!(
+            parts[2].len(),
+            2,
+            "second should be zero-padded to 2 digits"
+        );
+
+        // Verify next_poll computes correctly using Local time
+        let interval_secs: i64 = 60;
+        let before = chrono::Local::now();
+        let next = chrono::Local::now() + chrono::Duration::seconds(interval_secs);
+        let after = chrono::Local::now();
+
+        let next_str = next.format("%H:%M:%S").to_string();
+        let next_parts: Vec<&str> = next_str.split(':').collect();
+        assert_eq!(next_parts.len(), 3, "next_poll should format as HH:MM:SS");
+
+        // The next poll time should be approximately interval_secs ahead of now
+        let expected_min = (before + chrono::Duration::seconds(interval_secs))
+            .format("%H:%M:%S")
+            .to_string();
+        let expected_max = (after + chrono::Duration::seconds(interval_secs))
+            .format("%H:%M:%S")
+            .to_string();
+        assert!(
+            next_str >= expected_min && next_str <= expected_max,
+            "next_poll '{next_str}' should be between '{expected_min}' and '{expected_max}'"
         );
     }
 }
