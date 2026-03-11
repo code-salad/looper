@@ -8,7 +8,7 @@
     {
       "name": "looper",
       "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
-      "version": "0.30.0",
+      "version": "0.31.0",
       "author": {
         "name": "code-salad"
       },
@@ -18,7 +18,7 @@
     {
       "name": "webscraping",
       "description": "End-to-end web scraping toolkit — domain recon, method selection, .NET 10 implementation, anti-detection, and proxy management",
-      "version": "0.30.0",
+      "version": "0.31.0",
       "author": {
         "name": "code-salad"
       },
