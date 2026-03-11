@@ -9,6 +9,8 @@ pub struct Entry {
     pub issue_title: String,
     pub timestamp: String,
     pub outcome: String,
+    #[serde(default)]
+    pub started_at: Option<String>,
 }
 
 /// Persisted state — history only. Live in-progress state comes from tmux.
@@ -81,16 +83,29 @@ pub async fn list_repo_sessions(repo: &str) -> Vec<String> {
     }
 }
 
-/// Kill all tmux sessions for this repo.
-pub async fn kill_all_repo_sessions(repo: &str) -> usize {
-    let sessions = list_repo_sessions(repo).await;
-    for s in &sessions {
-        let _ = Command::new("tmux")
-            .args(["kill-session", "-t", s.as_str()])
-            .output()
-            .await;
+/// List all tmux sessions for this repo, paired with their Unix creation timestamps.
+pub async fn list_repo_sessions_with_age(repo: &str) -> Vec<(String, Option<i64>)> {
+    let prefix = session_prefix(repo);
+    let output = Command::new("tmux")
+        .args(["list-sessions", "-F", "#{session_name}:#{session_created}"])
+        .output()
+        .await;
+
+    match output {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter(|l| l.starts_with(&prefix))
+            .map(|l| {
+                if let Some((name, ts)) = l.split_once(':') {
+                    let created = ts.trim().parse::<i64>().ok();
+                    (name.to_string(), created)
+                } else {
+                    (l.to_string(), None)
+                }
+            })
+            .collect(),
+        _ => vec![],
     }
-    sessions.len()
 }
 
 #[cfg(test)]
@@ -98,28 +113,71 @@ mod tests {
     use super::*;
 
     #[test]
-    fn session_name_formats_correctly() {
-        assert_eq!(session_name("owner/repo", 42), "looper-owner-repo-42");
+    fn entry_deserializes_without_started_at_for_backward_compat() {
+        // Regression test: existing state JSON files without started_at must
+        // deserialize correctly (started_at defaults to None)
+        let json = r#"{
+            "issue_number": 42,
+            "issue_title": "Fix the bug",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "outcome": "completed (tmux)"
+        }"#;
+        let entry: Entry = serde_json::from_str(json).expect("should deserialize old Entry format");
+        assert_eq!(entry.issue_number, 42);
+        assert_eq!(entry.started_at, None);
+    }
+
+    #[test]
+    fn entry_deserializes_with_started_at() {
+        let json = r#"{
+            "issue_number": 7,
+            "issue_title": "New feature",
+            "timestamp": "2024-06-15T12:00:00Z",
+            "outcome": "success",
+            "started_at": "2024-06-15T11:50:00Z"
+        }"#;
+        let entry: Entry =
+            serde_json::from_str(json).expect("should deserialize Entry with started_at");
+        assert_eq!(entry.started_at, Some("2024-06-15T11:50:00Z".to_string()));
+    }
+
+    #[test]
+    fn entry_serializes_with_started_at_none_as_null() {
+        let entry = Entry {
+            issue_number: 1,
+            issue_title: "Test".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            outcome: "success".to_string(),
+            started_at: None,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        // started_at: None serializes as null (serde default)
+        assert!(json.contains("started_at"));
+    }
+
+    #[test]
+    fn session_name_uses_repo_with_slash_sanitized() {
+        let name = session_name("owner/repo", 42);
+        assert_eq!(name, "looper-owner-repo-42");
+    }
+
+    #[test]
+    fn issue_from_session_parses_correctly() {
+        let result = issue_from_session("owner/repo", "looper-owner-repo-42");
+        assert_eq!(result, Some(42));
+    }
+
+    #[test]
+    fn issue_from_session_returns_none_for_different_repo() {
+        let result = issue_from_session("owner/repo", "looper-other-repo-42");
+        assert_eq!(result, None);
     }
 
     #[test]
     fn session_name_sanitizes_slash_in_repo() {
-        assert_eq!(session_name("my-org/my-repo", 1), "looper-my-org-my-repo-1");
-    }
-
-    #[test]
-    fn issue_from_session_parses_valid_session() {
         assert_eq!(
-            issue_from_session("owner/repo", "looper-owner-repo-99"),
-            Some(99)
-        );
-    }
-
-    #[test]
-    fn issue_from_session_returns_none_for_wrong_prefix() {
-        assert_eq!(
-            issue_from_session("owner/repo", "other-owner-repo-99"),
-            None
+            session_name("my-org/my-repo", 1),
+            "looper-my-org-my-repo-1"
         );
     }
 
@@ -146,16 +204,30 @@ mod tests {
             issue_title: "First issue".to_string(),
             timestamp: "2024-01-01T00:00:00Z".to_string(),
             outcome: "success".to_string(),
+            started_at: None,
         });
         state.add_history(Entry {
             issue_number: 2,
             issue_title: "Second issue".to_string(),
             timestamp: "2024-01-01T00:01:00Z".to_string(),
             outcome: "failed".to_string(),
+            started_at: None,
         });
 
         assert_eq!(state.history.len(), 2);
         assert_eq!(state.history[0].issue_number, 1);
         assert_eq!(state.history[1].issue_number, 2);
     }
+}
+
+/// Kill all tmux sessions for this repo.
+pub async fn kill_all_repo_sessions(repo: &str) -> usize {
+    let sessions = list_repo_sessions(repo).await;
+    for s in &sessions {
+        let _ = Command::new("tmux")
+            .args(["kill-session", "-t", s.as_str()])
+            .output()
+            .await;
+    }
+    sessions.len()
 }

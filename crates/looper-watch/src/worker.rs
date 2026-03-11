@@ -200,6 +200,7 @@ async fn run_claude(
         allowed_tools.replace('\'', "'\\''"),
     );
 
+    let started_at = chrono::Utc::now().to_rfc3339();
     app.log(&format!(
         "#{issue_number}: spawning tmux session '{session}'"
     ))
@@ -238,6 +239,7 @@ async fn run_claude(
             issue_title: issue_title.to_string(),
             timestamp: chrono::Utc::now().to_rfc3339(),
             outcome,
+            started_at: Some(started_at),
         });
         s.save(state_path).await;
         return;
@@ -271,6 +273,7 @@ async fn run_claude(
         issue_title: issue_title.to_string(),
         timestamp: chrono::Utc::now().to_rfc3339(),
         outcome,
+        started_at: Some(started_at),
     });
     s.save(state_path).await;
 }
