@@ -4,7 +4,7 @@
 
 Three AI agents — Planner, Doer, Checker — iterate in a loop until your code passes all checks, then automatically create a PR.
 
-[![Version](https://img.shields.io/badge/version-0.24.2-blue)](.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.26.2-blue)](.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](.github/workflows/ci.yml)
 
@@ -33,6 +33,8 @@ No manual intervention required. Just describe what you want, and Looper handles
 - **Auto PR Creation** — PRs with Mermaid architecture diagrams and test results
 - **Isolated Worktrees** — Each task runs in its own git worktree
 - **Resume Support** — Pick up interrupted loops from the last iteration
+- **Issue Automation** — Auto-pick GitHub issues and work on them end-to-end
+- **Multi-Plugin Marketplace** — Modular plugin architecture with MCP server integration
 
 ---
 
@@ -47,7 +49,7 @@ claude plugin install code-salad/looper
 ### 2. Run your first loop
 
 ```
-/looper "add input validation to the login endpoint"
+/looper:loop "add input validation to the login endpoint"
 ```
 
 ### 3. Watch it work
@@ -117,6 +119,20 @@ Every iteration, the Checker agent spawns 5 parallel review subagents:
 - **Code Quality** — Lint, format, security scan, conventions
 - **Integration Tester** — Starts dev server and tests endpoints
 
+### Automated Issue Processing
+
+> "Point Looper at your GitHub repo and let it work issues automatically."
+
+```
+/looper:looper-issue
+```
+
+Looper finds an open, unassigned issue, assigns it to you, runs the full PDC loop, and opens a PR — all without manual intervention. Use `looper-watch` to poll continuously:
+
+```
+/looper:looper-watch owner/repo 30
+```
+
 ### Multi-Language Project Support
 
 Looper auto-detects your tech stack and uses the right tools:
@@ -135,7 +151,7 @@ Looper auto-detects your tech stack and uses the right tools:
 
 ```mermaid
 flowchart TD
-    A["User: /loop 'task description'"] --> B["SKILL.md Orchestrator"]
+    A["User: /looper:loop 'task description'"] --> B["SKILL.md Orchestrator"]
     B --> C["Create Git Worktree"]
     C --> D["Sync with Remote"]
     D --> E["Build Project Context"]
@@ -184,6 +200,25 @@ git log --grep="Loop-Verdict: PASS" --format="%B" -1
 
 ## Architecture
 
+### Plugins
+
+Looper uses a multi-plugin marketplace architecture. Three plugins ship together:
+
+| Plugin | Description |
+|--------|-------------|
+| **looper** | Core PDC loop — agents, skills, scripts, and MCP watcher server |
+| **fallback-agent** | MCP server (Rust) enabling nested subagent spawning from within Claude Code |
+| **webscraping** | Web scraping agents and skills for gathering context from URLs |
+
+Each plugin lives under `plugins/<name>/` and can be installed independently.
+
+### MCP Servers
+
+| Server | Plugin | Purpose |
+|--------|--------|---------|
+| **looper-watcher** | looper | Watches GitHub repos for open issues and triggers looper-ee |
+| **fallback-agent** | fallback-agent | Provides the `AgentFallback` tool for spawning nested Claude subagents |
+
 ### Agents
 
 | Agent | Model | Role | Tools |
@@ -191,6 +226,7 @@ git log --grep="Loop-Verdict: PASS" --format="%B" -1
 | **Planner** | Opus | Explores codebase, produces actionable plan | Read, Glob, Grep, Bash (read-only) |
 | **Doer** | Sonnet | Implements plan, writes tests, runs checks | Read, Write, Edit, Bash, Glob, Grep |
 | **Checker** | Opus | Reviews work, issues PASS/FAIL verdict | Read, Bash, Glob, Grep |
+| **Issue Creator** | Sonnet | Creates GitHub issues for discovered bugs or improvements | Bash, Read |
 
 ### Skills
 
@@ -200,14 +236,21 @@ git log --grep="Loop-Verdict: PASS" --format="%B" -1
 | Git Commit | `/looper:git-commit` | Conventional commit helper |
 | Create PR | `/looper:create-github-pr` | PR with architecture diagrams |
 | Worktree | `/looper:initiate-worktree "name"` | Git worktree helper |
+| Claude Wrap | `/looper:claude-wrap` | Spawn a nested Claude CLI instance from within Claude Code |
+| Looper EE | `/looper:looper-ee <issue_url>` | Work on a GitHub issue from an external repo |
+| Looper Issue | `/looper:looper-issue` | Auto-pick an open GitHub issue and work on it |
+| Looper Watch | `/looper:looper-watch <owner/repo> [interval]` | Poll a GitHub repo and work issues automatically |
 
 ### Utility Scripts
 
-All scripts auto-detect your tech stack and dispatch to the right tool:
+All scripts live in `plugins/looper/skills/looper/scripts/` and auto-detect your tech stack:
 
 | Script | Purpose |
 |--------|---------|
 | `detect-stack` | Auto-detect project tech stack (JSON) |
+| `detect-resume` | Detect and resume interrupted loops |
+| `git-commit-loop` | Create commits with loop trailers |
+| `git-loop-context` | Read prior loop iterations from git log |
 | `run-tests` | Run test suite |
 | `run-lint` | Run linter (with `--fix`) |
 | `run-typecheck` | Run type checker |
@@ -215,6 +258,8 @@ All scripts auto-detect your tech stack and dispatch to the right tool:
 | `run-build` | Build the project |
 | `install-deps` | Install dependencies |
 | `security-scan` | Security vulnerability scan |
+| `setup-worktree` | Create or resume a git worktree for a task |
+| `sync-with-remote` | Sync worktree with remote branch |
 
 ---
 
@@ -235,7 +280,11 @@ LOOPER_MAX_ITERATIONS=5 claude
 - [`claude` CLI](https://docs.anthropic.com/en/docs/claude-code) (Claude Code)
 - `git`
 - `jq`
-- `gh` (GitHub CLI, optional — required for PR creation)
+- `gh` (GitHub CLI, optional — required for PR creation and issue automation)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR process.
 
 ## License
 
