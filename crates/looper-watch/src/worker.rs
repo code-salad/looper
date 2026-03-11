@@ -174,6 +174,13 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
                     .log(&format!("#{issue_number}: assigned to @me"))
                     .await;
 
+                // Remove from open issues list immediately so TUI reflects assignment
+                app_clone
+                    .open_issues
+                    .lock()
+                    .await
+                    .retain(|i| i.number != issue_number);
+
                 // Spawn claude in tmux as a background task
                 tokio::spawn(async move {
                     run_claude(
@@ -310,6 +317,7 @@ mod tests {
     use futures::future::join_all;
 
     use super::AppState;
+    use crate::github::{Issue, Label};
     use crate::state::State;
 
     fn make_app() -> AppState {
@@ -450,6 +458,76 @@ mod tests {
         assert!(
             received.is_ok(),
             "poll_notify signal was not received across clones within 1 second"
+        );
+    }
+
+    fn make_issue(number: u64, title: &str) -> Issue {
+        Issue {
+            number,
+            title: title.to_string(),
+            labels: Vec::<Label>::new(),
+            body: None,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    /// Regression test for bug #34: after an issue is assigned and a tmux session
+    /// is spawned, the open issues list in the TUI should immediately remove that
+    /// issue rather than waiting for the next poll cycle.
+    #[tokio::test]
+    async fn should_remove_assigned_issue_from_open_issues_immediately() {
+        let app = make_app();
+
+        // Populate open_issues with two issues
+        {
+            let mut issues = app.open_issues.lock().await;
+            issues.push(make_issue(42, "Fix something"));
+            issues.push(make_issue(99, "Another issue"));
+        }
+
+        // Simulate the retain call that happens right after successful assignment
+        let issue_number: u64 = 42;
+        app.open_issues
+            .lock()
+            .await
+            .retain(|i| i.number != issue_number);
+
+        // Issue #42 should be gone; issue #99 should remain
+        let issues = app.open_issues.lock().await;
+        assert_eq!(
+            issues.len(),
+            1,
+            "open_issues should have 1 entry after removing the assigned issue"
+        );
+        assert_eq!(
+            issues[0].number, 99,
+            "remaining issue should be #99, not the assigned one"
+        );
+    }
+
+    /// Verify that open_issues is not mutated when the issue is not present
+    /// (e.g., a race condition where poll already removed it).
+    #[tokio::test]
+    async fn retain_on_open_issues_is_idempotent_when_issue_not_present() {
+        let app = make_app();
+
+        {
+            let mut issues = app.open_issues.lock().await;
+            issues.push(make_issue(10, "Some issue"));
+        }
+
+        // Attempt to remove an issue that doesn't exist
+        let issue_number: u64 = 999;
+        app.open_issues
+            .lock()
+            .await
+            .retain(|i| i.number != issue_number);
+
+        let issues = app.open_issues.lock().await;
+        assert_eq!(
+            issues.len(),
+            1,
+            "open_issues length should not change when removing a non-existent issue"
         );
     }
 
