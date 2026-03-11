@@ -4,18 +4,18 @@ use std::path::Path;
 /// Returns Ok(guard) on success, Err with the other PID on failure.
 pub async fn acquire(lock_path: &Path) -> Result<LockGuard, String> {
     // Check if an existing lock is stale
-    if let Ok(contents) = tokio::fs::read_to_string(lock_path).await {
-        if let Ok(pid) = contents.trim().parse::<u32>() {
-            if is_pid_alive(pid) {
-                return Err(format!(
-                    "another instance is already running (pid {pid}). \
-                     If this is stale, remove {}",
-                    lock_path.display()
-                ));
-            }
-            // Stale lock — remove it
-            let _ = tokio::fs::remove_file(lock_path).await;
+    if let Ok(contents) = tokio::fs::read_to_string(lock_path).await
+        && let Ok(pid) = contents.trim().parse::<u32>()
+    {
+        if is_pid_alive(pid) {
+            return Err(format!(
+                "another instance is already running (pid {pid}). \
+                 If this is stale, remove {}",
+                lock_path.display()
+            ));
         }
+        // Stale lock — remove it
+        let _ = tokio::fs::remove_file(lock_path).await;
     }
 
     let pid = std::process::id();

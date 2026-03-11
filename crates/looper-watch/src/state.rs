@@ -92,3 +92,70 @@ pub async fn kill_all_repo_sessions(repo: &str) -> usize {
     }
     sessions.len()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_name_formats_correctly() {
+        assert_eq!(session_name("owner/repo", 42), "looper-owner-repo-42");
+    }
+
+    #[test]
+    fn session_name_sanitizes_slash_in_repo() {
+        assert_eq!(session_name("my-org/my-repo", 1), "looper-my-org-my-repo-1");
+    }
+
+    #[test]
+    fn issue_from_session_parses_valid_session() {
+        assert_eq!(
+            issue_from_session("owner/repo", "looper-owner-repo-99"),
+            Some(99)
+        );
+    }
+
+    #[test]
+    fn issue_from_session_returns_none_for_wrong_prefix() {
+        assert_eq!(
+            issue_from_session("owner/repo", "other-owner-repo-99"),
+            None
+        );
+    }
+
+    #[test]
+    fn issue_from_session_returns_none_for_non_numeric_suffix() {
+        assert_eq!(
+            issue_from_session("owner/repo", "looper-owner-repo-abc"),
+            None
+        );
+    }
+
+    #[test]
+    fn issue_from_session_returns_none_for_empty_session() {
+        assert_eq!(issue_from_session("owner/repo", ""), None);
+    }
+
+    #[test]
+    fn state_add_history_accumulates_entries() {
+        let mut state = State::default();
+        assert!(state.history.is_empty());
+
+        state.add_history(Entry {
+            issue_number: 1,
+            issue_title: "First issue".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            outcome: "success".to_string(),
+        });
+        state.add_history(Entry {
+            issue_number: 2,
+            issue_title: "Second issue".to_string(),
+            timestamp: "2024-01-01T00:01:00Z".to_string(),
+            outcome: "failed".to_string(),
+        });
+
+        assert_eq!(state.history.len(), 2);
+        assert_eq!(state.history[0].issue_number, 1);
+        assert_eq!(state.history[1].issue_number, 2);
+    }
+}
