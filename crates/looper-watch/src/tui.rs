@@ -7,12 +7,12 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap};
-use ratatui::Terminal;
 
 use crate::state;
 use crate::worker::{self, AppState};
@@ -132,22 +132,20 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     ])
                 })
                 .collect();
-            let session_table = Table::new(
-                session_rows,
-                [Constraint::Length(40), Constraint::Min(30)],
-            )
-            .header(
-                Row::new(["Session", "Attach command"]).style(
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            )
-            .block(
-                Block::default()
-                    .title(" Claude Sessions (tmux) ")
-                    .borders(Borders::ALL),
-            );
+            let session_table =
+                Table::new(session_rows, [Constraint::Length(40), Constraint::Min(30)])
+                    .header(
+                        Row::new(["Session", "Attach command"]).style(
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    )
+                    .block(
+                        Block::default()
+                            .title(" Claude Sessions (tmux) ")
+                            .borders(Borders::ALL),
+                    );
             f.render_widget(session_table, chunks[2]);
 
             // Log
@@ -167,9 +165,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
             let footer = Paragraph::new(Line::from(vec![
                 Span::styled(
                     " q",
-                    Style::default()
-                        .fg(Color::Red)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" quit  "),
                 Span::styled(
@@ -181,9 +177,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                 Span::raw(" force poll  "),
                 Span::styled(
                     "k",
-                    Style::default()
-                        .fg(Color::Red)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" kill all sessions"),
             ]));
@@ -191,16 +185,16 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
         })?;
 
         // Handle input (non-blocking)
-        if event::poll(Duration::from_millis(250))? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => break,
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
-                    KeyCode::Char('k') => {
-                        worker::kill_all_sessions(&repo, state_path, &app).await;
-                    }
-                    _ => {}
+        if event::poll(Duration::from_millis(250))?
+            && let Event::Key(key) = event::read()?
+        {
+            match key.code {
+                KeyCode::Char('q') => break,
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                KeyCode::Char('k') => {
+                    worker::kill_all_sessions(&repo, state_path, &app).await;
                 }
+                _ => {}
             }
         }
     }

@@ -22,8 +22,18 @@ pub async fn fetch_open_unassigned(repo: &str, retries: u32) -> Result<Vec<Issue
     retry(retries, || async {
         let output = Command::new("gh")
             .args([
-                "issue", "list", "--repo", repo, "--state", "open", "--search", "no:assignee",
-                "--limit", "20", "--json", "number,title,labels,body,createdAt",
+                "issue",
+                "list",
+                "--repo",
+                repo,
+                "--state",
+                "open",
+                "--search",
+                "no:assignee",
+                "--limit",
+                "20",
+                "--json",
+                "number,title,labels,body,createdAt",
             ])
             .output()
             .await
@@ -45,10 +55,13 @@ pub async fn assign_to_me(repo: &str, issue_number: u64, retries: u32) -> Result
     retry(retries, || async {
         let output = Command::new("gh")
             .args([
-                "issue", "edit",
+                "issue",
+                "edit",
                 &issue_number.to_string(),
-                "--repo", repo,
-                "--add-assignee", "@me",
+                "--repo",
+                repo,
+                "--add-assignee",
+                "@me",
             ])
             .output()
             .await
@@ -68,19 +81,21 @@ pub async fn assign_to_me(repo: &str, issue_number: u64, retries: u32) -> Result
 pub async fn is_issue_open(repo: &str, number: u64) -> bool {
     let output = Command::new("gh")
         .args([
-            "issue", "view",
+            "issue",
+            "view",
             &number.to_string(),
-            "--repo", repo,
-            "--json", "state",
-            "--jq", ".state",
+            "--repo",
+            repo,
+            "--json",
+            "state",
+            "--jq",
+            ".state",
         ])
         .output()
         .await;
 
     match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).trim() == "OPEN"
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim() == "OPEN",
         _ => false,
     }
 }
@@ -155,7 +170,13 @@ where
                 last_err = e;
                 if attempt + 1 < max_retries {
                     let delay = Duration::from_secs(2u64.pow(attempt));
-                    eprintln!("  retry {}/{} in {}s: {}", attempt + 1, max_retries, delay.as_secs(), last_err);
+                    eprintln!(
+                        "  retry {}/{} in {}s: {}",
+                        attempt + 1,
+                        max_retries,
+                        delay.as_secs(),
+                        last_err
+                    );
                     tokio::time::sleep(delay).await;
                 }
             }

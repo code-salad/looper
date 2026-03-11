@@ -100,7 +100,11 @@ async fn main() {
     let live = state::in_progress_issues(&cli.repo).await;
     if !live.is_empty() {
         let nums: Vec<String> = live.iter().map(|n| format!("#{n}")).collect();
-        eprintln!("looper-watch: resuming with {} live session(s): {}", live.len(), nums.join(", "));
+        eprintln!(
+            "looper-watch: resuming with {} live session(s): {}",
+            live.len(),
+            nums.join(", ")
+        );
     }
 
     if cli.once {
@@ -111,7 +115,10 @@ async fn main() {
     if cli.headless {
         eprintln!(
             "looper-watch: repo={} interval={}s concurrency={} state={}",
-            cli.repo, cli.interval, cli.concurrency, state_path.display()
+            cli.repo,
+            cli.interval,
+            cli.concurrency,
+            state_path.display()
         );
         worker::run_loop(&cli, &state_path, &app).await;
     } else {

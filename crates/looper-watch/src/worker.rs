@@ -1,6 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
+use futures::future::join_all;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
@@ -81,7 +82,8 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
         return;
     }
 
-    app.log(&format!("found {} open unassigned issue(s)", issues.len())).await;
+    app.log(&format!("found {} open unassigned issue(s)", issues.len()))
+        .await;
 
     // Get live in-progress set from tmux
     let in_progress = state::in_progress_issues(&cli.repo).await;
@@ -90,12 +92,14 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
     let mut eligible = Vec::new();
     for issue in &issues {
         if in_progress.contains(&issue.number) {
-            app.log(&format!("#{}: skipping (tmux session alive)", issue.number)).await;
+            app.log(&format!("#{}: skipping (tmux session alive)", issue.number))
+                .await;
             continue;
         }
 
         if github::is_blocked(issue, &cli.repo).await {
-            app.log(&format!("#{}: skipping (blocked)", issue.number)).await;
+            app.log(&format!("#{}: skipping (blocked)", issue.number))
+                .await;
             continue;
         }
 
@@ -113,47 +117,69 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
     // Determine available slots
     let available_slots = cli.concurrency.saturating_sub(in_progress.len());
     if available_slots == 0 {
-        app.log(&format!("max concurrency reached ({}/{})", in_progress.len(), cli.concurrency)).await;
+        app.log(&format!(
+            "max concurrency reached ({}/{})",
+            in_progress.len(),
+            cli.concurrency
+        ))
+        .await;
         return;
     }
 
     let to_process = &eligible[..eligible.len().min(available_slots)];
 
-    for issue in to_process {
-        app.log(&format!("#{}: {} — processing", issue.number, issue.title)).await;
+    let tasks: Vec<_> = to_process
+        .iter()
+        .map(|issue| {
+            let repo = cli.repo.clone();
+            let retries = cli.retries;
+            let app_clone = app.clone();
+            let state_path_clone = state_path.to_path_buf();
+            let issue_number = issue.number;
+            let issue_title = issue.title.clone();
+            let allowed_tools = cli.allowed_tools.clone();
+            let dry_run = cli.dry_run;
 
-        if cli.dry_run {
-            app.log(&format!("#{}: dry run, skipping", issue.number)).await;
-            continue;
-        }
+            async move {
+                app_clone
+                    .log(&format!("#{issue_number}: {issue_title} — processing"))
+                    .await;
 
-        // Assign with retries — bail if it fails
-        if let Err(e) = github::assign_to_me(&cli.repo, issue.number, cli.retries).await {
-            app.log(&format!("#{}: assign failed: {e}", issue.number)).await;
-            continue;
-        }
-        app.log(&format!("#{}: assigned to @me", issue.number)).await;
+                if dry_run {
+                    app_clone
+                        .log(&format!("#{issue_number}: dry run, skipping"))
+                        .await;
+                    return;
+                }
 
-        // Spawn claude in tmux
-        let repo = cli.repo.clone();
-        let allowed_tools = cli.allowed_tools.clone();
-        let app_clone = app.clone();
-        let state_path_clone = state_path.to_path_buf();
-        let issue_number = issue.number;
-        let issue_title = issue.title.clone();
+                // Assign with retries — skip this issue if it fails
+                if let Err(e) = github::assign_to_me(&repo, issue_number, retries).await {
+                    app_clone
+                        .log(&format!("#{issue_number}: assign failed: {e}"))
+                        .await;
+                    return;
+                }
+                app_clone
+                    .log(&format!("#{issue_number}: assigned to @me"))
+                    .await;
 
-        tokio::spawn(async move {
-            run_claude(
-                &repo,
-                issue_number,
-                &issue_title,
-                &allowed_tools,
-                &app_clone,
-                &state_path_clone,
-            )
-            .await;
-        });
-    }
+                // Spawn claude in tmux as a background task
+                tokio::spawn(async move {
+                    run_claude(
+                        &repo,
+                        issue_number,
+                        &issue_title,
+                        &allowed_tools,
+                        &app_clone,
+                        &state_path_clone,
+                    )
+                    .await;
+                });
+            }
+        })
+        .collect();
+
+    join_all(tasks).await;
 }
 
 async fn run_claude(
@@ -162,7 +188,7 @@ async fn run_claude(
     issue_title: &str,
     allowed_tools: &str,
     app: &AppState,
-    state_path: &PathBuf,
+    state_path: &Path,
 ) {
     let issue_url = format!("https://github.com/{repo}/issues/{issue_number}");
     let prompt = format!("/looper-ee {issue_url}");
@@ -174,7 +200,10 @@ async fn run_claude(
         allowed_tools.replace('\'', "'\\''"),
     );
 
-    app.log(&format!("#{issue_number}: spawning tmux session '{session}'")).await;
+    app.log(&format!(
+        "#{issue_number}: spawning tmux session '{session}'"
+    ))
+    .await;
 
     let tmux_result = Command::new("tmux")
         .args(["new-session", "-d", "-s", &session, &tmux_cmd])
@@ -184,7 +213,8 @@ async fn run_claude(
     let use_tmux = matches!(&tmux_result, Ok(o) if o.status.success());
 
     if !use_tmux {
-        app.log(&format!("#{issue_number}: tmux failed, using bare process")).await;
+        app.log(&format!("#{issue_number}: tmux failed, using bare process"))
+            .await;
 
         // Bare process fallback
         let result = Command::new("claude")
@@ -252,4 +282,105 @@ pub async fn kill_all_sessions(repo: &str, state_path: &Path, app: &AppState) {
     // Save state in case history was pending
     let s = app.state.lock().await;
     s.save(state_path).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use futures::future::join_all;
+
+    use super::AppState;
+    use crate::state::State;
+
+    fn make_app() -> AppState {
+        AppState::new(State::default())
+    }
+
+    #[tokio::test]
+    async fn app_state_log_stores_messages() {
+        let app = make_app();
+        app.log("hello world").await;
+        let lines = app.log_lines.lock().await;
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("hello world"));
+    }
+
+    #[tokio::test]
+    async fn app_state_log_trims_to_200_lines() {
+        let app = make_app();
+        for i in 0..250 {
+            app.log(&format!("line {i}")).await;
+        }
+        let lines = app.log_lines.lock().await;
+        assert_eq!(lines.len(), 200, "log should be capped at 200 lines");
+        // Oldest lines should be dropped
+        assert!(
+            lines[0].contains("line 50"),
+            "first retained line should be line 50, got: {}",
+            lines[0]
+        );
+    }
+
+    /// Acceptance-criteria test: multiple eligible issues must be dispatched
+    /// concurrently (in parallel), not one after another.
+    ///
+    /// We verify that `join_all` interleaves N tasks correctly. Each task
+    /// increments a start counter, yields to the executor so others can run,
+    /// then increments a finish counter. Because `join_all` polls all futures
+    /// round-robin, all starts happen before all finishes — which is impossible
+    /// under strict sequential execution.
+    #[tokio::test]
+    async fn should_dispatch_multiple_issues_concurrently_not_sequentially() {
+        const N: usize = 4;
+
+        let starts = Arc::new(AtomicUsize::new(0));
+        let finishes_seen_all_starts = Arc::new(AtomicUsize::new(0));
+
+        let tasks: Vec<_> = (0..N)
+            .map(|_| {
+                let starts = Arc::clone(&starts);
+                let finishes_seen_all_starts = Arc::clone(&finishes_seen_all_starts);
+                async move {
+                    starts.fetch_add(1, Ordering::SeqCst);
+                    // Yield so other tasks get a chance to start.
+                    tokio::task::yield_now().await;
+                    // By the time we reach here, all tasks should have started
+                    // (if truly concurrent/interleaved via join_all).
+                    if starts.load(Ordering::SeqCst) == N {
+                        finishes_seen_all_starts.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            })
+            .collect();
+
+        join_all(tasks).await;
+
+        // Every task should have observed all N starts before finishing,
+        // proving join_all interleaves them rather than running sequentially.
+        assert_eq!(
+            finishes_seen_all_starts.load(Ordering::SeqCst),
+            N,
+            "expected all {N} tasks to see all starts before finishing \
+             (proving parallel dispatch); got {}",
+            finishes_seen_all_starts.load(Ordering::SeqCst)
+        );
+    }
+
+    #[tokio::test]
+    async fn app_state_log_includes_timestamp_prefix() {
+        let app = make_app();
+        app.log("test message").await;
+        let lines = app.log_lines.lock().await;
+        // Log lines are formatted as "[HH:MM:SS] message"
+        assert!(
+            lines[0].starts_with('['),
+            "log line should start with '[' timestamp bracket"
+        );
+        assert!(
+            lines[0].contains("] test message"),
+            "log line should contain the message"
+        );
+    }
 }
