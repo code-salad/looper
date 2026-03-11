@@ -175,10 +175,7 @@ mod tests {
 
     #[test]
     fn session_name_sanitizes_slash_in_repo() {
-        assert_eq!(
-            session_name("my-org/my-repo", 1),
-            "looper-my-org-my-repo-1"
-        );
+        assert_eq!(session_name("my-org/my-repo", 1), "looper-my-org-my-repo-1");
     }
 
     #[test]
