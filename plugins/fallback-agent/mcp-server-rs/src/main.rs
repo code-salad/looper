@@ -25,12 +25,14 @@ use crate::types::{
 
 // ── Debug Logging ────────────────────────────────────────────────────────────
 
-const LOG_FILE: &str = "/tmp/fallback-agent-debug.log";
+fn log_file() -> String {
+    format!("/tmp/fallback-agent-debug-{}.log", std::process::id())
+}
 
 pub fn log(message: &str) {
     let timestamp = simple_timestamp();
     let log_line = format!("[{}] {}\n", timestamp, message);
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(LOG_FILE) {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file()) {
         let _ = file.write_all(log_line.as_bytes());
     }
 }
@@ -46,8 +48,8 @@ fn simple_timestamp() -> String {
 }
 
 fn init_log() {
-    if let Ok(mut file) = fs::File::create(LOG_FILE) {
-        let _ = writeln!(file, "=== Fallback Agent MCP Server Started (Rust) ===");
+    if let Ok(mut file) = fs::File::create(&log_file()) {
+        let _ = writeln!(file, "=== Fallback Agent MCP Server Started (Rust, pid {}) ===", std::process::id());
         let _ = writeln!(
             file,
             "CLAUDE_PLUGIN_ROOT={}",
