@@ -4,13 +4,18 @@ description: >-
   Use this skill when a watcher feeds a GitHub issue from an external repo.
   Ensures the repo is cloned locally, changes into it, and delegates to
   the looper skill. Triggered by "/looper-ee <issue_url>".
-tools: Bash, Read, Grep, Glob, Skill
+tools: Bash, Read, Grep, Glob, Skill, Agent
 ---
 
 # Looper EE (External Execution) Skill
 
 Handles GitHub issues from external repos by ensuring the repo is available
 locally, then delegating to the looper skill.
+
+**CRITICAL:** All work MUST happen in an isolated git worktree (the `/looper`
+skill creates one). Changes are delivered via a GitHub pull request — never
+merged locally into the default branch. The full flow is:
+worktree → PDC loop → push branch → create PR → wait CI → squash merge.
 
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: looper
 description: Use this skill when the user wants to run an iterative Plan-Do-Check agent loop. Three agents (Planner, Doer, Checker) cycle until the Checker passes the work. Triggered by "/looper" followed by a task description.
-tools: Bash, Read, Edit, Write, Grep, Glob, Agent
+tools: Bash, Read, Edit, Write, Grep, Glob, Agent, Skill
 ---
 
 # PDC Loop Skill
@@ -47,6 +47,14 @@ Create an isolated worktree (handles gitignore, create-or-resume, and dirty-stat
 ```bash
 WORKTREE_DIR=$($SCRIPTS_DIR/setup-worktree --task "$TASK_NAME")
 cd "$WORKTREE_DIR"
+```
+
+**Gate:** If `setup-worktree` exits non-zero or `WORKTREE_DIR` is empty, abort immediately.
+**CRITICAL:** All work MUST happen inside the worktree. NEVER commit directly to the default branch.
+Verify you are on a `loop/` branch:
+
+```bash
+git branch --show-current | grep -q '^loop/' || { echo "ERROR: not on a loop/ branch"; exit 1; }
 ```
 
 ### 4b. Sync worktree with remote
@@ -236,10 +244,16 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
 
 ### 8. Report results
 
-- **PASS:** Report success with iteration count. Invoke `/create-github-pr`.
-  The PR skill will wait for CI, squash-merge on success, and clean up the
-  worktree automatically. If CI fails or merge fails, the worktree is preserved
-  for manual inspection.
+- **PASS:** Report success with iteration count, then **you MUST invoke
+  `/create-github-pr`** to push the branch and open a pull request against
+  the default branch. The PR skill will wait for CI, squash-merge on
+  success, and clean up the worktree automatically. If CI fails or merge
+  fails, the worktree is preserved for manual inspection.
+
+  **CRITICAL — never merge locally:** Do NOT run `git merge`, `git checkout
+  <default-branch>`, or any command that merges the loop branch into the
+  local default branch. All merging happens via the GitHub PR (squash merge).
+
 - **FAIL (max iterations):** Report that max iterations were reached. Show
   the last checker verdict: `git log --grep="Loop-Verdict: FAIL" -1 --format="%B"`
   The worktree at `$WORKTREE_DIR` is **preserved** for debugging.
