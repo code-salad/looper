@@ -61,16 +61,24 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
         let now_ts = chrono::Utc::now().timestamp();
 
         terminal.draw(|f| {
+            let area = f.area();
+            // Reserve fixed space, then split the remainder proportionally
+            // to prevent Min(8) vs Min(8) starvation/overlap.
+            let fixed = 3 + 10 + 1; // header + sessions + footer
+            let flexible = area.height.saturating_sub(fixed as u16);
+            let issues_h = (flexible * 40 / 100).max(5); // 40% of flexible space
+            let log_h = flexible.saturating_sub(issues_h).max(5); // rest
+
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // header
-                    Constraint::Min(8),     // issues table
-                    Constraint::Length(10), // tmux sessions
-                    Constraint::Min(8),     // log
-                    Constraint::Length(1),  // footer
+                    Constraint::Length(3),         // header
+                    Constraint::Length(issues_h),   // issues table
+                    Constraint::Length(10),         // tmux sessions
+                    Constraint::Length(log_h),      // log
+                    Constraint::Length(1),          // footer
                 ])
-                .split(f.area());
+                .split(area);
 
             // Header
             let poll_info = format!(
@@ -99,9 +107,18 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     .add_modifier(Modifier::BOLD),
             );
 
-            let rows: Vec<Row> = open_issues
-                .iter()
-                .map(|issue| {
+            let rows: Vec<Row> = if open_issues.is_empty() {
+                vec![Row::new(vec![
+                    Cell::from(""),
+                    Cell::from(Span::styled(
+                        "No open unassigned issues",
+                        Style::default().fg(Color::DarkGray),
+                    )),
+                    Cell::from(""),
+                    Cell::from(""),
+                ])]
+            } else {
+                open_issues.iter().map(|issue| {
                     let session = state::session_name(&repo, issue.number);
                     let status_text = if in_progress.contains(&issue.number) {
                         // Find the session's created timestamp from our snapshot
@@ -145,12 +162,12 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                         .join(", ");
                     Row::new(vec![
                         Cell::from(format!("#{}", issue.number)),
-                        Cell::from(issue.title.chars().take(50).collect::<String>()),
+                        Cell::from(issue.title.as_str()),
                         Cell::from(status_text),
                         Cell::from(labels),
                     ])
-                })
-                .collect();
+                }).collect()
+            };
 
             let table = Table::new(
                 rows,
@@ -184,7 +201,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                 [
                     Constraint::Length(40),
                     Constraint::Min(30),
-                    Constraint::Length(12),
+                    Constraint::Length(16),
                 ],
             )
             .header(
