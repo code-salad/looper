@@ -55,20 +55,25 @@ _extract_body() {
     '
 }
 
-# Helper: extract doer commit hash
-_extract_doer_hash() {
-    local iter="$1"
-    echo "$ALL_LOG" | awk -v iter="$iter" '
-        /^__COMMIT__/ { hash=substr($0,11); in_commit=1; is_do=0; is_iter=0; next }
+# Helper: extract commit hash for a given phase and iteration
+_extract_hash() {
+    local phase="$1" iter="$2"
+    echo "$ALL_LOG" | awk -v phase="$phase" -v iter="$iter" '
+        /^__COMMIT__/ { hash=substr($0,11); in_commit=1; is_phase=0; is_iter=0; next }
         /^__END__$/ {
-            if (in_commit && is_do && is_iter) print hash
+            if (in_commit && is_phase && is_iter) print hash
             in_commit=0; next
         }
         in_commit {
-            if ($0 ~ "^Loop-Phase: do$") is_do=1
+            if ($0 ~ "^Loop-Phase: " phase "$") is_phase=1
             if ($0 ~ "^Loop-Iteration: " iter "$") is_iter=1
         }
     '
+}
+
+# Helper: extract doer commit hash (legacy do phase)
+_extract_doer_hash() {
+    _extract_hash "do" "$1"
 }
 
 # Helper: strip loop trailers from body text
@@ -133,13 +138,19 @@ for (( i=1; i<ITERATION; i++ )); do
             echo ""
         fi
 
-        doer_hash=$(_extract_doer_hash "$i")
-        if [ -n "$doer_hash" ]; then
-            echo "#### Files changed"
-            echo '```'
-            git show --stat --format="" "$doer_hash" 2>/dev/null || true
-            echo '```'
+        # TDD: check for red/green commits or fallback to legacy do
+        if [ -n "$(_extract_body "do-red" "$i")" ] || [ -n "$(_extract_body "do-green" "$i")" ]; then
+            echo "#### TDD: RED then GREEN"
             echo ""
+        else
+            doer_hash=$(_extract_doer_hash "$i")
+            if [ -n "$doer_hash" ]; then
+                echo "#### Files changed"
+                echo '```'
+                git show --stat --format="" "$doer_hash" 2>/dev/null || true
+                echo '```'
+                echo ""
+            fi
         fi
 
         if [ -n "$verdict_body" ]; then
@@ -169,19 +180,58 @@ for (( i=1; i<ITERATION; i++ )); do
         echo ""
     fi
 
-    doer_info_hash=$(_extract_doer_hash "$i")
-    doer_body=$(_extract_body "do" "$i")
-    if [ -n "$doer_body" ]; then
-        echo "#### Changes"
-        echo ""
-        echo "$doer_body" | _strip_trailers
-        echo ""
-        if [ -n "$doer_info_hash" ]; then
-            echo "**Files changed:**"
-            echo '```'
-            git show --stat --format="" "$doer_info_hash" 2>/dev/null || true
-            echo '```'
+    # TDD: check for do-red and do-green commits first
+    red_body=$(_extract_body "do-red" "$i")
+    green_body=$(_extract_body "do-green" "$i")
+
+    if [ -n "$red_body" ] || [ -n "$green_body" ]; then
+        if [ -n "$red_body" ]; then
+            echo "#### RED (Tests)"
             echo ""
+            echo "$red_body" | _strip_trailers
+            echo ""
+            red_hash=$(_extract_hash "do-red" "$i")
+            if [ -n "$red_hash" ]; then
+                echo "**Files changed:**"
+                echo '```'
+                git show --stat --format="" "$red_hash" 2>/dev/null || true
+                echo '```'
+                echo ""
+            fi
+        fi
+        if [ -n "$green_body" ]; then
+            echo "#### GREEN (Implementation)"
+            echo ""
+            echo "$green_body" | _strip_trailers
+            echo ""
+            green_hash=$(_extract_hash "do-green" "$i")
+            if [ -n "$green_hash" ]; then
+                echo "**Files changed:**"
+                echo '```'
+                git show --stat --format="" "$green_hash" 2>/dev/null || true
+                echo '```'
+                echo ""
+            fi
+        elif [ -n "$red_body" ]; then
+            echo "#### GREEN (Implementation) — not committed"
+            echo ""
+        fi
+    else
+        # Fallback: legacy single do commit
+        doer_info_hash=$(_extract_doer_hash "$i")
+        doer_body=$(_extract_body "do" "$i")
+        if [ -n "$doer_body" ]; then
+            echo "#### Changes"
+            echo ""
+            echo "$doer_body" | _strip_trailers
+            echo ""
+            if [ -n "$doer_info_hash" ]; then
+                echo "**Files changed:**"
+                echo '```'
+                git show --stat --format="" "$doer_info_hash" 2>/dev/null || true
+                echo '```'
+                echo ""
+            fi
         fi
     fi
 

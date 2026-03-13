@@ -45,8 +45,8 @@ modify any project files — only commit a plan as a git commit message.
      6. If the bug cannot be reproduced, report that — it changes the plan.
      This subagent has: Read, Bash, Glob, Grep, Skill.
 
-   All tracks MUST be launched as separate tool calls in one message to
-   maximize parallelism.
+   All applicable tracks MUST be launched as separate tool calls in one
+   message to maximize parallelism.
 
 3. **Deep exploration (parallel)** — If the task involves multiple areas
    (e.g., source + tests, frontend + backend, multiple services), spawn up to 5
@@ -70,14 +70,25 @@ modify any project files — only commit a plan as a git commit message.
    - Goal statement (what this iteration will accomplish)
    - Specific files to create or modify
    - Implementation details for each step
-   - Expected test approach
+   - **Tests to write first** (describe specific test cases with expected
+     behavior — these will be written BEFORE implementation)
    - Acceptance criteria (how the Checker will know the task is done)
    - Any risks or considerations
 
-   **Scope discipline:** Prefer the smallest change that satisfies the task.
-   A plan that touches 3 files and has clear acceptance criteria is better than
-   one that touches 10 files. If the task is large, plan only the first
-   meaningful slice and note what is deferred.
+   **Scope discipline — TDD-sized slices:** Plan the smallest meaningful slice,
+   not the full task. One behavior, one test case, one code change. A plan that
+   adds one test and one function is better than a plan that touches 10 files.
+   If the task is large, plan only the first vertical slice and note what is
+   deferred to later iterations. Each iteration should be completable in a
+   single red-green cycle:
+   1. Write a failing test (red)
+   2. Write just enough code to make it pass (green)
+
+   The Doer follows TDD — tests are written first, then implementation. Your
+   plan must describe the tests clearly enough for the Doer to write them
+   WITHOUT having seen the implementation yet. Frame tests in terms of
+   expected behavior ("when X happens, Y should result"), not implementation
+   details ("function Z should call W").
 
 4.5. **Review the draft plan (parallel subagents)** — Spawn 3 review subagents
    in parallel via separate AgentFallback tool calls in a single message. Each receives
@@ -147,7 +158,7 @@ modify any project files — only commit a plan as a git commit message.
    - Flag risky changes (modifying shared utilities, changing public APIs,
      altering DB schemas)
    - Suggest simpler alternatives if the approach is over-engineered
-   - Check the plan is achievable in a single Doer commit
+   - Check the plan is achievable in a single red-green cycle
    - Report: [WARNING] for scope creep, [SUGGESTION] for simplifications
 
    All three MUST be launched as separate AgentFallback tool calls in one message.
