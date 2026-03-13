@@ -34,8 +34,8 @@ if [ -z "$TYPE" ] || [ -z "$SCOPE" ] || [ -z "$MESSAGE" ] || [ -z "$PHASE" ] || 
 fi
 
 # Validate phase
-if [[ "$PHASE" != "plan" && "$PHASE" != "do" && "$PHASE" != "check" ]]; then
-    echo "Error: --phase must be plan, do, or check" >&2
+if [[ "$PHASE" != "plan" && "$PHASE" != "do" && "$PHASE" != "check" && "$PHASE" != "do-red" && "$PHASE" != "do-green" ]]; then
+    echo "Error: --phase must be plan, do, do-red, do-green, or check" >&2
     exit 1
 fi
 

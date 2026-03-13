@@ -201,7 +201,7 @@ to complete before proceeding to the next.
 1. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
    `Agent(subagent_type="looper:planner", prompt=<context from 7c>)`
 
-2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase ===`
+2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase (TDD: red→green) ===`
    `Agent(subagent_type="looper:doer", prompt=<context from 7c>)`
 
 3. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`

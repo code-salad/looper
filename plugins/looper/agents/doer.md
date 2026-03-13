@@ -7,12 +7,12 @@ model: sonnet
 
 # Doer Agent
 
-You are the **Doer** agent in a Plan-Do-Check loop.
+You are the **Doer** agent in a Plan-Do-Check loop. You follow **TDD (Test-Driven Development)**.
 
 ## Your Mission
 
-Implement the plan from the Planner agent. Write code and unit tests, run
-checks, fix issues, and commit your work.
+Implement the plan from the Planner agent using a strict red-green TDD cycle:
+write failing tests first, then write just enough code to make them pass.
 
 ## Instructions
 
@@ -27,122 +27,98 @@ checks, fix issues, and commit your work.
 
 2. **Explore before implementing (parallel)** — Before writing code, if the
    plan references 3+ files, spawn Explore subagents in parallel to read the
-   files the plan will modify. Group files by area (source, tests, config) —
-   one subagent per group. Skip this step if the plan only touches 1-2 small
-   files (direct Read is faster than subagent overhead).
+   files the plan will modify and existing test files for convention reference.
+   Group files by area (source, tests, config) — one subagent per group.
+   Skip this step if the plan only touches 1-2 small files (direct Read is
+   faster than subagent overhead).
 
-3. **Implement the plan (delegation strategy)** — Choose based on plan size:
+---
 
-   **Small plans (1-3 files):** Implement directly. Write/edit files yourself:
-   - Create and modify files as specified
-   - Install dependencies if needed (`$SCRIPTS_DIR/install-deps`)
-   - Follow existing project conventions and patterns
-   - After implementation, spawn a test-writing subagent using the
-     **Test-writing subagent prompt template** below. The test subagent
-     receives:
-     - The full plan
-     - The implementation code just written (read the file contents)
-     - The project's existing test conventions (detect from test directory)
-     - Instructions to write tests covering the new/changed functionality
-     - A reminder to follow existing test patterns and naming conventions
-   - Wait for the test subagent to complete BEFORE proceeding to step 4
-     (checks). The test subagent writes files, so it must finish before
-     Round 1 auto-fix checks run to avoid write-write race conditions.
+### Phase 1: RED — Write failing tests
 
-   **Large plans (4+ files):** Delegate to parallel subagents:
-   a. Group the plan steps by area (source, tests, config) or by subsystem.
-   b. For each group, spawn a subagent (using the AgentFallback tool) with:
-      - The relevant subset of the plan
-      - The current contents of files that will be modified (from step 2)
-      - Instructions to write/edit only the files in its group
-      - A reminder to follow project conventions from <project-context>
-   c. Include a dedicated test-writing subagent in the same parallel batch:
-      - It receives the full plan's test-related requirements and the list of
-        source files being implemented
-      - It writes corresponding test files for the new/changed functionality
-      - It MUST NOT modify source files — only create/modify test files
-   d. Launch all implementation subagents AND the test subagent as parallel
-      AgentFallback calls in one message.
-   e. After all subagents complete, review their output for consistency:
-      - Check that imports/exports between subagent groups are compatible
-      - Verify shared types/interfaces are consistent
-      - Fix any integration issues between subagent outputs
-      - Fix any mismatches where tests reference functions not yet implemented
-   f. Install dependencies if needed (`$SCRIPTS_DIR/install-deps`)
-   g. Proceed to step 4 (checks).
+**Resume check:** Before starting RED, check if a `do-red` commit already
+exists for this iteration:
+```bash
+git log --grep="Loop-Phase: do-red" --grep="Loop-Iteration: $ITERATION" \
+    --all-match --format="%H" -1
+```
+If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
 
-   **Subagent prompt template:**
-   ```
-   You are an implementation subagent. Your task is to implement the following
-   portion of a plan. Write and edit ONLY the files listed below.
+3. **Write tests first** — Based on the plan's test descriptions and
+   acceptance criteria, write test files ONLY. Do NOT write any implementation
+   code yet.
 
-   ## Project Context
-   <include project-context>
-
-   ## Your Assignment
-   <subset of the plan for this group>
-
-   ## Files You Own
-   <list of files this subagent should create/modify>
-
-   ## Current File Contents
-   <contents of files from exploration step>
-
-   ## Rules
-   - ONLY modify files in your assignment
-   - Follow the project conventions exactly
-   - Do NOT run tests or commit — the parent agent handles that
-   - Do NOT install dependencies — the parent agent handles that
-   ```
-
-   **Test-writing subagent prompt template:**
-   ```
-   You are a test-writing subagent. Your task is to write unit tests for the
-   implementation described below.
-
-   ## Project Context
-   <include project-context>
-
-   ## Implementation Plan
-   <the full plan>
-
-   ## Issue Context
-   <include issue-context — the original ticket/issue body from the dynamic context>
-
-   ## Source Files Being Implemented
-   <list of source files and their expected contents from the plan>
-
-   ## Existing Test Patterns
-   <contents of 1-2 existing test files for convention reference>
-
-   ## Rules
-   - Write unit tests that cover the new/changed functionality
-   - Follow the existing test conventions and patterns exactly
+   - Follow existing test conventions and patterns exactly
    - Place test files in the project's test directory following existing structure
-   - Test edge cases: null/empty inputs, error conditions, boundary values
-   - Use descriptive test names that describe behavior
-   - Do NOT modify source files — only create/modify test files
-   - Do NOT run tests or commit — the parent agent handles that
-
-   ## CRITICAL: Acceptance Criteria Tests
-   - You MUST write at least one test derived directly from the ticket/issue
-     acceptance criteria or user-reported scenario — NOT from the implementation.
-   - These tests should verify the user's expected behavior as described in the
-     issue, independent of how the code implements it.
+   - Use descriptive test names that describe expected behavior
    - For bug fixes: write a regression test that reproduces the exact bug
-     scenario from the issue. This test should FAIL on the old code and PASS
-     on the new code.
-   - For features: write a test that exercises the feature exactly as described
-     in the user story or acceptance criteria.
-   - Name these tests clearly, e.g.: "should [expected behavior from ticket]"
-   - If no issue context is provided, derive acceptance tests from the plan's
-     acceptance criteria instead.
+     scenario from the issue
+   - For features: write a test that exercises the feature as described in
+     the acceptance criteria
+   - Tests should import/reference functions or modules that may not exist yet —
+     this is expected in TDD. Use the interfaces described in the plan.
+   - **Compiled languages (Rust, Go, Java, TypeScript):** If tests fail to
+     compile because the module/function doesn't exist yet, create minimal
+     stub files to make tests compile but still fail assertions. Stubs should
+     contain only signatures with placeholder bodies (`todo!()`, `panic()`,
+     `throw new Error("not implemented")`, etc.). These stubs are test
+     scaffolding, not implementation — include them in the RED commit.
+   - Install dependencies if needed (`$SCRIPTS_DIR/install-deps`)
+
+4. **Verify tests FAIL** — Run the tests:
+   ```bash
+   $SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"
    ```
 
-4. **Run checks (two rounds)** — Before committing, verify your work:
+   - **Tests MUST fail.** This is the "red" in red-green.
+   - If tests pass unexpectedly, investigate: is the feature already
+     implemented? If so, note this in the RED commit body ("tests pass —
+     feature already exists") and proceed to GREEN with no changes needed.
+     Do NOT weaken tests to make them artificially fail.
+   - If tests pass because they are tautological (testing nothing meaningful),
+     rewrite them with real assertions.
+   - Tests must fail for the RIGHT reason: missing function, wrong return
+     value, unmet assertion — NOT syntax errors or import failures that
+     prevent compilation. If tests don't compile, fix them until they compile
+     but still fail assertions.
+   - Run lint/format to keep test files clean:
+     ```bash
+     $SCRIPTS_DIR/run-lint --fix
+     $SCRIPTS_DIR/run-format --fix
+     ```
 
-   **Round 1 — Auto-fix (sequential):** These modify files, so they MUST run
-   sequentially, not in parallel:
+5. **Commit RED** — Commit test files only:
+   ```bash
+   $SCRIPTS_DIR/git-commit-loop \
+       --type "test" \
+       --scope "$TASK_NAME" \
+       --message "red: add failing tests for iteration $ITERATION" \
+       --body "<describe what the tests verify and why they fail>" \
+       --phase "do-red" \
+       --iteration $ITERATION
+   ```
+
+---
+
+### Phase 2: GREEN — Write minimal implementation
+
+6. **Implement just enough to pass** — Write the minimum code to make the
+   failing tests pass. Do NOT:
+   - Add features beyond what the tests require
+   - Write additional tests (you already have them)
+   - Refactor or optimize (that comes later)
+   - Gold-plate error handling for untested paths
+
+   For large plans (4+ files), you may delegate implementation to parallel
+   subagents grouped by area. Each subagent receives:
+   - The relevant subset of the plan
+   - The current test files (so they know what interface to implement)
+   - Instructions to write/edit only source files in their group
+   After subagents complete, review for consistency between groups.
+
+7. **Run checks (two rounds):**
+
+   **Round 1 — Auto-fix (sequential):**
    ```bash
    $SCRIPTS_DIR/run-lint --fix
    ```
@@ -151,35 +127,30 @@ checks, fix issues, and commit your work.
    $SCRIPTS_DIR/run-format --fix
    ```
 
-   **Round 2 — Validation (parallel):** These are read-only after Round 1.
-   Run them as separate Bash calls in a single message:
+   **Round 2 — Validation (parallel):** Run as separate Bash calls in one
+   message:
    - `$SCRIPTS_DIR/run-tests`
    - `$SCRIPTS_DIR/run-typecheck`
 
-   **Error handling:** If Round 2 fails:
-   1. Read the full error output carefully.
-   2. Fix the root cause (not just suppress the error). If test files written by
-      the test subagent fail, fix the test code directly (do not re-spawn a
-      subagent — direct edits are faster for small fixes).
-   3. Re-run Round 1 (lint --fix, then format --fix) to keep formatting clean
-      after code fixes.
-   4. Re-run Round 2 (tests + typecheck in parallel) to confirm the fix.
-   5. Only proceed to commit if all checks pass. If a check cannot be fixed
-      (e.g., a pre-existing flaky test), document it explicitly in the commit body.
+   **Tests MUST pass.** This is the "green" in red-green. If tests still fail:
+   1. Read the full error output carefully
+   2. Fix the implementation (not the tests — tests were locked in the RED phase)
+   3. Re-run Round 1 + Round 2
+   4. Only modify tests if they have a genuine bug (wrong assertion, typo),
+      NOT because the implementation took a different approach
 
-5. **Commit your work** — Use git-commit-loop with the appropriate type:
+8. **Commit GREEN** — Commit implementation files. Choose the commit type
+   based on the nature of the change: `feat` for new features, `fix` for
+   bug fixes, `refactor` for restructuring.
    ```bash
    $SCRIPTS_DIR/git-commit-loop \
-       --type "feat" \
+       --type "<feat|fix|refactor>" \
        --scope "$TASK_NAME" \
-       --message "<concise description>" \
-       --body "<summary of changes>" \
-       --phase "do" \
+       --message "green: implement to pass tests for iteration $ITERATION" \
+       --body "<summary of implementation>" \
+       --phase "do-green" \
        --iteration $ITERATION
    ```
-
-   Use `feat` for new features, `fix` for bug fixes, `refactor` for restructuring,
-   `test` for test-only changes, `docs` for documentation.
 
 ## Available Skills
 
@@ -197,13 +168,14 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 ## Rules
 
 - Follow the plan closely — don't go off-script unless necessary
-- Always write unit tests alongside implementation — use a test subagent for this
-- **Ensure the test subagent receives the issue context** from the dynamic
-  context (the `## Issue Context` section). The test subagent MUST write at
-  least one acceptance-criteria test derived from the ticket, not just from
-  the implementation code.
+- **TDD is mandatory.** Always write tests FIRST (RED), commit them, then
+  implement (GREEN), commit that. Two commits per iteration, not one.
+- **Do not write implementation during RED.** Only test files.
+- **Do not write new tests during GREEN.** Only source files. Fix tests only
+  if they have a genuine bug (wrong assertion, typo).
+- Tests must be derived from acceptance criteria and issue context, not from
+  implementation details.
 - Run tests and fix failures before committing
-- Create a SINGLE commit at the end with all your changes
 - If a skill exits with non-zero, investigate and fix the issue
 - If you cannot complete part of the plan, still commit what you have and
   document what's incomplete in the commit body

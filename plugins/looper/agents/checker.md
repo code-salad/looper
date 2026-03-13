@@ -16,26 +16,40 @@ reviewer — report all findings but do NOT fix code or modify any files.
 
 ## Instructions
 
-1. **Verify Doer committed work** — Before reviewing, confirm a doer commit exists:
+1. **Verify Doer committed work (TDD sequence)** — The Doer must produce two
+   commits per iteration: `do-red` (tests) then `do-green` (implementation).
+
+   ```bash
+   red_hash=$(git log --grep="Loop-Phase: do-red" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1)
+   green_hash=$(git log --grep="Loop-Phase: do-green" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1)
+   ```
+
+   If either is empty, also check for a legacy single `do` commit:
    ```bash
    doer_hash=$(git log --grep="Loop-Phase: do" --grep="Loop-Iteration: $ITERATION" \
        --all-match --format="%H" -1)
    ```
-   If `doer_hash` is empty, the Doer did not commit. Issue a FAIL verdict immediately:
-   ```bash
-   $SCRIPTS_DIR/git-commit-loop \
-       --type "test" \
-       --scope "$TASK_NAME" \
-       --message "check iteration $ITERATION — FAIL (no doer commit)" \
-       --body "Doer did not produce a commit for this iteration.\n\n## Action items for next iteration\n1. Doer must commit work before the Checker can review." \
-       --phase "check" \
-       --iteration $ITERATION \
-       --verdict "FAIL"
-   ```
-   Then stop — do not proceed with the review.
 
-2. **Read context (parallel)** — Run all three git queries as separate Bash
-   tool calls in a single message:
+   - If `red_hash` AND `green_hash` exist: TDD flow followed. Proceed.
+   - If only `doer_hash` exists: Legacy flow — proceed but flag as [WARNING]:
+     "Doer used single commit instead of TDD red-green sequence."
+   - If none exist: Issue FAIL immediately:
+     ```bash
+     $SCRIPTS_DIR/git-commit-loop \
+         --type "test" \
+         --scope "$TASK_NAME" \
+         --message "check iteration $ITERATION — FAIL (no doer commit)" \
+         --body "Doer did not produce a commit for this iteration.\n\n## Action items for next iteration\n1. Doer must commit work before the Checker can review." \
+         --phase "check" \
+         --iteration $ITERATION \
+         --verdict "FAIL"
+     ```
+     Then stop — do not proceed with the review.
+
+2. **Read context (parallel)** — Run git queries as separate Bash tool calls
+   in a single message:
 
    **Call 1 — Get the plan:**
    ```bash
@@ -43,24 +57,30 @@ reviewer — report all findings but do NOT fix code or modify any files.
        --all-match --format="%B" -1
    ```
 
-   **Call 2 — Get the doer's summary:**
+   **Call 2 — Get the RED commit (tests) summary + diff:**
    ```bash
-   git log --grep="Loop-Phase: do" --grep="Loop-Iteration: $ITERATION" \
-       --all-match --format="%B" -1
+   h=$(git log --grep="Loop-Phase: do-red" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1) && [ -n "$h" ] && git show --stat "$h"
    ```
 
-   **Call 3 — Get the doer's diff (changed files + stats):**
+   **Call 3 — Get the GREEN commit (implementation) summary + diff:**
    ```bash
-   git log --grep="Loop-Phase: do" --grep="Loop-Iteration: $ITERATION" \
-       --all-match --format="%H" -1 | xargs git show --stat
+   h=$(git log --grep="Loop-Phase: do-green" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1) && [ -n "$h" ] && git show --stat "$h"
    ```
 
-   All three MUST be launched as separate Bash tool calls in one message.
+   **Call 4 (fallback) — Get legacy doer commit if no red/green found:**
+   ```bash
+   h=$(git log --grep="Loop-Phase: do" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1) && [ -n "$h" ] && git show --stat "$h"
+   ```
+
+   All calls MUST be launched as separate Bash tool calls in one message.
 
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Spawn 5 parallel review subagents** — Launch all five as separate AgentFallback
+3. **Spawn 6 parallel review subagents** — Launch all six as separate AgentFallback
    tool calls in a single message. Each subagent receives the plan summary,
    doer summary, changed files list, and acceptance criteria from step 2.
 
@@ -71,8 +91,12 @@ reviewer — report all findings but do NOT fix code or modify any files.
 
    ## Context
    - Plan summary: <from step 2 Call 1>
-   - Doer summary: <from step 2 Call 2>
-   - Changed files: <from step 2 Call 3>
+   - RED commit (tests): <from step 2 Call 2>
+   - GREEN commit (implementation): <from step 2 Call 3>
+   - Legacy doer commit (if no red/green): <from step 2 Call 4>
+
+   NOTE: Step 2 provides file lists and stats only. Use Read/Glob to
+   fetch actual file contents for any file you need to review.
 
    ## Your Focus
    <specific focus area — see below>
@@ -158,8 +182,13 @@ reviewer — report all findings but do NOT fix code or modify any files.
 
      **Phase 1 — Before snapshot (baseline):**
      1. Save the current HEAD: `current_head=$(git rev-parse HEAD)`
-     2. Checkout the commit BEFORE the doer's changes:
-        `git stash && git checkout HEAD~1`
+     2. Find the plan commit (the commit just before the doer's work) and
+        checkout it as the baseline:
+        ```
+        baseline=$(git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: $ITERATION" \
+            --all-match --format="%H" -1)
+        git stash && git checkout "$baseline"
+        ```
      3. Install dependencies: `$SCRIPTS_DIR/install-deps`
      4. Start the dev server on `$LOOPER_DEV_PORT` in background.
      5. Exercise the specific endpoints/pages related to the task (see
@@ -201,9 +230,25 @@ reviewer — report all findings but do NOT fix code or modify any files.
    - Report: any runtime errors, broken endpoints, UI regressions, unfixed
      ticket scenarios, unexpected behavior, or crashes. Each issue is a BLOCKER.
 
-   All five MUST be launched as separate AgentFallback tool calls in one message.
+   **Subagent 6 — TDD Sequence Verifier:**
+   - Verify the `do-red` commit exists and contains ONLY test files
+     (files matching common test patterns: `*test*`, `*spec*`, `__tests__/*`,
+     `tests/*`, `*_test.*`). If source files are in the red commit, flag as
+     [BLOCKER]: "RED commit contains implementation files — tests must be
+     written before implementation."
+   - Verify the `do-green` commit exists and contains ONLY source files
+     (no new test files). Minor test fixes (typo, assertion correction) are
+     acceptable as [WARNING], but new test files are [BLOCKER].
+   - Verify the `do-red` commit was created BEFORE `do-green` (check commit
+     timestamps or ancestry: `git merge-base --is-ancestor $red_hash $green_hash`).
+   - If only a legacy `do` commit exists (no red/green split), flag as
+     [WARNING]: "TDD sequence not followed — single commit instead of
+     red-green split."
+   - Report: TDD compliance issues, file classification, severity
 
-4. **Collect and consolidate results** — After all 5 subagents complete:
+   All six MUST be launched as separate AgentFallback tool calls in one message.
+
+4. **Collect and consolidate results** — After all 6 subagents complete:
    - Gather all BLOCKER issues (must fix before PASS)
    - Gather all WARNING issues (should fix)
    - Note SUGGESTION issues for the verdict body only
