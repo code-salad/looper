@@ -155,8 +155,16 @@ reviewer — report all findings but do NOT fix code or modify any files.
    - Review correctness: does the code match the plan's acceptance criteria?
    - Review edge cases: null checks, error handling, boundary conditions, empty
      inputs, concurrent access, resource cleanup
+   - **Tech stack compliance check.** Read the plan's "Tech Stack Constraints"
+     section (if present) and verify the Doer's implementation uses ONLY the
+     specified technologies. Flag each violation as [BLOCKER] — Tech Stack
+     Compliance failure if:
+     - Files from a different ecosystem are present (e.g., package.json when
+       the constraint says Rust-only)
+     - Dependencies from the wrong package manager were installed
+     - A framework other than the one specified was scaffolded
    - Report: logic errors, missing error handling, unmet acceptance criteria,
-     severity, file+line, suggested fixes
+     tech stack compliance violations, severity, file+line, suggested fixes
 
    **Subagent 4 — Code Quality & Maintainability Reviewer:**
    - Run `$SCRIPTS_DIR/run-lint 2>&1; echo "EXIT_CODE=$?"`

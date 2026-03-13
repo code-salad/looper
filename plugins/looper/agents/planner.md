@@ -73,6 +73,8 @@ modify any project files — only commit a plan as a git commit message.
    - **Tests to write first** (describe specific test cases with expected
      behavior — these will be written BEFORE implementation)
    - Acceptance criteria (how the Checker will know the task is done)
+   - **Tech Stack Constraints** (list any framework, language, or architecture
+     requirements from the issue body that the implementation must follow)
    - Any risks or considerations
 
    **Scope discipline — TDD-sized slices:** Plan the smallest meaningful slice,
@@ -210,6 +212,15 @@ The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.
   dynamic context, derive acceptance criteria from the user's actual reported
   scenario — not just from code reading. The plan must address the specific
   behavior described in the issue.
+- **Tech stack compliance.** If the issue body specifies a tech stack,
+  framework, language, or architecture constraint (e.g., "use Axum + askama",
+  "no JS framework", "same binary"), the plan MUST respect those constraints
+  exactly. Extract tech stack requirements from the issue body and list them
+  explicitly in the plan as "Tech Stack Constraints" before the implementation
+  steps. If the detected project stack (from detect-stack) conflicts with the
+  issue's specified stack, follow the issue — it represents the user's intent.
+  Never substitute a different framework or language than what the issue
+  specifies.
 - **Include reproduction results.** If Track D (Reproduce/Observe) ran, include
   the observed current behavior in the plan so the Doer understands what is
   actually happening vs. what should happen.
