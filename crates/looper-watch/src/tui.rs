@@ -35,6 +35,16 @@ pub fn format_elapsed(seconds: i64) -> String {
     }
 }
 
+/// Truncate a title to fit within a column, adding "…" if needed.
+fn truncate_title(title: &str, max_chars: usize) -> String {
+    if title.chars().count() <= max_chars {
+        title.to_string()
+    } else {
+        let truncated: String = title.chars().take(max_chars.saturating_sub(1)).collect();
+        format!("{truncated}…")
+    }
+}
+
 pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -62,27 +72,180 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
 
         terminal.draw(|f| {
             let area = f.area();
-            // Reserve fixed space, then split the remainder proportionally
-            // to prevent Min(8) vs Min(8) starvation/overlap.
-            let fixed = 3 + 10 + 1; // header + sessions + footer
+
+            // Categorize issues into kanban columns
+            let mut col_open: Vec<Line> = Vec::new();
+            let mut col_running: Vec<Line> = Vec::new();
+            let mut col_done: Vec<Line> = Vec::new();
+
+            for issue in &open_issues {
+                let session = state::session_name(&repo, issue.number);
+                let labels: String = issue
+                    .labels
+                    .iter()
+                    .map(|l| l.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                if in_progress.contains(&issue.number) {
+                    // Running column
+                    let elapsed_str = tmux_sessions
+                        .iter()
+                        .find(|(s, _)| s == &session)
+                        .and_then(|(_, ts)| *ts)
+                        .map(|ts| format_elapsed(now_ts - ts))
+                        .unwrap_or_default();
+                    col_running.push(Line::from(vec![
+                        Span::styled(
+                            format!("#{}", issue.number),
+                            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(format!(" {}", truncate_title(&issue.title, 20))),
+                    ]));
+                    if !elapsed_str.is_empty() {
+                        col_running.push(Line::from(Span::styled(
+                            format!("  ⏱ {elapsed_str}"),
+                            Style::default().fg(Color::Yellow),
+                        )));
+                    }
+                    if !labels.is_empty() {
+                        col_running.push(Line::from(Span::styled(
+                            format!("  {labels}"),
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                    col_running.push(Line::from(""));
+                } else if history.iter().any(|e| {
+                    e.issue_number == issue.number
+                        && (e.outcome.starts_with("success")
+                            || e.outcome.starts_with("completed"))
+                }) {
+                    // Done column
+                    let elapsed_str = history
+                        .iter()
+                        .find(|e| {
+                            e.issue_number == issue.number
+                                && (e.outcome.starts_with("success")
+                                    || e.outcome.starts_with("completed"))
+                        })
+                        .and_then(|entry| {
+                            entry
+                                .started_at
+                                .as_deref()
+                                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                                .and_then(|start| {
+                                    chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+                                        .ok()
+                                        .map(|end| format_elapsed((end - start).num_seconds()))
+                                })
+                        })
+                        .unwrap_or_default();
+                    col_done.push(Line::from(vec![
+                        Span::styled(
+                            format!("#{}", issue.number),
+                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(format!(" {}", truncate_title(&issue.title, 20))),
+                    ]));
+                    if !elapsed_str.is_empty() {
+                        col_done.push(Line::from(Span::styled(
+                            format!("  ⏱ {elapsed_str}"),
+                            Style::default().fg(Color::Green),
+                        )));
+                    }
+                    if !labels.is_empty() {
+                        col_done.push(Line::from(Span::styled(
+                            format!("  {labels}"),
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                    col_done.push(Line::from(""));
+                } else {
+                    // Open column
+                    col_open.push(Line::from(vec![
+                        Span::styled(
+                            format!("#{}", issue.number),
+                            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(format!(" {}", truncate_title(&issue.title, 20))),
+                    ]));
+                    if !labels.is_empty() {
+                        col_open.push(Line::from(Span::styled(
+                            format!("  {labels}"),
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                    col_open.push(Line::from(""));
+                }
+            }
+
+            // Also show done entries from history that aren't in open_issues
+            for entry in &history {
+                if (entry.outcome.starts_with("success") || entry.outcome.starts_with("completed"))
+                    && !open_issues.iter().any(|i| i.number == entry.issue_number)
+                {
+                    let elapsed_str = entry
+                        .started_at
+                        .as_deref()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .and_then(|start| {
+                            chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+                                .ok()
+                                .map(|end| format_elapsed((end - start).num_seconds()))
+                        })
+                        .unwrap_or_default();
+                    col_done.push(Line::from(vec![
+                        Span::styled(
+                            format!("#{}", entry.issue_number),
+                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(format!(" {}", truncate_title(&entry.issue_title, 20))),
+                    ]));
+                    if !elapsed_str.is_empty() {
+                        col_done.push(Line::from(Span::styled(
+                            format!("  ⏱ {elapsed_str}"),
+                            Style::default().fg(Color::Green),
+                        )));
+                    }
+                    col_done.push(Line::from(""));
+                }
+            }
+
+            // Count items per column (non-empty lines, excluding spacers)
+            let count_open = open_issues
+                .iter()
+                .filter(|i| {
+                    !in_progress.contains(&i.number)
+                        && !history.iter().any(|e| {
+                            e.issue_number == i.number
+                                && (e.outcome.starts_with("success")
+                                    || e.outcome.starts_with("completed"))
+                        })
+                })
+                .count();
+            let count_running = in_progress.len();
+            let count_done = col_done.iter().filter(|l| !l.spans.is_empty() && l.spans[0].content.starts_with('#')).count();
+
+            // Layout: header, kanban board, sessions, log, footer
+            let fixed = 3 + 8 + 1; // header + sessions + footer
             let flexible = area.height.saturating_sub(fixed as u16);
-            let issues_h = (flexible * 40 / 100).max(5); // 40% of flexible space
-            let log_h = flexible.saturating_sub(issues_h).max(5); // rest
+            let board_h = (flexible * 50 / 100).max(6);
+            let log_h = flexible.saturating_sub(board_h).max(4);
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),         // header
-                    Constraint::Length(issues_h),   // issues table
-                    Constraint::Length(10),         // tmux sessions
-                    Constraint::Length(log_h),      // log
-                    Constraint::Length(1),          // footer
+                    Constraint::Length(3),        // header
+                    Constraint::Length(board_h),   // kanban board
+                    Constraint::Length(8),         // tmux sessions
+                    Constraint::Length(log_h),     // log
+                    Constraint::Length(1),         // footer
                 ])
                 .split(area);
 
             // Header
             let poll_info = format!(
-                " {} | last poll: {} | next poll: {} | active: {} ",
+                " {} | last: {} | next: {} | active: {} ",
                 repo,
                 last_poll.as_deref().unwrap_or("—"),
                 next_poll.as_deref().unwrap_or("—"),
@@ -100,87 +263,65 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
             .block(Block::default().borders(Borders::ALL));
             f.render_widget(header, chunks[0]);
 
-            // Issues table
-            let header_row = Row::new(["#", "Title", "Status", "Labels"]).style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            );
+            // Kanban board: 3 columns
+            let board_cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(34),
+                    Constraint::Percentage(33),
+                ])
+                .split(chunks[1]);
 
-            let rows: Vec<Row> = if open_issues.is_empty() {
-                vec![Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "No open unassigned issues",
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                    Cell::from(""),
-                    Cell::from(""),
-                ])]
-            } else {
-                open_issues.iter().map(|issue| {
-                    let session = state::session_name(&repo, issue.number);
-                    let status_text = if in_progress.contains(&issue.number) {
-                        // Find the session's created timestamp from our snapshot
-                        let elapsed_str = tmux_sessions
-                            .iter()
-                            .find(|(s, _)| s == &session)
-                            .and_then(|(_, ts)| *ts)
-                            .map(|ts| format!("  {}", format_elapsed(now_ts - ts)))
-                            .unwrap_or_default();
-                        let text = format!("⚙ running{elapsed_str}");
-                        Span::styled(text, Style::default().fg(Color::Yellow))
-                    } else if let Some(entry) = history.iter().find(|e| {
-                        e.issue_number == issue.number
-                            && (e.outcome.starts_with("success")
-                                || e.outcome.starts_with("completed"))
-                    }) {
-                        // Compute duration from started_at to timestamp
-                        let elapsed_str = entry
-                            .started_at
-                            .as_deref()
-                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                            .and_then(|start| {
-                                chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
-                                    .ok()
-                                    .map(|end| {
-                                        let secs = (end - start).num_seconds();
-                                        format!("  {}", format_elapsed(secs))
-                                    })
-                            })
-                            .unwrap_or_default();
-                        let text = format!("✓ done{elapsed_str}");
-                        Span::styled(text, Style::default().fg(Color::Green))
-                    } else {
-                        Span::styled("○ open", Style::default().fg(Color::White))
-                    };
-                    let labels: String = issue
-                        .labels
-                        .iter()
-                        .map(|l| l.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    Row::new(vec![
-                        Cell::from(format!("#{}", issue.number)),
-                        Cell::from(issue.title.as_str()),
-                        Cell::from(status_text),
-                        Cell::from(labels),
-                    ])
-                }).collect()
-            };
+            // Empty state fallback
+            if col_open.is_empty() {
+                col_open.push(Line::from(Span::styled(
+                    "No issues",
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+            if col_running.is_empty() {
+                col_running.push(Line::from(Span::styled(
+                    "No active sessions",
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+            if col_done.is_empty() {
+                col_done.push(Line::from(Span::styled(
+                    "No completed issues",
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
 
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Length(6),
-                    Constraint::Min(30),
-                    Constraint::Length(24),
-                    Constraint::Length(20),
-                ],
-            )
-            .header(header_row)
-            .block(Block::default().title(" Issues ").borders(Borders::ALL));
-            f.render_widget(table, chunks[1]);
+            let open_panel = Paragraph::new(col_open)
+                .block(
+                    Block::default()
+                        .title(format!(" ○ Open ({count_open}) "))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::White)),
+                )
+                .wrap(Wrap { trim: true });
+            f.render_widget(open_panel, board_cols[0]);
+
+            let running_panel = Paragraph::new(col_running)
+                .block(
+                    Block::default()
+                        .title(format!(" ⚙ Running ({count_running}) "))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Yellow)),
+                )
+                .wrap(Wrap { trim: true });
+            f.render_widget(running_panel, board_cols[1]);
+
+            let done_panel = Paragraph::new(col_done)
+                .block(
+                    Block::default()
+                        .title(format!(" ✓ Done ({count_done}) "))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Green)),
+                )
+                .wrap(Wrap { trim: true });
+            f.render_widget(done_panel, board_cols[2]);
 
             // Tmux sessions
             let session_rows: Vec<Row> = tmux_sessions
