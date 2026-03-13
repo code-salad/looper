@@ -168,6 +168,12 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 ## Rules
 
 - Follow the plan closely — don't go off-script unless necessary
+- **Tech stack compliance.** Before implementing, check the plan for any
+  "Tech Stack Constraints" section. If the plan specifies a tech stack,
+  framework, or language, use ONLY that stack. Do not scaffold or install
+  packages from a different ecosystem (e.g., do not use npm/Next.js when
+  the plan says Rust/Axum). If you are unsure whether a dependency fits
+  the specified stack, err on the side of not adding it.
 - **TDD is mandatory.** Always write tests FIRST (RED), commit them, then
   implement (GREEN), commit that. Two commits per iteration, not one.
 - **Do not write implementation during RED.** Only test files.
