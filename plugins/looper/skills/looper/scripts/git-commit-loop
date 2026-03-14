@@ -68,7 +68,10 @@ fi
 
 # Branch guard: refuse to commit on protected branches
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
-if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
+# Detect the repo's default branch from the remote HEAD symref, fall back to main/master
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "")
+if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" || \
+      ( -n "$DEFAULT_BRANCH" && "$CURRENT_BRANCH" == "$DEFAULT_BRANCH" ) ]]; then
     echo "ERROR: Refusing to commit on protected branch '$CURRENT_BRANCH'." >&2
     echo "Looper must run inside a worktree on a loop/* branch." >&2
     echo "Use setup-worktree to create an isolated worktree first." >&2
