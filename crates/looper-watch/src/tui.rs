@@ -73,6 +73,19 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
         terminal.draw(|f| {
             let area = f.area();
 
+            // Minimum terminal size guard — show a message instead of a broken layout
+            if area.height < 16 || area.width < 40 {
+                let msg = Paragraph::new("Terminal too small. Please resize (min 40x16).")
+                    .style(Style::default().fg(Color::Red));
+                f.render_widget(msg, area);
+                return;
+            }
+
+            // Compute adaptive title truncation width based on column width
+            // Each kanban column is ~1/3 of the terminal; subtract 2 for borders and 6 for "#NNN "
+            let col_inner_width = (area.width / 3).saturating_sub(2) as usize;
+            let title_max = col_inner_width.saturating_sub(6).max(10);
+
             // Categorize issues into kanban columns
             let mut col_open: Vec<Line> = Vec::new();
             let mut col_running: Vec<Line> = Vec::new();
@@ -100,7 +113,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                             format!("#{}", issue.number),
                             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                         ),
-                        Span::raw(format!(" {}", truncate_title(&issue.title, 20))),
+                        Span::raw(format!(" {}", truncate_title(&issue.title, title_max))),
                     ]));
                     if !elapsed_str.is_empty() {
                         col_running.push(Line::from(Span::styled(
@@ -110,7 +123,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     }
                     if !labels.is_empty() {
                         col_running.push(Line::from(Span::styled(
-                            format!("  {labels}"),
+                            format!("  {}", truncate_title(&labels, col_inner_width.saturating_sub(2))),
                             Style::default().fg(Color::DarkGray),
                         )));
                     }
@@ -145,7 +158,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                             format!("#{}", issue.number),
                             Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                         ),
-                        Span::raw(format!(" {}", truncate_title(&issue.title, 20))),
+                        Span::raw(format!(" {}", truncate_title(&issue.title, title_max))),
                     ]));
                     if !elapsed_str.is_empty() {
                         col_done.push(Line::from(Span::styled(
@@ -155,7 +168,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     }
                     if !labels.is_empty() {
                         col_done.push(Line::from(Span::styled(
-                            format!("  {labels}"),
+                            format!("  {}", truncate_title(&labels, col_inner_width.saturating_sub(2))),
                             Style::default().fg(Color::DarkGray),
                         )));
                     }
@@ -167,11 +180,11 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                             format!("#{}", issue.number),
                             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
                         ),
-                        Span::raw(format!(" {}", truncate_title(&issue.title, 20))),
+                        Span::raw(format!(" {}", truncate_title(&issue.title, title_max))),
                     ]));
                     if !labels.is_empty() {
                         col_open.push(Line::from(Span::styled(
-                            format!("  {labels}"),
+                            format!("  {}", truncate_title(&labels, col_inner_width.saturating_sub(2))),
                             Style::default().fg(Color::DarkGray),
                         )));
                     }
@@ -199,7 +212,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                             format!("#{}", entry.issue_number),
                             Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                         ),
-                        Span::raw(format!(" {}", truncate_title(&entry.issue_title, 20))),
+                        Span::raw(format!(" {}", truncate_title(&entry.issue_title, title_max))),
                     ]));
                     if !elapsed_str.is_empty() {
                         col_done.push(Line::from(Span::styled(
@@ -226,24 +239,30 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
             let count_running = in_progress.len();
             let count_done = col_done.iter().filter(|l| !l.spans.is_empty() && l.spans[0].content.starts_with('#')).count();
 
+            // Adaptive session panel height: 3 (border + header) + rows, clamped to [4, 10]
+            let session_rows_count = tmux_sessions.len() as u16;
+            let session_h = (session_rows_count + 3).clamp(4, 10);
+
             // Layout: header, kanban board, sessions, log, footer
-            let fixed = 3 + 8 + 1; // header + sessions + footer
-            let flexible = area.height.saturating_sub(fixed as u16);
+            let fixed = 3 + session_h + 1; // header + sessions + footer
+            let flexible = area.height.saturating_sub(fixed);
             let board_h = (flexible * 50 / 100).max(6);
             let log_h = flexible.saturating_sub(board_h).max(4);
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),        // header
-                    Constraint::Length(board_h),   // kanban board
-                    Constraint::Length(8),         // tmux sessions
-                    Constraint::Length(log_h),     // log
-                    Constraint::Length(1),         // footer
+                    Constraint::Length(3),          // header
+                    Constraint::Length(board_h),     // kanban board
+                    Constraint::Length(session_h),   // tmux sessions (adaptive)
+                    Constraint::Length(log_h),       // log
+                    Constraint::Length(1),           // footer
                 ])
                 .split(area);
 
-            // Header
+            // Header — truncate to fit terminal width
+            let header_label = "looper-watch";
+            let header_inner_width = area.width.saturating_sub(2) as usize; // minus borders
             let poll_info = format!(
                 " {} | last: {} | next: {} | active: {} ",
                 repo,
@@ -251,14 +270,16 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                 next_poll.as_deref().unwrap_or("—"),
                 in_progress.len(),
             );
+            let max_poll_len = header_inner_width.saturating_sub(header_label.len());
+            let poll_display = truncate_title(&poll_info, max_poll_len);
             let header = Paragraph::new(Line::from(vec![
                 Span::styled(
-                    "looper-watch",
+                    header_label,
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::raw(poll_info),
+                Span::raw(poll_display),
             ]))
             .block(Block::default().borders(Borders::ALL));
             f.render_widget(header, chunks[0]);
@@ -323,7 +344,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                 .wrap(Wrap { trim: true });
             f.render_widget(done_panel, board_cols[2]);
 
-            // Tmux sessions
+            // Tmux sessions — responsive column widths
             let session_rows: Vec<Row> = tmux_sessions
                 .iter()
                 .map(|(s, created_ts)| {
@@ -340,9 +361,9 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
             let session_table = Table::new(
                 session_rows,
                 [
-                    Constraint::Length(40),
-                    Constraint::Min(30),
-                    Constraint::Length(16),
+                    Constraint::Percentage(40),
+                    Constraint::Percentage(45),
+                    Constraint::Percentage(15),
                 ],
             )
             .header(
@@ -365,11 +386,13 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                 .rev()
                 .take(chunks[3].height.saturating_sub(2) as usize)
                 .rev()
-                .map(|l| Line::from(l.as_str()))
+                .map(|l| {
+                    let max_w = chunks[3].width.saturating_sub(2) as usize;
+                    Line::from(truncate_title(l, max_w))
+                })
                 .collect();
             let log_widget = Paragraph::new(visible_lines)
-                .block(Block::default().title(" Log ").borders(Borders::ALL))
-                .wrap(Wrap { trim: false });
+                .block(Block::default().title(" Log ").borders(Borders::ALL));
             f.render_widget(log_widget, chunks[3]);
 
             // Footer
