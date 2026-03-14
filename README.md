@@ -4,7 +4,7 @@
 
 Three AI agents — Planner, Doer, Checker — iterate in a loop until your code passes all checks, then automatically create a PR.
 
-[![Version](https://img.shields.io/badge/version-0.26.2-blue)](.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.33.0-blue)](.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](.github/workflows/ci.yml)
 
