@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# bump-version — Bump semver versions across all plugin manifests and Cargo.toml files.
+# Usage: bump-version [major|minor|patch]
+# Default: minor
+
+BUMP_TYPE="${1:-minor}"
+
+if [[ "$BUMP_TYPE" != "major" && "$BUMP_TYPE" != "minor" && "$BUMP_TYPE" != "patch" ]]; then
+    echo "Usage: bump-version [major|minor|patch]" >&2
+    echo "  Default: minor" >&2
+    exit 1
+fi
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
+# bump_semver — Increment a semver string by the given component
+# Args: $1 = current version (e.g. "0.32.0"), $2 = bump type
+bump_semver() {
+    local ver="$1"
+    local type="$2"
+    local major minor patch
+    IFS='.' read -r major minor patch <<< "$ver"
+
+    case "$type" in
+        major) major=$((major + 1)); minor=0; patch=0 ;;
+        minor) minor=$((minor + 1)); patch=0 ;;
+        patch) patch=$((patch + 1)) ;;
+    esac
+
+    echo "${major}.${minor}.${patch}"
+}
+
+# bump_json — Bump "version" field in a JSON file
+# Args: $1 = file path
+bump_json() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        return
+    fi
+
+    local current new
+    current=$(jq -r '.version' "$file")
+    if [ "$current" = "null" ] || [ -z "$current" ]; then
+        return
+    fi
+    new=$(bump_semver "$current" "$BUMP_TYPE")
+    # Use jq to update in place
+    local tmp
+    tmp=$(mktemp)
+    jq --arg v "$new" '.version = $v' "$file" > "$tmp" && mv "$tmp" "$file"
+    echo "  $file: $current -> $new"
+}
+
+# bump_marketplace — Bump all "version" fields in marketplace.json plugins array
+bump_marketplace() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        return
+    fi
+
+    local tmp
+    tmp=$(mktemp)
+    local count
+    count=$(jq '.plugins | length' "$file")
+
+    for ((i = 0; i < count; i++)); do
+        local current new
+        current=$(jq -r ".plugins[$i].version" "$file")
+        if [ "$current" = "null" ] || [ -z "$current" ]; then
+            continue
+        fi
+        new=$(bump_semver "$current" "$BUMP_TYPE")
+        jq --arg v "$new" --argjson idx "$i" '.plugins[$idx].version = $v' "$file" > "$tmp" && mv "$tmp" "$file"
+        echo "  $file [plugin $i]: $current -> $new"
+    done
+}
+
+# bump_cargo — Bump version in a Cargo.toml file
+# Args: $1 = file path
+bump_cargo() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        return
+    fi
+
+    local current
+    current=$(grep -m1 '^version' "$file" | sed 's/^version *= *"\(.*\)"/\1/')
+    if [ -z "$current" ]; then
+        return
+    fi
+    local new
+    new=$(bump_semver "$current" "$BUMP_TYPE")
+    sed -i "0,/^version *= *\"${current}\"/s//version = \"${new}\"/" "$file"
+    echo "  $file: $current -> $new"
+}
+
+echo "Bumping all versions by $BUMP_TYPE..."
+
+# JSON plugin manifests
+bump_json "$REPO_ROOT/.claude-plugin/plugin.json"
+bump_json "$REPO_ROOT/plugins/looper/.claude-plugin/plugin.json"
+bump_json "$REPO_ROOT/plugins/fallback-agent/.claude-plugin/plugin.json"
+bump_json "$REPO_ROOT/plugins/webscraping/.claude-plugin/plugin.json"
+
+# Marketplace manifest (array of plugins)
+bump_marketplace "$REPO_ROOT/.claude-plugin/marketplace.json"
+
+# Cargo.toml files
+bump_cargo "$REPO_ROOT/crates/fallback-agent/Cargo.toml"
+bump_cargo "$REPO_ROOT/crates/looper-watch/Cargo.toml"
+
+echo "Done."
