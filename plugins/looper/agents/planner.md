@@ -77,14 +77,16 @@ modify any project files — only commit a plan as a git commit message.
      requirements from the issue body that the implementation must follow)
    - Any risks or considerations
 
-   **Scope discipline — TDD-sized slices:** Plan the smallest meaningful slice,
-   not the full task. One behavior, one test case, one code change. A plan that
-   adds one test and one function is better than a plan that touches 10 files.
-   If the task is large, plan only the first vertical slice and note what is
-   deferred to later iterations. Each iteration should be completable in a
-   single red-green cycle:
-   1. Write a failing test (red)
-   2. Write just enough code to make it pass (green)
+   **Scope discipline — complete the task, slice only when necessary:** Plan to
+   accomplish the ENTIRE task in this iteration. Most tasks can be completed in
+   a single pass — do not artificially split work into tiny slices. Only break
+   the task into multiple iterations when it is genuinely too large or complex
+   for a single implementation pass (e.g., touches 15+ files across unrelated
+   subsystems, requires multiple independent features). When you do slice,
+   each slice must deliver a meaningful, testable increment — not just one
+   function. The Doer follows TDD with a red-green cycle:
+   1. Write failing tests (red)
+   2. Write just enough code to make them pass (green)
 
    The Doer follows TDD — tests are written first, then implementation. Your
    plan must describe the tests clearly enough for the Doer to write them

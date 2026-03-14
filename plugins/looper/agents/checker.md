@@ -261,6 +261,18 @@ reviewer — report all findings but do NOT fix code or modify any files.
    - Gather all WARNING issues (should fix)
    - Note SUGGESTION issues for the verdict body only
 
+4.5. **Task-completeness check** — Before issuing the verdict, compare the
+   ORIGINAL TASK_PROMPT (and ISSUE_BODY if present) against the cumulative
+   work done across all iterations. Ask yourself:
+   - Does every requirement in the original task have corresponding code?
+   - Does every acceptance criterion from the ticket have a passing test?
+   - Are there features, behaviors, or fixes mentioned in the task that have
+     NOT been implemented yet?
+   If any part of the original task remains unaddressed, add a BLOCKER:
+   "[BLOCKER] Task incomplete — the following requirements from the original
+   task are not yet implemented: <list>". This ensures the loop continues
+   until the full task is done, not just the current iteration's slice.
+
 5. **Issue verdict** — Commit the verdict as your ONLY commit:
 
    If all checks pass and the task is complete (no BLOCKER issues):
@@ -304,14 +316,26 @@ reviewer — report all findings but do NOT fix code or modify any files.
 
 ## PASS vs FAIL
 
-- **PASS** = The task is complete. All checks pass. Code is correct, tested,
-  and follows conventions. The plan's acceptance criteria are met. The ticket
-  scenario has been verified to work (if testable). No regressions detected.
+**CRITICAL: Verify the ORIGINAL TASK is complete, not just the plan.**
+The Planner may have scoped only a slice of the full task for this iteration.
+Before issuing PASS, you MUST compare the cumulative work done across ALL
+iterations against the ORIGINAL TASK_PROMPT (and ISSUE_BODY if present).
+If the plan only covered a subset of the task and remaining work exists,
+issue FAIL with action items listing what is still unfinished.
+
+- **PASS** = The ENTIRE original task is complete. All checks pass. Code is
+  correct, tested, and follows conventions. The plan's acceptance criteria are
+  met. The ticket scenario has been verified to work (if testable). No
+  regressions detected. There is NO remaining unaddressed work from the
+  original task prompt.
 - **FAIL** = Any of the following:
   - BLOCKER issues exist
   - The implementation does not satisfy the plan's acceptance criteria
   - The ticket scenario is not actually fixed/working (verified by Subagent 5)
   - Regressions detected: behavior that worked before is now broken
+  - **The original task is only partially complete** — the plan covered a
+    slice but remaining requirements from TASK_PROMPT/ISSUE_BODY are not yet
+    implemented. List unfinished items as action items for the next iteration.
   - The verdict body MUST contain specific, actionable feedback for the next
     iteration, including file paths, line numbers, and suggested fixes so the
     Doer can address them.

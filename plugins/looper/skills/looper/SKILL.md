@@ -77,7 +77,7 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
   6. If new conflicts appear, repeat until the rebase completes.
 - **Exit 2 (error):** Warn and continue — the loop can still proceed without sync.
 
-### 4c. Assign GitHub issue and fetch issue body (if referenced)
+### 4c. Fetch issue body and check blocking deps (if referenced)
 
 Check if `$ARGUMENTS` contains a GitHub issue reference. Look for:
 - A GitHub issue URL matching `https://github.com/.+/issues/(\d+)`
@@ -86,7 +86,55 @@ Check if `$ARGUMENTS` contains a GitHub issue reference. Look for:
 
 If an issue reference is found, extract the issue number and:
 
-1. **Assign the issue:**
+1. **Fetch the full issue metadata** for blocking checks and agent context:
+   ```bash
+   ISSUE_JSON=$(gh issue view <NUMBER> --json title,body,labels,state)
+   # If the issue URL included a repo (owner/repo), add: --repo owner/repo
+   ```
+   - If fetch fails, set `ISSUE_BODY=""` and skip to step 5 (do not abort).
+
+2. **Check for blocking dependencies** — apply the same three checks used by
+   `looper-issue` and `looper-watch`. If any check triggers, **abort** with a
+   clear message instead of assigning and working on a blocked issue.
+
+   #### Label-based blocking
+
+   Skip (block) the issue if any of its labels contain "blocked" or
+   "dependencies" (case-insensitive match).
+
+   #### Task-list dependency references
+
+   Parse the issue body for lines matching either of these patterns:
+   - `- [ ] Depends on #N`
+   - `- [ ] #N`
+
+   (where `N` is one or more digits)
+
+   For each referenced issue number `N` found, check whether it is still open:
+
+   ```bash
+   gh issue view N --json state --jq '.state'
+   ```
+
+   If the result is `"OPEN"`, the issue is blocked.
+
+   #### "Blocked by" references
+
+   Parse the issue body for lines matching the pattern:
+   - `Blocked by #N` (case-insensitive)
+
+   For each referenced issue number `N`, check whether it is still open:
+
+   ```bash
+   gh issue view N --json state --jq '.state'
+   ```
+
+   If the result is `"OPEN"`, the issue is blocked.
+
+   **If blocked:** Log "Issue #<NUMBER> is blocked by open dependencies. Aborting."
+   and **abort** — do NOT assign or proceed with the loop.
+
+3. **Assign the issue** (only after confirming it is not blocked):
    ```bash
    gh issue edit <NUMBER> --add-assignee @me
    # If the issue URL included a repo (owner/repo), add: --repo owner/repo
@@ -95,7 +143,7 @@ If an issue reference is found, extract the issue number and:
    - **Failure:** Warn "Could not assign issue #<NUMBER>. Continuing anyway."
      Do NOT abort — the loop should proceed regardless.
 
-2. **Fetch the full issue body** for use as grounding context by all agents:
+4. **Format the issue body** for use as grounding context by all agents:
    ```bash
    ISSUE_BODY=$(gh issue view <NUMBER> --json title,body,labels --template '## Issue #{{.number}}: {{.title}}{{"\n\n"}}### Labels{{"\n"}}{{range .labels}}- {{.name}}{{"\n"}}{{end}}{{"\n"}}### Description{{"\n"}}{{.body}}')
    ```
