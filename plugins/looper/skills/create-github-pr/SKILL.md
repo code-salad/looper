@@ -404,16 +404,50 @@ Check status manually: gh pr checks $PR_NUMBER
 
 ---
 
-## Phase 6: Squash Merge (if CI passed)
+## Phase 6: Merge (if CI passed)
 
-After CI passes, squash-merge the PR and clean up.
+After CI passes, merge the PR using the appropriate strategy and clean up.
 
-### 6a. Squash merge
+### 6a-pre. Detect DB migrations in changeset
+
+Before merging, check whether the PR contains DB migration files. This determines
+which merge strategy to use.
+
+```bash
+# Detect if PR contains DB migration files
+CHANGED_FILES=$(git diff --name-only "$BASE_REF"...HEAD)
+HAS_MIGRATIONS=false
+
+# Check for common migration directory patterns
+if echo "$CHANGED_FILES" | grep -qiE \
+    '(migrations?/|db/migrate|alembic/versions|flyway|prisma/migrations|drizzle/|knex/migrations|sequelize/migrations|typeorm/migrations|migrate.*\.sql$|migration.*\.sql$)'; then
+    HAS_MIGRATIONS=true
+fi
+```
+
+Migration patterns detected:
+- `migrations/` or `migration/` — generic migration directories (Django, Flask, Knex, Sequelize, TypeORM, etc.)
+- `db/migrate/` — Rails ActiveRecord migrations
+- `alembic/versions/` — Python/Alembic migrations
+- `prisma/migrations/` — Prisma ORM migrations
+- `drizzle/` — Drizzle ORM migration files
+- `knex/migrations/` — Knex.js migrations
+- `sequelize/migrations/` — Sequelize migrations
+- `typeorm/migrations/` — TypeORM migrations
+- `flyway/` — Flyway SQL migrations
+- Files matching `migrate*.sql` or `migration*.sql`
+
+### 6a. Merge using appropriate strategy
 
 Only proceed if ALL CI checks passed in Phase 5. If any check failed or timed out, skip this phase entirely.
 
 ```bash
-gh pr merge $PR_NUMBER --squash --delete-branch
+if [ "$HAS_MIGRATIONS" = true ]; then
+    echo "DB migrations detected — using regular merge to preserve migration commit history."
+    gh pr merge $PR_NUMBER --merge --delete-branch
+else
+    gh pr merge $PR_NUMBER --squash --delete-branch
+fi
 ```
 
 If the merge fails (e.g., merge conflicts, branch protection rules), report the error to the user and do NOT retry. The user may need to resolve conflicts or adjust branch protection settings.
@@ -437,9 +471,15 @@ If worktree removal fails, warn but do not abort — the merge already succeeded
 
 ### 6c. Report final status
 
-**If merge succeeded:**
+**If merge succeeded (no migrations detected — squash merge):**
 ```
 ✅ PR #<number> squash-merged into <BASE_BRANCH> and branch deleted.
+<PR URL>
+```
+
+**If merge succeeded (DB migrations detected — regular merge):**
+```
+✅ PR #<number> merged (non-squash — DB migrations detected) into <BASE_BRANCH> and branch deleted.
 <PR URL>
 ```
 
@@ -448,8 +488,9 @@ If worktree removal fails, warn but do not abort — the merge already succeeded
 ⚠️ PR #<number> CI passed but merge failed: <error reason>
 <PR URL>
 
-Merge manually: gh pr merge <number> --squash
+Merge manually: gh pr merge <number> --merge
 ```
+(Use `--squash` instead of `--merge` if no migrations were detected.)
 
 ---
 
@@ -468,8 +509,9 @@ Merge manually: gh pr merge <number> --squash
 | CI checks time out (>20 min) | Report timeout, print PR URL, give manual check command |
 | No CI checks configured | Note "no CI checks configured", print PR URL, complete normally |
 | `gh pr checks --watch` not supported | Fall back to manual polling loop (30s intervals, 40 attempts) |
-| Squash merge fails (conflicts) | Report error, print manual merge command, do NOT retry |
+| Squash merge fails (conflicts) | Report error, print manual merge command (`--squash` or `--merge` depending on migration detection), do NOT retry |
 | Squash merge fails (branch protection) | Report error, suggest user review branch protection settings |
+| Regular merge fails (migrations detected) | Report error, print manual merge command `gh pr merge <number> --merge`, do NOT retry |
 | Worktree cleanup fails | Warn but do not abort — merge already succeeded |
 
 ---

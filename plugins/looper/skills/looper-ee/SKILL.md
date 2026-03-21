@@ -15,7 +15,7 @@ locally, then delegating to the looper skill.
 **CRITICAL:** All work MUST happen in an isolated git worktree (the `/looper`
 skill creates one). Changes are delivered via a GitHub pull request — never
 merged locally into the default branch. The full flow is:
-worktree → PDC loop → push branch → create PR → wait CI → squash merge.
+worktree → PDC loop → push branch → create PR → wait CI → merge (squash, or regular if DB migrations are present).
 
 ---
 

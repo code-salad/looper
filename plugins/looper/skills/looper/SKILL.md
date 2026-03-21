@@ -294,13 +294,15 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
 
 - **PASS:** Report success with iteration count, then **you MUST invoke
   `/create-github-pr`** to push the branch and open a pull request against
-  the default branch. The PR skill will wait for CI, squash-merge on
-  success, and clean up the worktree automatically. If CI fails or merge
-  fails, the worktree is preserved for manual inspection.
+  the default branch. The PR skill will wait for CI, then merge on success
+  (squash merge by default, or regular merge if DB migration files are
+  detected in the changeset), and clean up the worktree automatically.
+  If CI fails or merge fails, the worktree is preserved for manual inspection.
 
   **CRITICAL — never merge locally:** Do NOT run `git merge`, `git checkout
   <default-branch>`, or any command that merges the loop branch into the
-  local default branch. All merging happens via the GitHub PR (squash merge).
+  local default branch. All merging happens via the GitHub PR (merge strategy
+  depends on whether migration files are present).
 
 - **FAIL (max iterations):** Report that max iterations were reached. Show
   the last checker verdict: `git log --grep="Loop-Verdict: FAIL" -1 --format="%B"`
