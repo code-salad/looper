@@ -56,6 +56,13 @@ check "looper SKILL.md uses create-github-pr for merging" \
     "$LOOPER_SKILL" \
     "create-github-pr"
 
+SETUP_WORKTREE_SCRIPT="$SKILLS_DIR/looper/scripts/setup-worktree"
+
+# setup-worktree must contain a bare-repo guard
+check "setup-worktree script contains bare-repo guard" \
+    "$SETUP_WORKTREE_SCRIPT" \
+    "ensure_not_bare\|core\.bare"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 

@@ -6,6 +6,13 @@ set -euo pipefail
 # Outputs JSON to stdout: {"repo_dir": "...", "owner": "...", "repo": "...", "issue_number": "...", "full_repo": "..."}
 # Info/warnings go to stderr.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOOPER_HELPERS="$SCRIPT_DIR/../../looper/scripts/_helpers.sh"
+if [ -f "$LOOPER_HELPERS" ]; then
+    # shellcheck disable=SC1090,SC1091
+    source "$LOOPER_HELPERS"
+fi
+
 URL=""
 
 while [[ $# -gt 0 ]]; do
@@ -51,6 +58,11 @@ else
         echo "Error: Failed to clone $FULL_REPO" >&2
         exit 1
     fi
+fi
+
+# Guard against core.bare=true which can be set on cloned repos
+if declare -f ensure_not_bare >/dev/null 2>&1; then
+    ensure_not_bare "$REPO_DIR"
 fi
 
 # Output JSON for the caller

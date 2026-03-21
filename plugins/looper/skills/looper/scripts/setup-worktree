@@ -6,6 +6,10 @@ set -euo pipefail
 # Outputs the absolute worktree path to stdout.
 # Warnings/info go to stderr.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
+
 TASK=""
 
 while [[ $# -gt 0 ]]; do
@@ -18,6 +22,22 @@ done
 if [ -z "$TASK" ]; then
     echo "Usage: setup-worktree --task <name>" >&2
     exit 1
+fi
+
+# Guard against core.bare=true before using git rev-parse (which fails on bare repos).
+# Derive the repo root from the absolute .git path without relying on --show-toplevel.
+_GIT_DIR=$(git rev-parse --absolute-git-dir 2>/dev/null || true)
+if [ -n "$_GIT_DIR" ]; then
+    # For a normal repo: .git dir is <repo-root>/.git, so strip trailing /.git
+    _CANDIDATE_ROOT="${_GIT_DIR%/.git}"
+    if [ "$_CANDIDATE_ROOT" != "$_GIT_DIR" ]; then
+        ensure_not_bare "$_CANDIDATE_ROOT"
+    else
+        # Might already be at the root (e.g. bare-style path): try pwd
+        ensure_not_bare "$(pwd)"
+    fi
+else
+    ensure_not_bare "$(pwd)"
 fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -50,6 +70,9 @@ else
     git worktree add -b "$BRANCH" "$WORKTREE_DIR" HEAD >/dev/null 2>&1
     echo "[setup-worktree] Created worktree at $WORKTREE_DIR (new branch $BRANCH)" >&2
 fi
+
+# Guard again after worktree creation (git worktree add can sometimes trigger bare inference)
+ensure_not_bare "$REPO_ROOT"
 
 # Warn about uncommitted changes
 if [ -n "$(git -C "$WORKTREE_DIR" status --porcelain 2>/dev/null)" ]; then
