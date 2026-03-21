@@ -8,13 +8,6 @@ description = "Fallback Agent MCP Server — spawns nested Claude processes"
 name = "fallback-agent"
 path = "src/main.rs"
 
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
-
 [dependencies]
 rmcp = { version = "0.17.0", features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["full"] }

@@ -32,7 +32,7 @@ fn log_file() -> String {
 pub fn log(message: &str) {
     let timestamp = simple_timestamp();
     let log_line = format!("[{}] {}\n", timestamp, message);
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file()) {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_file()) {
         let _ = file.write_all(log_line.as_bytes());
     }
 }
@@ -48,7 +48,7 @@ fn simple_timestamp() -> String {
 }
 
 fn init_log() {
-    if let Ok(mut file) = fs::File::create(&log_file()) {
+    if let Ok(mut file) = fs::File::create(log_file()) {
         let _ = writeln!(file, "=== Fallback Agent MCP Server Started (Rust, pid {}) ===", std::process::id());
         let _ = writeln!(
             file,
@@ -85,7 +85,7 @@ impl ServerHandler for FallbackAgentServer {
             server_info: Implementation {
                 name: "fallback-agent".to_string(),
                 title: None,
-                version: "3.0.0".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
                 description: None,
                 icons: None,
                 website_url: None,
@@ -415,7 +415,7 @@ async fn main() {
         }
     });
 
-    eprintln!("Fallback Agent MCP Server v3.0 (Rust) running on stdio");
+    eprintln!("Fallback Agent MCP Server v{} (Rust) running on stdio", env!("CARGO_PKG_VERSION"));
 
     // Create stdio transport and serve
     let transport = rmcp::transport::stdio();

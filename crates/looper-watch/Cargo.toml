@@ -19,10 +19,3 @@ clap = { version = "4", features = ["derive"] }
 dirs = "6"
 libc = "0.2"
 futures = "0.3"
-
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true

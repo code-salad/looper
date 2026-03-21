@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== pre-push: running checks ==="
+
+# ShellCheck
+echo ">> ShellCheck"
+for script in plugins/looper/skills/looper/scripts/*; do
+  shellcheck "$script"
+done
+
+# Clippy
+echo ">> Cargo clippy"
+cargo clippy --workspace -- -D warnings
+
+# Tests
+echo ">> Cargo test"
+cargo test --workspace
+
+echo "=== pre-push: all checks passed ==="

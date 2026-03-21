@@ -30,6 +30,14 @@ cd looper
 
 No additional build step is required. The plugin is plain shell scripts and Markdown files (plus a Rust binary for the fallback-agent MCP server).
 
+### Setting Up Git Hooks
+
+The repo includes a pre-push hook that runs ShellCheck, `cargo clippy`, and `cargo test` before every push:
+
+```bash
+git config core.hooksPath scripts/
+```
+
 ### Installing the Plugin Locally
 
 To test your changes in Claude Code, install from a local path:
@@ -169,11 +177,11 @@ These trailers allow querying loop state with `git log --grep`.
 
 2. **Make your changes** following the conventions above.
 
-3. **Run CI checks locally** before pushing:
+3. **Run CI checks locally** before pushing (automatic if you configured git hooks above):
    ```bash
    shellcheck plugins/looper/skills/looper/scripts/*
-   jq . .claude-plugin/plugin.json > /dev/null
-   jq . .claude-plugin/marketplace.json > /dev/null
+   cargo clippy --workspace -- -D warnings
+   cargo test --workspace
    ```
 
 4. **Push and open a PR** targeting `main`:
@@ -201,6 +209,9 @@ The CI pipeline (`.github/workflows/ci.yml`) validates:
 - **JSON validation** — `plugin.json` and `marketplace.json` must be parseable by `jq`.
 - **Executable permissions** — All scripts in the `scripts/` directory must be executable.
 - **Required files** — Key files like `SKILL.md` and `plugin.json` must exist.
+- **Cargo Test** — All Rust unit tests across the workspace must pass.
+- **Cargo Clippy** — Rust code must have zero clippy warnings.
+- **Cargo Audit** — Dependencies must have no known security vulnerabilities.
 
 There is no automated test suite for the agent prompts — correctness is validated by running the PDC loop against real tasks.
 

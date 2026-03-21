@@ -85,10 +85,14 @@ jobs:
           jq --arg v "$NEW_VERSION" '.version = $v' \
             plugins/fallback-agent/.claude-plugin/plugin.json > tmp.json && mv tmp.json plugins/fallback-agent/.claude-plugin/plugin.json
 
+          # Update Cargo.toml versions
+          sed -i "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" crates/fallback-agent/Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" crates/looper-watch/Cargo.toml
+
           # Commit and tag
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/looper/.claude-plugin/plugin.json plugins/fallback-agent/.claude-plugin/plugin.json
+          git add .claude-plugin/plugin.json .claude-plugin/marketplace.json plugins/looper/.claude-plugin/plugin.json plugins/fallback-agent/.claude-plugin/plugin.json crates/fallback-agent/Cargo.toml crates/looper-watch/Cargo.toml
           git commit -m "chore: bump version to ${NEW_VERSION}"
           git tag "v${NEW_VERSION}"
           git push origin HEAD --follow-tags
