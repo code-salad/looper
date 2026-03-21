@@ -9,6 +9,21 @@ set -euo pipefail
 #   1 = conflicts (rebase paused, manual resolution needed)
 #   2 = error (fetch failed, no remote, etc.)
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
+
+# Guard against core.bare=true which would cause sync operations to fail
+_GIT_DIR=$(git rev-parse --absolute-git-dir 2>/dev/null || true)
+if [ -n "$_GIT_DIR" ]; then
+    _CANDIDATE_ROOT="${_GIT_DIR%/.git}"
+    if [ "$_CANDIDATE_ROOT" != "$_GIT_DIR" ]; then
+        ensure_not_bare "$_CANDIDATE_ROOT"
+    else
+        ensure_not_bare "$(pwd)"
+    fi
+fi
+
 # Fetch latest from origin
 if ! git fetch origin 1>&2; then
     echo "[sync] ERROR: git fetch origin failed" >&2

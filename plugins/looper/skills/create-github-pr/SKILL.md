@@ -428,6 +428,9 @@ cd "$(git worktree list --porcelain | head -1 | sed 's/^worktree //')"
 
 # Remove the worktree
 git worktree remove "$WORKTREE_DIR" --force
+
+# Ensure core.bare was not set to true by the worktree removal
+git config core.bare false
 ```
 
 If worktree removal fails, warn but do not abort — the merge already succeeded.

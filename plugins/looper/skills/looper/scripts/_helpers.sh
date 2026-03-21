@@ -44,3 +44,24 @@ load_stack() {
         "$SCRIPT_DIR/detect-stack"
     fi
 }
+
+# ensure_not_bare — Detect and fix core.bare=true on a git repo directory.
+# Usage: ensure_not_bare [repo_dir]
+# If repo_dir is omitted, uses the current git toplevel.
+# Emits a warning to stderr when it fixes the issue.
+ensure_not_bare() {
+    local repo_dir="${1:-}"
+    if [ -z "$repo_dir" ]; then
+        repo_dir=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+    fi
+    if [ -z "$repo_dir" ]; then
+        return 0
+    fi
+    local bare_val
+    bare_val=$(git -C "$repo_dir" config --get core.bare 2>/dev/null || echo "")
+    if [ "$bare_val" = "true" ]; then
+        echo "[looper] WARNING: core.bare=true detected on $repo_dir — fixing it now" >&2
+        git -C "$repo_dir" config core.bare false
+        echo "[looper] core.bare has been reset to false on $repo_dir" >&2
+    fi
+}
