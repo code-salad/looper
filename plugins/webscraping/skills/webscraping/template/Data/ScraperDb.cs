@@ -96,14 +96,17 @@ public class ScraperDb : DbContext
     /// <summary>
     /// Atomically delete progress and mark a work unit as completed.
     /// Safe against crash: both operations are in a single transaction.
+    /// Uses INSERT OR IGNORE to avoid unique-constraint violations under concurrency.
     /// </summary>
     public async Task CompleteWorkAsync(string key, CancellationToken ct = default)
     {
         await using var tx = await Database.BeginTransactionAsync(ct);
         await Progress.Where(p => p.Key == key).ExecuteDeleteAsync(ct);
-        if (!await Checkpoints.AnyAsync(c => c.Key == key, ct))
-            Checkpoints.Add(new Checkpoint { Key = key });
-        await SaveChangesAsync(ct);
+        // Use raw SQL with INSERT OR IGNORE to safely handle concurrent completion
+        // of the same key without TOCTOU races.
+        await Database.ExecuteSqlRawAsync(
+            "INSERT OR IGNORE INTO _checkpoints (Key, CompletedAt) VALUES ({0}, {1})",
+            [key, DateTime.UtcNow], ct);
         await tx.CommitAsync(ct);
     }
 

@@ -184,3 +184,161 @@ where
     }
     Err(last_err)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Extract just the label-based blocking decision (no network needed).
+    fn is_blocked_by_labels(issue: &Issue) -> bool {
+        issue.labels.iter().any(|l| {
+            let name = l.name.to_lowercase();
+            name.contains("blocked") || name.contains("dependencies")
+        })
+    }
+
+    /// Check if the body contains dependency reference lines (without resolving them).
+    fn dependency_refs_in_body(body: &str) -> Vec<u64> {
+        let mut refs = Vec::new();
+        for line in body.lines() {
+            let is_dep_line = line.contains("- [ ] Depends on #")
+                || line.contains("- [ ] depends on #")
+                || line.starts_with("- [ ] #")
+                || line.to_lowercase().contains("blocked by #");
+            if is_dep_line {
+                refs.extend(extract_issue_numbers(line));
+            }
+        }
+        refs
+    }
+
+    fn make_issue_with_labels(labels: &[&str]) -> Issue {
+        Issue {
+            number: 1,
+            title: "Test".to_string(),
+            labels: labels.iter().map(|n| Label { name: n.to_string() }).collect(),
+            body: None,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    // ── extract_issue_numbers ────────────────────────────────────────
+
+    #[test]
+    fn extract_single_issue_number() {
+        assert_eq!(extract_issue_numbers("Depends on #42"), vec![42]);
+    }
+
+    #[test]
+    fn extract_multiple_issue_numbers() {
+        assert_eq!(
+            extract_issue_numbers("- [ ] #10 and #20 and #30"),
+            vec![10, 20, 30]
+        );
+    }
+
+    #[test]
+    fn extract_no_issue_numbers_from_plain_text() {
+        assert!(extract_issue_numbers("no issues here").is_empty());
+    }
+
+    #[test]
+    fn extract_ignores_hash_without_digits() {
+        assert!(extract_issue_numbers("# Heading").is_empty());
+    }
+
+    #[test]
+    fn extract_handles_hash_at_end_of_line() {
+        assert!(extract_issue_numbers("trailing #").is_empty());
+    }
+
+    #[test]
+    fn extract_adjacent_hashes() {
+        assert_eq!(extract_issue_numbers("#1#2#3"), vec![1, 2, 3]);
+    }
+
+    // ── label-based blocking ─────────────────────────────────────────
+
+    #[test]
+    fn blocked_by_label_containing_blocked() {
+        let issue = make_issue_with_labels(&["blocked"]);
+        assert!(is_blocked_by_labels(&issue));
+    }
+
+    #[test]
+    fn blocked_by_label_containing_dependencies() {
+        let issue = make_issue_with_labels(&["dependencies"]);
+        assert!(is_blocked_by_labels(&issue));
+    }
+
+    #[test]
+    fn not_blocked_by_unrelated_labels() {
+        let issue = make_issue_with_labels(&["bug", "enhancement", "priority:high"]);
+        assert!(!is_blocked_by_labels(&issue));
+    }
+
+    #[test]
+    fn blocked_label_is_case_insensitive() {
+        let issue = make_issue_with_labels(&["BLOCKED"]);
+        assert!(is_blocked_by_labels(&issue));
+    }
+
+    #[test]
+    fn not_blocked_when_no_labels() {
+        let issue = make_issue_with_labels(&[]);
+        assert!(!is_blocked_by_labels(&issue));
+    }
+
+    // ── dependency reference detection ───────────────────────────────
+
+    #[test]
+    fn detects_depends_on_syntax() {
+        let body = "Some context\n- [ ] Depends on #15\n- [x] Done";
+        assert_eq!(dependency_refs_in_body(body), vec![15]);
+    }
+
+    #[test]
+    fn detects_lowercase_depends_on() {
+        let body = "- [ ] depends on #7";
+        assert_eq!(dependency_refs_in_body(body), vec![7]);
+    }
+
+    #[test]
+    fn detects_blocked_by_syntax() {
+        let body = "Blocked by #3 and #4";
+        assert_eq!(dependency_refs_in_body(body), vec![3, 4]);
+    }
+
+    #[test]
+    fn detects_checkbox_issue_ref() {
+        let body = "- [ ] #100\n- [x] #200";
+        // Only unchecked checkboxes starting with "- [ ] #" are dependency lines
+        assert_eq!(dependency_refs_in_body(body), vec![100]);
+    }
+
+    #[test]
+    fn no_refs_in_plain_body() {
+        let body = "This is a normal issue body with no dependencies.";
+        assert!(dependency_refs_in_body(body).is_empty());
+    }
+
+    #[test]
+    fn no_refs_when_body_empty() {
+        assert!(dependency_refs_in_body("").is_empty());
+    }
+
+    // ── retry utility ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn retry_returns_ok_on_first_success() {
+        let result: Result<i32, String> = retry(3, || async { Ok(42) }).await;
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn retry_returns_err_after_exhausting_retries() {
+        let result: Result<i32, String> = retry(1, || async { Err("fail".to_string()) }).await;
+        assert_eq!(result.unwrap_err(), "fail");
+    }
+}

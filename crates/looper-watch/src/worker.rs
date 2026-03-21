@@ -7,7 +7,7 @@ use tokio::sync::{Mutex, Notify};
 
 use crate::Cli;
 use crate::github;
-use crate::state::{self, Entry, State};
+use crate::state::{self, Entry, Outcome, OutcomeField, State};
 
 /// Shared app state for the TUI to read.
 #[derive(Debug, Clone)]
@@ -247,12 +247,16 @@ async fn run_claude(
             .await;
 
         let outcome = match &result {
-            Ok(o) if o.status.success() => "success".to_string(),
+            Ok(o) if o.status.success() => Outcome::Success,
             Ok(o) => {
                 let stderr = String::from_utf8_lossy(&o.stderr);
-                format!("failed: {}", stderr.chars().take(200).collect::<String>())
+                Outcome::Failed {
+                    detail: stderr.chars().take(200).collect(),
+                }
             }
-            Err(e) => format!("error: {e}"),
+            Err(e) => Outcome::Error {
+                detail: e.to_string(),
+            },
         };
 
         app.log(&format!("#{issue_number}: {outcome}")).await;
@@ -261,7 +265,7 @@ async fn run_claude(
             issue_number,
             issue_title: issue_title.to_string(),
             timestamp: chrono::Utc::now().to_rfc3339(),
-            outcome,
+            outcome: OutcomeField::Typed(outcome),
             started_at: Some(started_at),
         });
         s.save(state_path).await;
@@ -289,7 +293,9 @@ async fn run_claude(
         .output()
         .await;
 
-    let outcome = "completed (tmux)".to_string();
+    let outcome = Outcome::Completed {
+        detail: Some("tmux".to_string()),
+    };
     app.log(&format!("#{issue_number}: {outcome}")).await;
 
     let mut s = app.state.lock().await;
@@ -297,7 +303,7 @@ async fn run_claude(
         issue_number,
         issue_title: issue_title.to_string(),
         timestamp: chrono::Utc::now().to_rfc3339(),
-        outcome,
+        outcome: OutcomeField::Typed(outcome),
         started_at: Some(started_at),
     });
     s.save(state_path).await;

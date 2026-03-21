@@ -30,8 +30,12 @@ var proxyPool = await ProxyPool.LoadAsync("proxies.txt", new ProxyPoolOptions
     RequestTimeout = TimeSpan.FromSeconds(30),
 });
 
-await using var db = ScraperDb.Create("data.db");
-await db.Database.EnsureCreatedAsync();
+// Initialize DB schema and PRAGMAs once, then dispose the init context.
+// Worker tasks create their own DbContext instances — EF Core DbContext is NOT thread-safe.
+{
+    await using var initDb = ScraperDb.Create("data.db");
+    await initDb.Database.EnsureCreatedAsync();
+}
 
 // --- 2. Polly retry pipeline (respects Retry-After headers) ---
 
@@ -123,34 +127,46 @@ try
     // Process page 1
     // TODO: Extract and store data from firstPage
 
-    // Fan out remaining pages across proxies
+    // Fan out remaining pages across proxies.
+    // Each worker gets its own DbContext — EF Core DbContext is NOT thread-safe.
     var concurrency = Math.Max(1, proxyPool.AvailableCount);
     using var semaphore = new SemaphoreSlim(concurrency);
     var tasks = new List<Task>();
 
-    for (var page = 2; page <= totalPages; page++)
+    // Pre-filter completed pages using a short-lived context
+    var pendingPages = new List<int>();
+    {
+        await using var checkDb = ScraperDb.Create("data.db");
+        for (var page = 2; page <= totalPages; page++)
+        {
+            var key = ScraperDb.MakeKey("page", page);
+            if (!await checkDb.IsCompletedAsync(key, cts.Token))
+                pendingPages.Add(page);
+        }
+    }
+
+    foreach (var page in pendingPages)
     {
         cts.Token.ThrowIfCancellationRequested();
-
-        var key = ScraperDb.MakeKey("page", page);
-        if (await db.IsCompletedAsync(key, cts.Token))
-            continue;
 
         await semaphore.WaitAsync(cts.Token);
         var currentPage = page;
 
         tasks.Add(Task.Run(async () =>
         {
+            // Per-worker DbContext — thread-safe by isolation
+            await using var workerDb = ScraperDb.Create("data.db");
             try
             {
+                var key = ScraperDb.MakeKey("page", currentPage);
                 using var data = await FetchPage(currentPage, cts.Token);
 
                 // TODO: Parse data.RootElement and extract your entities
                 // var items = data.RootElement.GetProperty("items").EnumerateArray()
                 //     .Select(e => new YourEntity { ... });
-                // await db.AddBatchAsync(items, cts.Token);
+                // await workerDb.AddBatchAsync(items, cts.Token);
 
-                await db.CompleteWorkAsync(key, cts.Token);
+                await workerDb.CompleteWorkAsync(key, cts.Token);
 
                 // Progress reporting
                 var stats = proxyPool.GetStats();
@@ -163,7 +179,6 @@ try
             {
                 Console.Error.WriteLine(
                     $"[scraper] Page {currentPage} deferred — all proxies blacklisted");
-                // The proxy pool has expiry; the orchestrator could retry later
             }
             catch (Exception ex)
             {

@@ -129,17 +129,13 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     }
                     col_running.push(Line::from(""));
                 } else if history.iter().any(|e| {
-                    e.issue_number == issue.number
-                        && (e.outcome.starts_with("success")
-                            || e.outcome.starts_with("completed"))
+                    e.issue_number == issue.number && e.outcome.is_done()
                 }) {
                     // Done column
                     let elapsed_str = history
                         .iter()
                         .find(|e| {
-                            e.issue_number == issue.number
-                                && (e.outcome.starts_with("success")
-                                    || e.outcome.starts_with("completed"))
+                            e.issue_number == issue.number && e.outcome.is_done()
                         })
                         .and_then(|entry| {
                             entry
@@ -194,7 +190,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
 
             // Also show done entries from history that aren't in open_issues
             for entry in &history {
-                if (entry.outcome.starts_with("success") || entry.outcome.starts_with("completed"))
+                if entry.outcome.is_done()
                     && !open_issues.iter().any(|i| i.number == entry.issue_number)
                 {
                     let elapsed_str = entry
@@ -230,9 +226,7 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                 .filter(|i| {
                     !in_progress.contains(&i.number)
                         && !history.iter().any(|e| {
-                            e.issue_number == i.number
-                                && (e.outcome.starts_with("success")
-                                    || e.outcome.starts_with("completed"))
+                            e.issue_number == i.number && e.outcome.is_done()
                         })
                 })
                 .count();
@@ -511,5 +505,116 @@ mod tests {
         // From the issue: "✓ done      8m 12s"
         let elapsed = format_elapsed(8 * 60 + 12);
         assert_eq!(elapsed, "8m 12s");
+    }
+
+    // ── Kanban categorization ────────────────────────────────────────
+
+    use crate::state::{self, Entry, Outcome, OutcomeField};
+
+    /// Which kanban column an issue belongs to.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum KanbanColumn {
+        Open,
+        Running,
+        Done,
+    }
+
+    /// Categorize an issue into a kanban column based on tmux state and history.
+    fn categorize_issue(
+        issue_number: u64,
+        in_progress: &HashSet<u64>,
+        history: &[state::Entry],
+    ) -> KanbanColumn {
+        if in_progress.contains(&issue_number) {
+            KanbanColumn::Running
+        } else if history.iter().any(|e| e.issue_number == issue_number && e.outcome.is_done()) {
+            KanbanColumn::Done
+        } else {
+            KanbanColumn::Open
+        }
+    }
+    use std::collections::HashSet;
+
+    fn make_history_entry(issue_number: u64, outcome: Outcome) -> Entry {
+        Entry {
+            issue_number,
+            issue_title: format!("Issue #{issue_number}"),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            outcome: OutcomeField::Typed(outcome),
+            started_at: None,
+        }
+    }
+
+    #[test]
+    fn categorize_open_issue_with_no_progress_or_history() {
+        let in_progress = HashSet::new();
+        let history = vec![];
+        assert_eq!(categorize_issue(1, &in_progress, &history), KanbanColumn::Open);
+    }
+
+    #[test]
+    fn categorize_running_issue_in_tmux() {
+        let mut in_progress = HashSet::new();
+        in_progress.insert(42);
+        let history = vec![];
+        assert_eq!(categorize_issue(42, &in_progress, &history), KanbanColumn::Running);
+    }
+
+    #[test]
+    fn categorize_done_issue_with_success_history() {
+        let in_progress = HashSet::new();
+        let history = vec![make_history_entry(10, Outcome::Success)];
+        assert_eq!(categorize_issue(10, &in_progress, &history), KanbanColumn::Done);
+    }
+
+    #[test]
+    fn categorize_done_issue_with_completed_history() {
+        let in_progress = HashSet::new();
+        let history = vec![make_history_entry(10, Outcome::Completed { detail: Some("tmux".into()) })];
+        assert_eq!(categorize_issue(10, &in_progress, &history), KanbanColumn::Done);
+    }
+
+    #[test]
+    fn categorize_failed_issue_as_open_not_done() {
+        let in_progress = HashSet::new();
+        let history = vec![make_history_entry(10, Outcome::Failed { detail: "err".into() })];
+        assert_eq!(categorize_issue(10, &in_progress, &history), KanbanColumn::Open);
+    }
+
+    #[test]
+    fn categorize_running_takes_priority_over_done_history() {
+        // If tmux session is alive, show as Running even if history says done
+        let mut in_progress = HashSet::new();
+        in_progress.insert(5);
+        let history = vec![make_history_entry(5, Outcome::Success)];
+        assert_eq!(categorize_issue(5, &in_progress, &history), KanbanColumn::Running);
+    }
+
+    #[test]
+    fn categorize_issue_not_in_any_set_is_open() {
+        let in_progress = HashSet::new();
+        let history = vec![make_history_entry(99, Outcome::Success)]; // different issue
+        assert_eq!(categorize_issue(1, &in_progress, &history), KanbanColumn::Open);
+    }
+
+    // ── truncate_title ───────────────────────────────────────────────
+
+    use super::truncate_title;
+
+    #[test]
+    fn truncate_title_short_unchanged() {
+        assert_eq!(truncate_title("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_title_exact_length_unchanged() {
+        assert_eq!(truncate_title("12345", 5), "12345");
+    }
+
+    #[test]
+    fn truncate_title_over_limit_adds_ellipsis() {
+        let result = truncate_title("hello world", 6);
+        assert!(result.ends_with('…'), "should end with ellipsis: {result}");
+        assert!(result.chars().count() <= 6);
     }
 }
