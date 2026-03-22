@@ -3,7 +3,8 @@ set -euo pipefail
 
 # git-commit-loop — Create a conventional commit with loop trailers
 # Usage: git-commit-loop --type <type> --scope <scope> --message <msg>
-#        --body <body> --phase <plan|do|check> --iteration <N> [--verdict <PASS|FAIL>]
+#        --body <body> --phase <plan|do|do-red|do-green|do-simplify|do-integration|check>
+#        --iteration <N> [--verdict <PASS|FAIL>]
 
 TYPE=""
 SCOPE=""
@@ -34,8 +35,8 @@ if [ -z "$TYPE" ] || [ -z "$SCOPE" ] || [ -z "$MESSAGE" ] || [ -z "$PHASE" ] || 
 fi
 
 # Validate phase
-if [[ "$PHASE" != "plan" && "$PHASE" != "do" && "$PHASE" != "check" && "$PHASE" != "do-red" && "$PHASE" != "do-green" ]]; then
-    echo "Error: --phase must be plan, do, do-red, do-green, or check" >&2
+if [[ "$PHASE" != "plan" && "$PHASE" != "do" && "$PHASE" != "check" && "$PHASE" != "do-red" && "$PHASE" != "do-green" && "$PHASE" != "do-simplify" && "$PHASE" != "do-integration" ]]; then
+    echo "Error: --phase must be plan, do, do-red, do-green, do-simplify, do-integration, or check" >&2
     exit 1
 fi
 

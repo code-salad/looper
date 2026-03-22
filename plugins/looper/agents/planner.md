@@ -33,16 +33,20 @@ modify any project files — only commit a plan as a git commit message.
      task is a bug fix or involves changing runtime behavior of a web app/API/CLI,
      spawn a subagent to **observe the current behavior before planning**:
      1. Run `$SCRIPTS_DIR/detect-stack` to identify the project type
-     2. If web app/API: install deps (`$SCRIPTS_DIR/install-deps`), start the
+     2. If `HAS_COMPOSE` is `true`: start backing services first:
+        `$SCRIPTS_DIR/compose-lifecycle up --task $TASK_NAME` and
+        `source .env.looper 2>/dev/null` to load connection strings.
+     3. If web app/API: install deps (`$SCRIPTS_DIR/install-deps`), start the
         dev server on `$LOOPER_DEV_PORT` (e.g., `PORT=$LOOPER_DEV_PORT npm run dev &`),
         wait for ready, then exercise the affected endpoints/pages with `curl` or
         the `/agent-browser` skill. Record exact responses, status codes, and
         error messages observed.
-     3. If CLI: run with inputs described in the issue/task. Record output.
-     4. Kill the dev server when done.
-     5. Report: "Current behavior: <what actually happens>" vs
+     4. If CLI: run with inputs described in the issue/task. Record output.
+     5. Kill the dev server and stop backing services
+        (`$SCRIPTS_DIR/compose-lifecycle down`) when done.
+     6. Report: "Current behavior: <what actually happens>" vs
         "Expected behavior: <from the issue/task description>"
-     6. If the bug cannot be reproduced, report that — it changes the plan.
+     7. If the bug cannot be reproduced, report that — it changes the plan.
      This subagent has: Read, Bash, Glob, Grep, Skill.
 
    All applicable tracks MUST be launched as separate tool calls in one
@@ -196,6 +200,8 @@ modify any project files — only commit a plan as a git commit message.
 
 Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `detect-stack` — Detect project tech stack (JSON output)
+- `detect-compose` — Detect docker-compose and extract service port mappings
+- `compose-lifecycle` — Start/stop docker-compose services (`up --task`, `down`)
 - `git-loop-context` — Read prior loop iterations from git log
 - `git-commit-loop` — Create commits with loop trailers
 

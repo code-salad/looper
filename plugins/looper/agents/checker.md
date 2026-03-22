@@ -17,12 +17,17 @@ reviewer — report all findings but do NOT fix code or modify any files.
 ## Instructions
 
 1. **Verify Doer committed work (TDD sequence)** — The Doer must produce two
-   commits per iteration: `do-red` (tests) then `do-green` (implementation).
+   or three commits per iteration: `do-red` (tests), `do-green` (implementation),
+   and optionally `do-integration` (integration tests for runnable artifacts).
 
    ```bash
    red_hash=$(git log --grep="Loop-Phase: do-red" --grep="Loop-Iteration: $ITERATION" \
        --all-match --format="%H" -1)
    green_hash=$(git log --grep="Loop-Phase: do-green" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1)
+   simplify_hash=$(git log --grep="Loop-Phase: do-simplify" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1)
+   integration_hash=$(git log --grep="Loop-Phase: do-integration" --grep="Loop-Iteration: $ITERATION" \
        --all-match --format="%H" -1)
    ```
 
@@ -69,7 +74,19 @@ reviewer — report all findings but do NOT fix code or modify any files.
        --all-match --format="%H" -1) && [ -n "$h" ] && git show --stat "$h"
    ```
 
-   **Call 4 (fallback) — Get legacy doer commit if no red/green found:**
+   **Call 4 — Get the SIMPLIFY commit (code refinement) summary + diff:**
+   ```bash
+   h=$(git log --grep="Loop-Phase: do-simplify" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1) && [ -n "$h" ] && git show --stat "$h"
+   ```
+
+   **Call 5 — Get the INTEGRATION commit (integration tests) summary + diff:**
+   ```bash
+   h=$(git log --grep="Loop-Phase: do-integration" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1) && [ -n "$h" ] && git show --stat "$h"
+   ```
+
+   **Call 6 (fallback) — Get legacy doer commit if no red/green found:**
    ```bash
    h=$(git log --grep="Loop-Phase: do" --grep="Loop-Iteration: $ITERATION" \
        --all-match --format="%H" -1) && [ -n "$h" ] && git show --stat "$h"
@@ -80,7 +97,7 @@ reviewer — report all findings but do NOT fix code or modify any files.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Spawn 6 parallel review subagents** — Launch all six as separate AgentFallback
+3. **Spawn 7 parallel review subagents** — Launch all seven as separate AgentFallback
    tool calls in a single message. Each subagent receives the plan summary,
    doer summary, changed files list, and acceptance criteria from step 2.
 
@@ -186,6 +203,15 @@ reviewer — report all findings but do NOT fix code or modify any files.
      - Python: `PORT=$LOOPER_DEV_PORT python manage.py runserver 0.0.0.0:$LOOPER_DEV_PORT &`
      - Go/Rust: set `PORT=$LOOPER_DEV_PORT` env var or use the framework's port flag
      Poll with `curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:$LOOPER_DEV_PORT/`
+   - **Backing services (docker-compose):** If `HAS_COMPOSE` is `true` (from
+     task variables), start backing services BEFORE the dev server:
+     ```bash
+     $SCRIPTS_DIR/compose-lifecycle up --task $TASK_NAME
+     source .env.looper 2>/dev/null || true
+     ```
+     This starts databases, caches, and other services on isolated ports.
+     Connection strings (DATABASE_URL, REDIS_URL, etc.) are loaded from
+     `.env.looper`. Run `$SCRIPTS_DIR/compose-lifecycle down` in cleanup.
    - If the project is a web app or API, perform a **two-phase test**:
 
      **Phase 1 — Before snapshot (baseline):**
@@ -238,7 +264,29 @@ reviewer — report all findings but do NOT fix code or modify any files.
    - Report: any runtime errors, broken endpoints, UI regressions, unfixed
      ticket scenarios, unexpected behavior, or crashes. Each issue is a BLOCKER.
 
-   **Subagent 6 — TDD Sequence Verifier:**
+   **Subagent 6 — Integration Test Verifier:**
+   - Use `$SCRIPTS_DIR/detect-stack` to identify the project type.
+   - Determine if the project has a runnable artifact (web app, API, CLI).
+     A project is "runnable" if: framework is a web framework, dev_command is
+     not "none", or the project builds to an executable binary/CLI.
+   - **If runnable:** Check that `tests/integration/` directory exists and contains
+     at least one test script. If missing:
+     - [WARNING]: "No integration tests found for runnable project. Integration
+       tests in tests/integration/ would verify the app works end-to-end."
+   - **If integration tests exist:** Run them:
+     ```bash
+     $SCRIPTS_DIR/run-integration-tests --port $LOOPER_DEV_PORT 2>&1; echo "EXIT_CODE=$?"
+     ```
+     - If any test fails: [BLOCKER] for each failing test with the error output.
+     - If app fails to start: [BLOCKER] "Application failed to start for
+       integration testing — the built artifact may be broken."
+   - **If not runnable** (pure library, no server, no CLI): Report "N/A — no
+     runnable artifact for integration testing."
+   - Check that integration tests are testing acceptance criteria scenarios,
+     not just generic health checks. Flag generic-only tests as [WARNING].
+   - Report: integration test results, missing coverage, app startup issues.
+
+   **Subagent 7 — TDD Sequence Verifier:**
    - Verify the `do-red` commit exists and contains ONLY test files
      (files matching common test patterns: `*test*`, `*spec*`, `__tests__/*`,
      `tests/*`, `*_test.*`). If source files are in the red commit, flag as
@@ -249,14 +297,20 @@ reviewer — report all findings but do NOT fix code or modify any files.
      acceptable as [WARNING], but new test files are [BLOCKER].
    - Verify the `do-red` commit was created BEFORE `do-green` (check commit
      timestamps or ancestry: `git merge-base --is-ancestor $red_hash $green_hash`).
+   - If a `do-simplify` commit exists, verify it contains ONLY source files
+     that were already modified in the `do-green` commit (refactoring existing
+     implementation, not adding new files or tests). New files in this commit
+     are [WARNING]. Test file changes are [BLOCKER].
+   - If a `do-integration` commit exists, verify it contains ONLY files under
+     `tests/integration/`. Source or unit test changes in this commit are [BLOCKER].
    - If only a legacy `do` commit exists (no red/green split), flag as
      [WARNING]: "TDD sequence not followed — single commit instead of
      red-green split."
    - Report: TDD compliance issues, file classification, severity
 
-   All six MUST be launched as separate AgentFallback tool calls in one message.
+   All seven MUST be launched as separate AgentFallback tool calls in one message.
 
-4. **Collect and consolidate results** — After all 6 subagents complete:
+4. **Collect and consolidate results** — After all 7 subagents complete:
    - Gather all BLOCKER issues (must fix before PASS)
    - Gather all WARNING issues (should fix)
    - Note SUGGESTION issues for the verdict body only
@@ -352,6 +406,9 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `security-scan` — Run security vulnerability scan
 - `git-loop-context` — Read prior loop iterations from git log
 - `git-commit-loop` — Create commits with loop trailers
+- `run-integration-tests` — Start app and run tests/integration/ scripts (`--port <PORT>`)
+- `compose-lifecycle` — Start/stop docker-compose services (`up --task`, `down`, `status`)
+- `detect-compose` — Detect docker-compose and extract service port mappings
 
 ## Rules
 

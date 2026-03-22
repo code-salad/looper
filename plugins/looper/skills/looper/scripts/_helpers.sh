@@ -45,6 +45,44 @@ load_stack() {
     fi
 }
 
+# has_compose — Check if project uses docker-compose
+# Usage: has_compose [stack_json]
+has_compose() {
+    local stack="${1:-$(load_stack)}"
+    [ "$(echo "$stack" | jq -r '.has_compose // false')" = "true" ]
+}
+
+# compose_cmd — Return the docker compose command with override files
+# Usage: cmd=$(compose_cmd); $cmd up -d
+compose_cmd() {
+    local compose_file=""
+    for candidate in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+        if [ -f "$candidate" ]; then
+            compose_file="$candidate"
+            break
+        fi
+    done
+    if [ -z "$compose_file" ]; then
+        echo "docker compose"
+        return
+    fi
+    if [ -f "docker-compose.looper.yml" ]; then
+        echo "docker compose -f $compose_file -f docker-compose.looper.yml"
+    else
+        echo "docker compose -f $compose_file"
+    fi
+}
+
+# load_compose_env — Source .env.looper if it exists, exporting all vars
+load_compose_env() {
+    if [ -f ".env.looper" ]; then
+        set -a
+        # shellcheck disable=SC1091
+        source .env.looper
+        set +a
+    fi
+}
+
 # ensure_not_bare — Detect and fix core.bare=true on a git repo directory.
 # Usage: ensure_not_bare [repo_dir]
 # If repo_dir is omitted, uses the current git toplevel.

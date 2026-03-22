@@ -216,6 +216,40 @@ for (( i=1; i<ITERATION; i++ )); do
             echo "#### GREEN (Implementation) — not committed"
             echo ""
         fi
+
+        # Simplify (optional phase)
+        simplify_body=$(_extract_body "do-simplify" "$i")
+        if [ -n "$simplify_body" ]; then
+            echo "#### SIMPLIFY (Code Refinement)"
+            echo ""
+            echo "$simplify_body" | _strip_trailers
+            echo ""
+            simplify_hash=$(_extract_hash "do-simplify" "$i")
+            if [ -n "$simplify_hash" ]; then
+                echo "**Files changed:**"
+                echo '```'
+                git show --stat --format="" "$simplify_hash" 2>/dev/null || true
+                echo '```'
+                echo ""
+            fi
+        fi
+
+        # Integration tests (optional phase)
+        integration_body=$(_extract_body "do-integration" "$i")
+        if [ -n "$integration_body" ]; then
+            echo "#### INTEGRATION (Integration Tests)"
+            echo ""
+            echo "$integration_body" | _strip_trailers
+            echo ""
+            integration_hash=$(_extract_hash "do-integration" "$i")
+            if [ -n "$integration_hash" ]; then
+                echo "**Files changed:**"
+                echo '```'
+                git show --stat --format="" "$integration_hash" 2>/dev/null || true
+                echo '```'
+                echo ""
+            fi
+        fi
     else
         # Fallback: legacy single do commit
         doer_info_hash=$(_extract_doer_hash "$i")

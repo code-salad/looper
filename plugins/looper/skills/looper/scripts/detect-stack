@@ -278,6 +278,18 @@ else
     ecosystems_json="[${ecosystems_json:1}]"
 fi
 
+# --- Detect docker-compose ---
+compose_file="none"
+for candidate in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+    [ -f "$candidate" ] && compose_file="$candidate" && break
+done
+
+if [ "$compose_file" != "none" ]; then
+    has_compose="true"
+else
+    has_compose="false"
+fi
+
 # --- Detect dev server command and default port ---
 dev_command="none"
 dev_port="none"
@@ -344,6 +356,8 @@ cat <<EOF
   "ci": "${ci}",
   "dev_command": "${dev_command}",
   "dev_port": "${dev_port}",
+  "compose_file": "${compose_file}",
+  "has_compose": ${has_compose},
   "ecosystems": ${ecosystems_json}
 }
 EOF

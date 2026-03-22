@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# run-integration-tests — Start the app and run integration tests from tests/integration/
+# Usage: run-integration-tests [--port <PORT>]
+#
+# Detects the project stack, starts the dev server, waits for health, runs all
+# test scripts in tests/integration/, then tears down the server.
+# Exit code: 0 if all tests pass, 1 if any fail, 2 if app fails to start.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
+
+PORT="${LOOPER_DEV_PORT:-9876}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --port) PORT="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# Check if there are integration tests to run
+if [ ! -d "tests/integration" ] || [ -z "$(ls -A tests/integration/ 2>/dev/null)" ]; then
+    echo "No integration tests found in tests/integration/ — skipping." >&2
+    exit 0
+fi
+
+STACK=$(load_stack)
+runtime=$(echo "$STACK" | jq -r '.runtime')
+framework=$(echo "$STACK" | jq -r '.framework')
+# shellcheck disable=SC2034
+package_manager=$(echo "$STACK" | jq -r '.package_manager')
+dev_command=$(echo "$STACK" | jq -r '.dev_command')
+use_compose=$(echo "$STACK" | jq -r '.has_compose // false')
+
+# Determine start command based on stack
+start_cmd=""
+health_path="/"
+
+case "$runtime" in
+    node|bun)
+        if [ "$dev_command" != "none" ]; then
+            start_cmd="PORT=$PORT run_pkg_script $dev_command"
+        elif has_pkg_script start; then
+            start_cmd="PORT=$PORT run_pkg_script start"
+        else
+            echo "No dev/start script found in package.json" >&2
+            exit 2
+        fi
+        case "$framework" in
+            express|fastify) health_path="/health" ;;
+        esac
+        ;;
+    python)
+        case "$framework" in
+            django)
+                start_cmd="python manage.py runserver 0.0.0.0:$PORT"
+                health_path="/admin/"
+                ;;
+            fastapi)
+                start_cmd="uvicorn main:app --host 0.0.0.0 --port $PORT"
+                health_path="/docs"
+                ;;
+            flask)
+                start_cmd="flask run --host 0.0.0.0 --port $PORT"
+                ;;
+            *)
+                echo "No known Python web framework detected" >&2
+                exit 2
+                ;;
+        esac
+        ;;
+    go)
+        start_cmd="PORT=$PORT go run ."
+        health_path="/health"
+        ;;
+    rust)
+        cargo build --release 2>&1
+        binary=$(find target/release -maxdepth 1 -type f -executable | head -1)
+        if [ -z "$binary" ]; then
+            echo "No Rust binary found after build" >&2
+            exit 2
+        fi
+        start_cmd="PORT=$PORT $binary"
+        health_path="/health"
+        ;;
+    dotnet)
+        start_cmd="dotnet run --urls http://0.0.0.0:$PORT"
+        health_path="/health"
+        ;;
+    *)
+        echo "Unsupported runtime '$runtime' for integration tests" >&2
+        exit 2
+        ;;
+esac
+
+# Start backing services via docker-compose if available
+if [ "$use_compose" = "true" ] && command -v docker &>/dev/null; then
+    echo "Starting backing services via docker-compose..." >&2
+    "$SCRIPT_DIR/compose-lifecycle" up --task "${LOOPER_TASK_NAME:-looper-test}" >&2
+    load_compose_env
+fi
+
+# Start the application in background
+echo "Starting app on port $PORT..." >&2
+eval "$start_cmd" &
+APP_PID=$!
+
+# Cleanup function
+cleanup() {
+    echo "Stopping app (PID $APP_PID)..." >&2
+    kill "$APP_PID" 2>/dev/null || true
+    wait "$APP_PID" 2>/dev/null || true
+    if [ "$use_compose" = "true" ] && command -v docker &>/dev/null; then
+        echo "Stopping backing services..." >&2
+        "$SCRIPT_DIR/compose-lifecycle" down >&2 || true
+    fi
+}
+trap cleanup EXIT
+
+# Wait for health check
+echo "Waiting for health check at http://localhost:$PORT$health_path..." >&2
+healthy=false
+for i in $(seq 1 30); do
+    if curl -sf "http://localhost:$PORT$health_path" > /dev/null 2>&1; then
+        echo "App is healthy after $((i * 2)) seconds" >&2
+        healthy=true
+        break
+    fi
+    sleep 2
+done
+
+if [ "$healthy" = false ]; then
+    echo "App failed to start within 60 seconds" >&2
+    exit 2
+fi
+
+# Run integration tests
+failures=0
+total=0
+
+for test_file in tests/integration/*; do
+    [ -f "$test_file" ] || continue
+    total=$((total + 1))
+    echo "--- Running $test_file ---" >&2
+
+    exit_code=0
+    if [ -x "$test_file" ]; then
+        INTEGRATION_PORT="$PORT" "$test_file" || exit_code=$?
+    elif [[ "$test_file" == *.sh ]]; then
+        INTEGRATION_PORT="$PORT" bash "$test_file" || exit_code=$?
+    elif [[ "$test_file" == *.py ]]; then
+        INTEGRATION_PORT="$PORT" python "$test_file" || exit_code=$?
+    elif [[ "$test_file" == *.js ]]; then
+        INTEGRATION_PORT="$PORT" node "$test_file" || exit_code=$?
+    elif [[ "$test_file" == *.ts ]]; then
+        INTEGRATION_PORT="$PORT" npx tsx "$test_file" || exit_code=$?
+    else
+        echo "Skipping $test_file — unknown file type" >&2
+        total=$((total - 1))
+        continue
+    fi
+
+    if [ "$exit_code" -ne 0 ]; then
+        echo "FAIL: $test_file (exit code $exit_code)" >&2
+        failures=$((failures + 1))
+    else
+        echo "PASS: $test_file" >&2
+    fi
+done
+
+echo "" >&2
+echo "Integration tests: $((total - failures))/$total passed" >&2
+
+if [ "$failures" -gt 0 ]; then
+    exit 1
+fi

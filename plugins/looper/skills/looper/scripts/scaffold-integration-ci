@@ -1,0 +1,270 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# scaffold-integration-ci — Generate a GitHub Actions integration test workflow
+# for the target repo if one doesn't already exist.
+#
+# Usage: scaffold-integration-ci [--force]
+#
+# Detects the project's tech stack and generates a .github/workflows/integration.yml
+# that spins up the app/service and runs integration tests from tests/integration/.
+# Skips generation if the workflow already exists (unless --force is passed).
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
+
+FORCE=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --force) FORCE=true; shift ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+WORKFLOW_PATH=".github/workflows/integration.yml"
+
+if [ -f "$WORKFLOW_PATH" ] && [ "$FORCE" = false ]; then
+    echo "Integration workflow already exists at $WORKFLOW_PATH — skipping." >&2
+    exit 0
+fi
+
+STACK=$(load_stack)
+runtime=$(echo "$STACK" | jq -r '.runtime')
+framework=$(echo "$STACK" | jq -r '.framework')
+package_manager=$(echo "$STACK" | jq -r '.package_manager')
+dev_command=$(echo "$STACK" | jq -r '.dev_command')
+use_compose=$(echo "$STACK" | jq -r '.has_compose // false')
+
+# Determine the setup steps, start command, and health check based on stack
+setup_steps=""
+start_command=""
+health_path="/"
+# shellcheck disable=SC2016
+stop_command='kill $(lsof -t -i:${{ env.INTEGRATION_PORT }}) 2>/dev/null || true'
+
+case "$runtime" in
+    node|bun)
+        case "$package_manager" in
+            pnpm)
+                setup_steps='      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile'
+                ;;
+            yarn)
+                setup_steps='      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: yarn
+      - run: yarn install --frozen-lockfile'
+                ;;
+            bun)
+                setup_steps='      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile'
+                ;;
+            npm|*)
+                setup_steps='      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: npm
+      - run: npm ci'
+                ;;
+        esac
+
+        if [ "$dev_command" != "none" ]; then
+            start_command="PORT=\${{ env.INTEGRATION_PORT }} npm run ${dev_command} &"
+            case "$package_manager" in
+                pnpm) start_command="PORT=\${{ env.INTEGRATION_PORT }} pnpm run ${dev_command} &" ;;
+                yarn) start_command="PORT=\${{ env.INTEGRATION_PORT }} yarn run ${dev_command} &" ;;
+                bun)  start_command="PORT=\${{ env.INTEGRATION_PORT }} bun run ${dev_command} &" ;;
+            esac
+        else
+            start_command="PORT=\${{ env.INTEGRATION_PORT }} npm start &"
+        fi
+
+        # Framework-specific health paths
+        case "$framework" in
+            next)     health_path="/" ;;
+            express)  health_path="/health" ;;
+            fastify)  health_path="/health" ;;
+            hono)     health_path="/" ;;
+        esac
+        ;;
+
+    python)
+        case "$package_manager" in
+            uv)
+                setup_steps='      - uses: astral-sh/setup-uv@v5
+      - run: uv sync'
+                ;;
+            poetry)
+                setup_steps='      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install poetry && poetry install'
+                ;;
+            pip|*)
+                setup_steps='      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install -r requirements.txt'
+                ;;
+        esac
+
+        case "$framework" in
+            django)
+                start_command="python manage.py runserver 0.0.0.0:\${{ env.INTEGRATION_PORT }} &"
+                health_path="/admin/"
+                ;;
+            fastapi)
+                start_command="uvicorn main:app --host 0.0.0.0 --port \${{ env.INTEGRATION_PORT }} &"
+                health_path="/docs"
+                ;;
+            flask)
+                start_command="flask run --host 0.0.0.0 --port \${{ env.INTEGRATION_PORT }} &"
+                health_path="/"
+                ;;
+            *)
+                start_command="python -m http.server \${{ env.INTEGRATION_PORT }} &"
+                ;;
+        esac
+        ;;
+
+    go)
+        setup_steps='      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go mod download'
+
+        start_command="PORT=\${{ env.INTEGRATION_PORT }} go run . &"
+        health_path="/health"
+        ;;
+
+    rust)
+        setup_steps='      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release'
+
+        start_command="PORT=\${{ env.INTEGRATION_PORT }} ./target/release/$(basename "$(pwd)") &"
+        health_path="/health"
+        ;;
+
+    dotnet)
+        setup_steps='      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.x"
+      - run: dotnet restore'
+
+        start_command="dotnet run --urls \"http://0.0.0.0:\${{ env.INTEGRATION_PORT }}\" &"
+        health_path="/health"
+        ;;
+
+    *)
+        echo "Unsupported runtime '$runtime' — cannot scaffold integration CI." >&2
+        exit 1
+        ;;
+esac
+
+# Ensure .github/workflows/ directory exists
+mkdir -p "$(dirname "$WORKFLOW_PATH")"
+
+cat > "$WORKFLOW_PATH" << 'WORKFLOW_HEADER'
+# Auto-generated by looper scaffold-integration-ci
+# This workflow spins up the app and runs integration tests on every PR.
+name: Integration Tests
+
+on:
+  pull_request:
+    branches: ["*"]
+
+env:
+  INTEGRATION_PORT: 9876
+
+jobs:
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+WORKFLOW_HEADER
+
+# Append setup steps
+echo "$setup_steps" >> "$WORKFLOW_PATH"
+
+# Add docker-compose backing services if compose file exists
+if [ "$use_compose" = "true" ]; then
+    cat >> "$WORKFLOW_PATH" << 'COMPOSE_STEPS'
+
+      - name: Start backing services
+        run: |
+          docker compose up -d --wait || docker compose up -d
+          echo "Backing services started"
+
+COMPOSE_STEPS
+fi
+
+cat >> "$WORKFLOW_PATH" << WORKFLOW_START
+
+      - name: Start application
+        run: |
+          ${start_command}
+          echo "Waiting for app to start on port \${{ env.INTEGRATION_PORT }}..."
+
+      - name: Wait for health check
+        run: |
+          for i in \$(seq 1 30); do
+            if curl -sf http://localhost:\${{ env.INTEGRATION_PORT }}${health_path} > /dev/null 2>&1; then
+              echo "App is healthy after \${i} seconds"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App failed to start within 60 seconds"
+          exit 1
+
+      - name: Run integration tests
+        run: |
+          if [ -d "tests/integration" ]; then
+            for test_file in tests/integration/*; do
+              [ -f "\$test_file" ] || continue
+              echo "--- Running \$test_file ---"
+              if [ -x "\$test_file" ]; then
+                INTEGRATION_PORT=\${{ env.INTEGRATION_PORT }} "\$test_file"
+              elif [[ "\$test_file" == *.sh ]]; then
+                INTEGRATION_PORT=\${{ env.INTEGRATION_PORT }} bash "\$test_file"
+              elif [[ "\$test_file" == *.py ]]; then
+                INTEGRATION_PORT=\${{ env.INTEGRATION_PORT }} python "\$test_file"
+              elif [[ "\$test_file" == *.js ]]; then
+                INTEGRATION_PORT=\${{ env.INTEGRATION_PORT }} node "\$test_file"
+              elif [[ "\$test_file" == *.ts ]]; then
+                INTEGRATION_PORT=\${{ env.INTEGRATION_PORT }} npx tsx "\$test_file"
+              else
+                echo "Skipping \$test_file — unknown file type"
+              fi
+            done
+          else
+            echo "No tests/integration/ directory found — skipping"
+          fi
+
+      - name: Stop application
+        if: always()
+        run: |
+          ${stop_command}
+WORKFLOW_START
+
+# Add compose teardown if needed
+if [ "$use_compose" = "true" ]; then
+    cat >> "$WORKFLOW_PATH" << 'COMPOSE_TEARDOWN'
+
+      - name: Stop backing services
+        if: always()
+        run: docker compose down -v --remove-orphans
+COMPOSE_TEARDOWN
+fi
+
+echo "Scaffolded integration test workflow at $WORKFLOW_PATH" >&2

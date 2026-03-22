@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# compose-lifecycle — Start, stop, and manage docker-compose services
+# with looper's port isolation override.
+#
+# Usage:
+#   compose-lifecycle up    [--task TASK_NAME]  — start services (isolate first if needed)
+#   compose-lifecycle down                      — stop services and remove volumes
+#   compose-lifecycle status                    — show service status
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
+
+ACTION=""
+TASK_NAME="${LOOPER_TASK_NAME:-}"
+
+if [[ $# -lt 1 ]]; then
+    echo "Usage: compose-lifecycle <up|down|status> [--task TASK_NAME]" >&2
+    exit 1
+fi
+
+ACTION="$1"
+shift
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --task) TASK_NAME="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# Require docker
+if ! command -v docker &>/dev/null; then
+    echo "Error: docker is not installed or not in PATH" >&2
+    exit 1
+fi
+
+# Find compose file
+compose_file=""
+for candidate in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+    if [ -f "$candidate" ]; then
+        compose_file="$candidate"
+        break
+    fi
+done
+
+if [ -z "$compose_file" ]; then
+    echo "No docker-compose file found in $(pwd)" >&2
+    exit 1
+fi
+
+# Build the compose command with override if present
+COMPOSE="docker compose -f $compose_file"
+if [ -f "docker-compose.looper.yml" ]; then
+    COMPOSE="$COMPOSE -f docker-compose.looper.yml"
+fi
+
+# Set project name for volume isolation
+if [ -n "$TASK_NAME" ]; then
+    export COMPOSE_PROJECT_NAME="looper-${TASK_NAME}"
+elif [ -f ".env.looper" ]; then
+    # shellcheck disable=SC1091
+    proj_name=$(grep '^COMPOSE_PROJECT_NAME=' .env.looper 2>/dev/null | cut -d= -f2 || true)
+    if [ -n "$proj_name" ]; then
+        export COMPOSE_PROJECT_NAME="$proj_name"
+    fi
+fi
+
+case "$ACTION" in
+    up)
+        # Generate override if it doesn't exist yet
+        if [ ! -f "docker-compose.looper.yml" ]; then
+            if [ -z "$TASK_NAME" ]; then
+                echo "Error: --task required for first 'up' (to generate port isolation)" >&2
+                exit 1
+            fi
+            echo "Generating port isolation override..." >&2
+            "$SCRIPT_DIR/compose-isolate" --task "$TASK_NAME" >&2
+            # Rebuild compose command with new override
+            COMPOSE="docker compose -f $compose_file -f docker-compose.looper.yml"
+        fi
+
+        echo "Starting services..." >&2
+        # Use --wait if supported (Docker Compose v2.1+), fall back to -d
+        if $COMPOSE up -d --wait 2>/dev/null; then
+            echo "All services started and healthy" >&2
+        else
+            echo "Starting services without --wait flag..." >&2
+            $COMPOSE up -d
+
+            # Manual health check: poll each service port
+            echo "Waiting for services to be ready..." >&2
+            if [ -f ".env.looper" ]; then
+                # Extract remapped ports from .env.looper and check connectivity
+                # shellcheck disable=SC2013
+                for port in $(grep -oE '[0-9]{5}' .env.looper | sort -u); do
+                    for i in $(seq 1 15); do
+                        if nc -z localhost "$port" 2>/dev/null; then
+                            echo "  Port $port is ready" >&2
+                            break
+                        fi
+                        if [ "$i" -eq 15 ]; then
+                            echo "  Warning: port $port not responding after 30s" >&2
+                        fi
+                        sleep 2
+                    done
+                done
+            fi
+        fi
+
+        # Export env vars for the calling process
+        load_compose_env
+        echo "Services ready. Connection strings loaded from .env.looper" >&2
+        ;;
+
+    down)
+        echo "Stopping services and removing volumes..." >&2
+        $COMPOSE down -v --remove-orphans 2>&1 || true
+        echo "Services stopped" >&2
+        ;;
+
+    status)
+        $COMPOSE ps
+        ;;
+
+    *)
+        echo "Unknown action: $ACTION" >&2
+        echo "Usage: compose-lifecycle <up|down|status>" >&2
+        exit 1
+        ;;
+esac

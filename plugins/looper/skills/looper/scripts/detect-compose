@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# detect-compose — Detect docker-compose and extract service port mappings
+# Usage: detect-compose
+# Outputs JSON: {"compose_file": "...", "services": {"svc": {"ports": [...], "image": "...", "has_build": false}}}
+# Exits 0 always. Returns {"compose_file": "none", "services": {}} if no compose file.
+
+# Find compose file
+compose_file="none"
+for candidate in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+    if [ -f "$candidate" ]; then
+        compose_file="$candidate"
+        break
+    fi
+done
+
+if [ "$compose_file" = "none" ]; then
+    echo '{"compose_file":"none","services":{}}'
+    exit 0
+fi
+
+# Require docker for parsing
+if ! command -v docker &>/dev/null; then
+    echo '{"compose_file":"'"$compose_file"'","services":{},"error":"docker not found"}'
+    exit 0
+fi
+
+# Use docker compose config to get canonical JSON — most reliable parser
+config_json=$(docker compose -f "$compose_file" config --format json 2>/dev/null) || {
+    echo '{"compose_file":"'"$compose_file"'","services":{},"error":"docker compose config failed"}'
+    exit 0
+}
+
+# Extract service info with jq
+echo "$config_json" | jq --arg cf "$compose_file" '{
+    compose_file: $cf,
+    services: (
+        .services // {} | to_entries | map({
+            key: .key,
+            value: {
+                ports: (
+                    .value.ports // [] | map({
+                        host: (if .published != null then (.published | tonumber) else .target end),
+                        container: (.target // 0 | tonumber)
+                    })
+                ),
+                image: (.value.image // ""),
+                has_build: (.value.build != null)
+            }
+        }) | from_entries
+    )
+}'

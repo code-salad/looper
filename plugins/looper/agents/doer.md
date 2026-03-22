@@ -152,6 +152,157 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
        --iteration $ITERATION
    ```
 
+---
+
+### Phase 2.5: SIMPLIFY — Refine the implementation
+
+**Resume check:** Before starting, check if a `do-simplify` commit already
+exists for this iteration:
+```bash
+git log --grep="Loop-Phase: do-simplify" --grep="Loop-Iteration: $ITERATION" \
+    --all-match --format="%H" -1
+```
+If it exists, skip this phase entirely.
+
+9. **Run the code-simplifier** — Spawn a `code-simplifier` subagent to review
+   and simplify the implementation files changed in the GREEN phase. The
+   subagent should:
+   - Read only the files modified in the GREEN commit (not test files)
+   - Simplify: reduce redundancy, flatten nesting, improve naming, remove
+     dead code, consolidate duplicated logic
+   - Preserve all behavior — no feature changes
+   - Skip if changes are trivial (1-2 small files with clean code)
+
+   Get the list of files changed in GREEN:
+   ```bash
+   green_hash=$(git log --grep="Loop-Phase: do-green" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%H" -1)
+   git diff-tree --no-commit-id --name-only -r "$green_hash"
+   ```
+
+   If the subagent made no changes (code was already clean), skip the commit
+   and proceed to Phase 3.
+
+10. **Verify tests still pass** after simplification:
+    ```bash
+    $SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"
+    ```
+
+    If tests fail, revert the simplification changes and skip this phase:
+    ```bash
+    git checkout -- .
+    ```
+
+11. **Commit SIMPLIFY** (only if changes were made):
+    ```bash
+    $SCRIPTS_DIR/git-commit-loop \
+        --type "refactor" \
+        --scope "$TASK_NAME" \
+        --message "simplify: refine implementation for iteration $ITERATION" \
+        --body "<summary of simplifications made>" \
+        --phase "do-simplify" \
+        --iteration $ITERATION
+    ```
+
+---
+
+### Phase 3: INTEGRATION — Write integration tests (if applicable)
+
+**Skip this phase if** the project has no runnable artifact (pure library, no
+server, no CLI) — only write integration tests for web apps, APIs, or CLI tools.
+
+**Resume check:** Before starting, check if a `do-integration` commit already
+exists for this iteration:
+```bash
+git log --grep="Loop-Phase: do-integration" --grep="Loop-Iteration: $ITERATION" \
+    --all-match --format="%H" -1
+```
+If it exists, skip Phase 3 entirely.
+
+9. **Detect if integration tests are appropriate** — Run:
+   ```bash
+   STACK=$($SCRIPTS_DIR/detect-stack)
+   framework=$(echo "$STACK" | jq -r '.framework')
+   dev_command=$(echo "$STACK" | jq -r '.dev_command')
+   ```
+
+   Write integration tests if ANY of these are true:
+   - `framework` is a web framework (express, fastify, hono, next, django, fastapi, flask, gin, echo, fiber, etc.)
+   - `dev_command` is not "none" (project has a runnable dev server)
+   - The plan mentions API endpoints, routes, or CLI commands
+
+   If none apply, skip to step 8 commit above (no integration tests needed).
+
+10. **Write integration test scripts** — Create scripts in `tests/integration/`
+    that exercise the running application with real HTTP requests or CLI invocations.
+
+    Each script should:
+    - Use `$INTEGRATION_PORT` env var for the server port (set by the test runner)
+    - Make real HTTP requests with `curl` and assert on response status/body
+    - Exit 0 on success, non-zero on failure
+    - Test the specific scenarios from the acceptance criteria
+
+    **Example for a web API** (`tests/integration/test_api.sh`):
+    ```bash
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PORT="${INTEGRATION_PORT:-9876}"
+    BASE="http://localhost:$PORT"
+
+    # Test: POST /api/users creates a user
+    response=$(curl -sf -w "\n%{http_code}" -X POST "$BASE/api/users" \
+        -H "Content-Type: application/json" \
+        -d '{"name": "test"}')
+    status=$(echo "$response" | tail -1)
+    body=$(echo "$response" | head -n -1)
+    [ "$status" = "201" ] || { echo "FAIL: expected 201 got $status"; exit 1; }
+    echo "PASS: POST /api/users returns 201"
+    ```
+
+    **Example for a CLI** (`tests/integration/test_cli.sh`):
+    ```bash
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Test: CLI processes input file correctly
+    output=$(./my-tool process input.txt 2>&1)
+    echo "$output" | grep -q "Success" || { echo "FAIL: expected Success in output"; exit 1; }
+    echo "PASS: CLI processes input correctly"
+    ```
+
+    Guidelines:
+    - One script per feature area or acceptance criterion
+    - Keep scripts simple — just curl + assertions, no complex frameworks
+    - Test the happy path AND at least one error case from the acceptance criteria
+    - For bug fixes: reproduce the exact bug scenario and verify it's fixed
+    - Make scripts executable: `chmod +x tests/integration/*.sh`
+
+11. **Verify integration tests pass** — Run:
+    ```bash
+    LOOPER_TASK_NAME=$TASK_NAME $SCRIPTS_DIR/run-integration-tests --port $LOOPER_DEV_PORT 2>&1; echo "EXIT_CODE=$?"
+    ```
+
+    If `HAS_COMPOSE` is `true` (from task variables), the integration test
+    runner automatically starts backing services (databases, caches, etc.)
+    via docker-compose with isolated ports. No manual docker-compose commands
+    are needed — `run-integration-tests` handles it.
+
+    - If tests pass, proceed to commit.
+    - If the app fails to start, check your implementation and fix it.
+    - If tests fail, fix either the test assertions or the implementation
+      (prefer fixing implementation if the test correctly reflects the acceptance criteria).
+
+12. **Commit INTEGRATION** — Commit integration test files:
+    ```bash
+    $SCRIPTS_DIR/git-commit-loop \
+        --type "test" \
+        --scope "$TASK_NAME" \
+        --message "integration: add integration tests for iteration $ITERATION" \
+        --body "<describe what the integration tests verify>" \
+        --phase "do-integration" \
+        --iteration $ITERATION
+    ```
+
 ## Available Skills
 
 Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
@@ -164,6 +315,10 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `install-deps` — Install project dependencies
 - `git-loop-context` — Read prior loop iterations from git log
 - `git-commit-loop` — Create commits with loop trailers
+- `run-integration-tests` — Start app and run tests/integration/ scripts (`--port <PORT>`)
+- `scaffold-integration-ci` — Generate .github/workflows/integration.yml
+- `compose-lifecycle` — Start/stop docker-compose services (`up --task`, `down`, `status`)
+- `detect-compose` — Detect docker-compose and extract service port mappings
 
 ## Rules
 

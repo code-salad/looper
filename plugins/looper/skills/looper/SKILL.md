@@ -205,6 +205,27 @@ LOOPER_DEV_PORT=$(( ( $(echo "$TASK_NAME" | cksum | cut -d' ' -f1) % 50000 ) + 1
 This port is passed to agents so the Checker's integration tests don't collide
 with the user's running dev server.
 
+#### 7b2. Isolate docker-compose services (if applicable)
+
+If the project uses docker-compose, generate a port isolation override so
+backing services (databases, caches, queues) don't collide between worktrees
+or with the user's own dev environment.
+
+```bash
+COMPOSE_INFO=$($SCRIPTS_DIR/detect-compose)
+HAS_COMPOSE=$(echo "$COMPOSE_INFO" | jq -r 'if .compose_file != "none" then "true" else "false" end')
+COMPOSE_SERVICES="none"
+if [ "$HAS_COMPOSE" = "true" ]; then
+    $SCRIPTS_DIR/compose-isolate --task "$TASK_NAME" >&2
+    COMPOSE_SERVICES=$(echo "$COMPOSE_INFO" | jq -r '[.services | keys[]] | join(", ")')
+    echo "Docker-compose detected. Isolated services: $COMPOSE_SERVICES"
+fi
+```
+
+The override file (`docker-compose.looper.yml`) and connection string file
+(`.env.looper`) are generated in the worktree root. Scripts like
+`run-integration-tests` and `compose-lifecycle` use these automatically.
+
 #### 7c. Build the agent context prompt
 
 Construct a context string passed to each subagent:
@@ -227,6 +248,8 @@ Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
 - **SCRIPTS_DIR:** ${SCRIPTS_DIR}
 - **WORKTREE_DIR:** ${WORKTREE_DIR}
 - **LOOPER_DEV_PORT:** ${LOOPER_DEV_PORT}
+- **HAS_COMPOSE:** ${HAS_COMPOSE:-false}
+- **COMPOSE_SERVICES:** ${COMPOSE_SERVICES:-none}
 
 ## Issue Context
 

@@ -215,6 +215,24 @@ Summarize results from Phase 1c:
 
 ## Phase 3: Commit & Push
 
+### 3a-pre. Scaffold integration CI (if missing)
+
+Before staging, check if the target repo has an integration test workflow. If
+integration tests exist in `tests/integration/` but no CI workflow runs them,
+scaffold one:
+
+```bash
+# Only scaffold if integration tests exist but no workflow does
+if [ -d "tests/integration" ] && [ ! -f ".github/workflows/integration.yml" ]; then
+    SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/skills/looper/scripts"
+    if [ -x "$SCRIPTS_DIR/scaffold-integration-ci" ]; then
+        "$SCRIPTS_DIR/scaffold-integration-ci"
+    fi
+fi
+```
+
+If scaffolded, the new workflow file will be included in the PR commit below.
+
 ### 3a. Stage and commit
 
 Check `git status` for unstaged or untracked changes that should be included.
