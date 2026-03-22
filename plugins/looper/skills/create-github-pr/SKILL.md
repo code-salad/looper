@@ -422,14 +422,14 @@ Check status manually: gh pr checks $PR_NUMBER
 
 ---
 
-## Phase 6: Merge (if CI passed)
+## Phase 6: Merge or leave as PR (if CI passed)
 
-After CI passes, merge the PR using the appropriate strategy and clean up.
+After CI passes, decide whether to merge or leave the PR open for manual review.
 
 ### 6a-pre. Detect DB migrations in changeset
 
-Before merging, check whether the PR contains DB migration files. This determines
-which merge strategy to use.
+Before merging, check whether the PR contains DB migration files. If DB migrations
+are present, the PR must NOT be auto-merged — it is left open for manual review.
 
 ```bash
 # Detect if PR contains DB migration files
@@ -455,24 +455,25 @@ Migration patterns detected:
 - `flyway/` — Flyway SQL migrations
 - Files matching `migrate*.sql` or `migration*.sql`
 
-### 6a. Merge using appropriate strategy
+### 6a. Squash-merge or skip merge
 
 Only proceed if ALL CI checks passed in Phase 5. If any check failed or timed out, skip this phase entirely.
 
 ```bash
 if [ "$HAS_MIGRATIONS" = true ]; then
-    echo "DB migrations detected — using regular merge to preserve migration commit history."
-    gh pr merge $PR_NUMBER --merge --delete-branch
+    echo "DB migrations detected — skipping auto-merge. PR left open for manual review."
 else
     gh pr merge $PR_NUMBER --squash --delete-branch
 fi
 ```
 
-If the merge fails (e.g., merge conflicts, branch protection rules), report the error to the user and do NOT retry. The user may need to resolve conflicts or adjust branch protection settings.
+**Key rule:** When DB migrations are detected, do NOT merge the PR. Leave it open for a human to review and merge manually. Only squash-merge PRs that have no DB involvement.
+
+If the squash merge fails (e.g., merge conflicts, branch protection rules), report the error to the user and do NOT retry. The user may need to resolve conflicts or adjust branch protection settings.
 
 ### 6b. Clean up worktree
 
-If the `$WORKTREE_DIR` variable is set (indicating this PR was created from a looper worktree), remove the worktree after a successful merge:
+If the `$WORKTREE_DIR` variable is set (indicating this PR was created from a looper worktree), remove the worktree after a successful merge or after the PR is left open:
 
 ```bash
 # Return to the main repo first
@@ -485,20 +486,22 @@ git worktree remove "$WORKTREE_DIR" --force
 git config core.bare false
 ```
 
-If worktree removal fails, warn but do not abort — the merge already succeeded.
+If worktree removal fails, warn but do not abort.
 
 ### 6c. Report final status
 
-**If merge succeeded (no migrations detected — squash merge):**
+**If squash-merged (no DB migrations):**
 ```
 ✅ PR #<number> squash-merged into <BASE_BRANCH> and branch deleted.
 <PR URL>
 ```
 
-**If merge succeeded (DB migrations detected — regular merge):**
+**If PR left open (DB migrations detected):**
 ```
-✅ PR #<number> merged (non-squash — DB migrations detected) into <BASE_BRANCH> and branch deleted.
+⏸️ PR #<number> created and CI passed, but DB migrations were detected — left open for manual review.
 <PR URL>
+
+Merge manually when ready: gh pr merge <number> --squash --delete-branch
 ```
 
 **If merge failed:**
@@ -506,9 +509,8 @@ If worktree removal fails, warn but do not abort — the merge already succeeded
 ⚠️ PR #<number> CI passed but merge failed: <error reason>
 <PR URL>
 
-Merge manually: gh pr merge <number> --merge
+Merge manually: gh pr merge <number> --squash --delete-branch
 ```
-(Use `--squash` instead of `--merge` if no migrations were detected.)
 
 ---
 
@@ -527,9 +529,9 @@ Merge manually: gh pr merge <number> --merge
 | CI checks time out (>20 min) | Report timeout, print PR URL, give manual check command |
 | No CI checks configured | Note "no CI checks configured", print PR URL, complete normally |
 | `gh pr checks --watch` not supported | Fall back to manual polling loop (30s intervals, 40 attempts) |
-| Squash merge fails (conflicts) | Report error, print manual merge command (`--squash` or `--merge` depending on migration detection), do NOT retry |
+| Squash merge fails (conflicts) | Report error, print manual merge command `gh pr merge <number> --squash --delete-branch`, do NOT retry |
 | Squash merge fails (branch protection) | Report error, suggest user review branch protection settings |
-| Regular merge fails (migrations detected) | Report error, print manual merge command `gh pr merge <number> --merge`, do NOT retry |
+| DB migrations detected | Do NOT merge — leave PR open for manual review, report PR URL |
 | Worktree cleanup fails | Warn but do not abort — merge already succeeded |
 
 ---
