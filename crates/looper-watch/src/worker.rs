@@ -205,6 +205,34 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
     join_all(tasks).await;
 }
 
+/// Guard against core.bare=true on the local repo checkout.
+///
+/// Worktree creation/removal can leave core.bare=true on the parent repo,
+/// which breaks git pull and other operations on the main branch.
+/// This runs after each session completes to ensure the repo stays usable.
+async fn fix_bare_if_needed(repo: &str, app: &AppState) {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let repo_dir = Path::new(&home).join("repos").join(repo);
+    if !repo_dir.join(".git").exists() {
+        return;
+    }
+    let bare_val = Command::new("git")
+        .args(["-C", &repo_dir.to_string_lossy(), "config", "--get", "core.bare"])
+        .output()
+        .await;
+    if let Ok(output) = bare_val {
+        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if val == "true" {
+            app.log(&format!("WARNING: core.bare=true detected on {}, fixing", repo_dir.display()))
+                .await;
+            let _ = Command::new("git")
+                .args(["-C", &repo_dir.to_string_lossy(), "config", "core.bare", "false"])
+                .output()
+                .await;
+        }
+    }
+}
+
 async fn run_claude(
     repo: &str,
     issue_number: u64,
@@ -259,6 +287,9 @@ async fn run_claude(
             },
         };
 
+        // Guard against core.bare=true after worktree cleanup
+        fix_bare_if_needed(repo, app).await;
+
         app.log(&format!("#{issue_number}: {outcome}")).await;
         let mut s = app.state.lock().await;
         s.add_history(Entry {
@@ -292,6 +323,11 @@ async fn run_claude(
         .args(["kill-session", "-t", &session])
         .output()
         .await;
+
+    // Guard against core.bare=true on the repo after worktree cleanup.
+    // Worktree removal (in create-github-pr) can leave core.bare=true,
+    // which blocks git pull on the main branch.
+    fix_bare_if_needed(repo, app).await;
 
     let outcome = Outcome::Completed {
         detail: Some("tmux".to_string()),

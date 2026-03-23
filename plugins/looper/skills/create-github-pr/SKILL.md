@@ -476,15 +476,11 @@ If the squash merge fails (e.g., merge conflicts, branch protection rules), repo
 If the `$WORKTREE_DIR` variable is set (indicating this PR was created from a looper worktree), remove the worktree after a successful merge or after the PR is left open:
 
 ```bash
-# Return to the main repo first
-cd "$(git worktree list --porcelain | head -1 | sed 's/^worktree //')"
-
-# Remove the worktree
-git worktree remove "$WORKTREE_DIR" --force
-
-# Ensure core.bare was not set to true by the worktree removal
-git config core.bare false
+SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/skills/looper/scripts"
+"$SCRIPTS_DIR/cleanup-worktree" --dir "$WORKTREE_DIR"
 ```
+
+The `cleanup-worktree` script handles returning to the main repo, removing the worktree, and guarding against `core.bare=true` in a single atomic operation.
 
 If worktree removal fails, warn but do not abort.
 

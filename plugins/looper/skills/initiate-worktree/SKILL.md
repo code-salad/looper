@@ -22,7 +22,17 @@ Create an isolated git worktree under `.worktrees/` in the repo root.
 
    Skip the commit if `.gitignore` was already up to date.
 
-3. **Create the worktree** — Run:
+3. **Guard against core.bare=true** — Before creating the worktree, check and fix `core.bare`:
+
+   ```bash
+   bare_val=$(git config --get core.bare 2>/dev/null || echo "")
+   if [ "$bare_val" = "true" ]; then
+       echo "WARNING: core.bare=true detected, fixing..."
+       git config core.bare false
+   fi
+   ```
+
+4. **Create the worktree** — Run:
 
    ```bash
    git worktree add .worktrees/$ARGUMENTS
@@ -30,7 +40,13 @@ Create an isolated git worktree under `.worktrees/` in the repo root.
 
    This creates a new branch with the same name as the worktree. If the user needs a specific base branch or an existing branch, they can pass additional git flags after the name.
 
-4. **Change into the worktree directory** — Run:
+5. **Guard again after creation** — Worktree creation can set `core.bare=true` on the parent repo:
+
+   ```bash
+   git config core.bare false
+   ```
+
+6. **Change into the worktree directory** — Run:
 
    ```bash
    cd .worktrees/$ARGUMENTS

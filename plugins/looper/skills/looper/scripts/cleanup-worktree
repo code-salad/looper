@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# cleanup-worktree — Remove a worktree and guard against core.bare=true
+# Usage: cleanup-worktree --dir <worktree_dir>
+# Removes the worktree from the parent repo and ensures core.bare stays false.
+# Warnings/info go to stderr.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/_helpers.sh"
+
+WORKTREE_DIR=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dir) WORKTREE_DIR="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [ -z "$WORKTREE_DIR" ]; then
+    echo "Usage: cleanup-worktree --dir <worktree_dir>" >&2
+    exit 1
+fi
+
+# Resolve the main repo root from the worktree's git metadata.
+# In a worktree, .git is a file pointing to the main repo's .git/worktrees/<name>.
+# We need the main repo root to cd into before removal.
+if [ -d "$WORKTREE_DIR" ]; then
+    MAIN_GIT_DIR=$(git -C "$WORKTREE_DIR" rev-parse --absolute-git-dir 2>/dev/null || true)
+    if [ -n "$MAIN_GIT_DIR" ]; then
+        # Worktree .git dir is <main-repo>/.git/worktrees/<name>
+        # Strip /worktrees/<name> to get <main-repo>/.git, then strip /.git
+        REPO_ROOT="${MAIN_GIT_DIR%/.git/worktrees/*}"
+        if [ "$REPO_ROOT" = "$MAIN_GIT_DIR" ]; then
+            # Fallback: try --show-toplevel from main worktree list
+            REPO_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+        fi
+    else
+        REPO_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+    fi
+else
+    # Worktree dir doesn't exist; derive repo root from current location
+    REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+    if [ -z "$REPO_ROOT" ]; then
+        REPO_ROOT=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+    fi
+fi
+
+if [ -z "$REPO_ROOT" ]; then
+    echo "[cleanup-worktree] ERROR: Could not determine main repo root" >&2
+    exit 1
+fi
+
+# Move to repo root before removal (can't remove a worktree while inside it)
+cd "$REPO_ROOT"
+
+# Remove the worktree
+if [ -d "$WORKTREE_DIR" ]; then
+    if git worktree remove "$WORKTREE_DIR" --force 2>&1 >&2; then
+        echo "[cleanup-worktree] Removed worktree $WORKTREE_DIR" >&2
+    else
+        echo "[cleanup-worktree] WARNING: git worktree remove failed, cleaning up manually" >&2
+        rm -rf "$WORKTREE_DIR"
+        git worktree prune 2>/dev/null || true
+    fi
+else
+    echo "[cleanup-worktree] Worktree $WORKTREE_DIR does not exist, pruning stale entries" >&2
+    git worktree prune 2>/dev/null || true
+fi
+
+# Guard against core.bare=true — this is the critical fix
+ensure_not_bare "$REPO_ROOT"

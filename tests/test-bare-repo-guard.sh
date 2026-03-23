@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HELPERS_SH="$SCRIPT_DIR/../plugins/looper/skills/looper/scripts/_helpers.sh"
 SETUP_WORKTREE="$SCRIPT_DIR/../plugins/looper/skills/looper/scripts/setup-worktree"
+CLEANUP_WORKTREE="$SCRIPT_DIR/../plugins/looper/skills/looper/scripts/cleanup-worktree"
 
 PASS=0
 FAIL=0
@@ -208,6 +209,90 @@ BARE_AFTER_REMOVE=$(git -C "$TMPDIR_TEST" config --get core.bare 2>/dev/null || 
 assert_not_eq "core.bare stays not-true after worktree removal" "$BARE_AFTER_REMOVE" "true"
 
 cleanup
+
+# --- Test 6: cleanup-worktree removes worktree and keeps core.bare=false ---
+echo "=== Test 6: cleanup-worktree removes worktree and keeps core.bare=false ==="
+setup_test_repo
+
+# Create a worktree
+cd "$TMPDIR_TEST"
+git -C "$TMPDIR_TEST" worktree add "$TMPDIR_TEST/.worktrees/cleanup-test" -b "loop/cleanup-test" HEAD >/dev/null 2>&1
+
+if [ -d "$TMPDIR_TEST/.worktrees/cleanup-test" ]; then
+    echo "PASS: worktree created for cleanup test"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL: worktree not created for cleanup test"
+    FAIL=$((FAIL + 1))
+fi
+
+set +e
+OUTPUT=$(cd "$TMPDIR_TEST" && "$CLEANUP_WORKTREE" --dir "$TMPDIR_TEST/.worktrees/cleanup-test" 2>&1)
+EXIT_CODE=$?
+set -e
+
+assert_exit_zero "cleanup-worktree exits 0" "$EXIT_CODE"
+
+if [ ! -d "$TMPDIR_TEST/.worktrees/cleanup-test" ]; then
+    echo "PASS: cleanup-worktree removed the worktree directory"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL: cleanup-worktree did not remove the worktree directory"
+    FAIL=$((FAIL + 1))
+fi
+
+BARE_AFTER=$(git -C "$TMPDIR_TEST" config --get core.bare 2>/dev/null || echo "unset")
+assert_not_eq "core.bare is not true after cleanup-worktree" "$BARE_AFTER" "true"
+
+cleanup
+
+# --- Test 7: cleanup-worktree fixes core.bare=true set by worktree removal ---
+echo "=== Test 7: cleanup-worktree fixes core.bare=true even if removal triggers it ==="
+setup_test_repo
+
+# Create a worktree
+cd "$TMPDIR_TEST"
+git -C "$TMPDIR_TEST" worktree add "$TMPDIR_TEST/.worktrees/bare-trigger" -b "loop/bare-trigger" HEAD >/dev/null 2>&1
+
+# Simulate the scenario: set core.bare=true as if worktree removal triggered it
+# We do this by running cleanup-worktree but injecting bare=true right before the guard
+# (In practice, git worktree remove may set this)
+# Instead, we'll create a wrapper test: remove manually, set bare=true, then call cleanup on non-existent dir
+git -C "$TMPDIR_TEST" worktree remove "$TMPDIR_TEST/.worktrees/bare-trigger" --force 2>/dev/null || true
+git -C "$TMPDIR_TEST" config core.bare true
+
+BARE_BEFORE=$(git -C "$TMPDIR_TEST" config --get core.bare 2>/dev/null || echo "unset")
+assert_eq "core.bare is true before cleanup-worktree prune" "$BARE_BEFORE" "true"
+
+# cleanup-worktree on the already-removed dir should still fix core.bare
+set +e
+OUTPUT=$(cd "$TMPDIR_TEST" && "$CLEANUP_WORKTREE" --dir "$TMPDIR_TEST/.worktrees/bare-trigger" 2>&1)
+EXIT_CODE=$?
+set -e
+
+assert_exit_zero "cleanup-worktree exits 0 for already-removed worktree" "$EXIT_CODE"
+
+BARE_AFTER=$(git -C "$TMPDIR_TEST" config --get core.bare 2>/dev/null || echo "unset")
+assert_not_eq "core.bare is fixed after cleanup-worktree prune" "$BARE_AFTER" "true"
+
+cleanup
+
+# --- Test 8: cleanup-worktree handles missing --dir argument ---
+echo "=== Test 8: cleanup-worktree fails with usage error when --dir missing ==="
+
+set +e
+OUTPUT=$("$CLEANUP_WORKTREE" 2>&1)
+EXIT_CODE=$?
+set -e
+
+if [ "$EXIT_CODE" -ne 0 ]; then
+    echo "PASS: cleanup-worktree exits non-zero without --dir"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL: cleanup-worktree should exit non-zero without --dir"
+    FAIL=$((FAIL + 1))
+fi
+assert_output_contains "cleanup-worktree shows usage" "$OUTPUT" "Usage"
 
 # --- Summary ---
 echo ""
