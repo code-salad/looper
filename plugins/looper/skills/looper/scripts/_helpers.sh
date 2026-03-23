@@ -87,6 +87,11 @@ load_compose_env() {
 # Usage: ensure_not_bare [repo_dir]
 # If repo_dir is omitted, uses the current git toplevel.
 # Emits a warning to stderr when it fixes the issue.
+#
+# Strategy: UNSET core.bare entirely rather than setting it to false.
+# When unset, git infers bare=false from the directory structure (.git dir +
+# working tree). This is more robust than an explicit false because nothing
+# can flip an inference — only an explicit config value can be overwritten.
 ensure_not_bare() {
     local repo_dir="${1:-}"
     if [ -z "$repo_dir" ]; then
@@ -98,8 +103,8 @@ ensure_not_bare() {
     local bare_val
     bare_val=$(git -C "$repo_dir" config --get core.bare 2>/dev/null || echo "")
     if [ "$bare_val" = "true" ]; then
-        echo "[looper] WARNING: core.bare=true detected on $repo_dir — fixing it now" >&2
-        git -C "$repo_dir" config core.bare false
-        echo "[looper] core.bare has been reset to false on $repo_dir" >&2
+        echo "[looper] WARNING: core.bare=true detected on $repo_dir — unsetting it now" >&2
+        git -C "$repo_dir" config --unset core.bare
+        echo "[looper] core.bare has been unset on $repo_dir (git will infer bare=false from working tree)" >&2
     fi
 }

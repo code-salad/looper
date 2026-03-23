@@ -223,10 +223,10 @@ async fn fix_bare_if_needed(repo: &str, app: &AppState) {
     if let Ok(output) = bare_val {
         let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if val == "true" {
-            app.log(&format!("WARNING: core.bare=true detected on {}, fixing", repo_dir.display()))
+            app.log(&format!("WARNING: core.bare=true detected on {}, unsetting", repo_dir.display()))
                 .await;
             let _ = Command::new("git")
-                .args(["-C", &repo_dir.to_string_lossy(), "config", "core.bare", "false"])
+                .args(["-C", &repo_dir.to_string_lossy(), "config", "--unset", "core.bare"])
                 .output()
                 .await;
         }
