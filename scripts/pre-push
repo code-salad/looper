@@ -3,6 +3,77 @@ set -euo pipefail
 
 echo "=== pre-push: running checks ==="
 
+REPO_ROOT=$(git rev-parse --show-toplevel)
+BUMP_SCRIPT="$REPO_ROOT/plugins/looper/skills/looper/scripts/bump-version"
+
+# --- Version sync check ---
+# If any non-version-only files are being pushed, ensure versions are bumped.
+# Compare the local branch tip against the remote tracking branch.
+echo ">> Version sync"
+LOCAL_REF=$(git rev-parse HEAD)
+# shellcheck disable=SC1083
+REMOTE_REF=$(git rev-parse @{upstream} 2>/dev/null || echo "")
+
+if [ -n "$REMOTE_REF" ] && [ "$LOCAL_REF" != "$REMOTE_REF" ]; then
+    # Check if there are substantive (non-version-bump) changes being pushed
+    CHANGED_FILES=$(git diff --name-only "$REMOTE_REF" "$LOCAL_REF" 2>/dev/null || echo "")
+
+    # Filter out files that are only touched by version bumps
+    VERSION_ONLY_FILES="plugin.json marketplace.json Cargo.toml Cargo.lock"
+    HAS_SUBSTANTIVE=false
+    while IFS= read -r file; do
+        [ -z "$file" ] && continue
+        base=$(basename "$file")
+        is_version_file=false
+        for vf in $VERSION_ONLY_FILES; do
+            if [ "$base" = "$vf" ]; then
+                is_version_file=true
+                break
+            fi
+        done
+        if ! $is_version_file; then
+            HAS_SUBSTANTIVE=true
+            break
+        fi
+    done <<< "$CHANGED_FILES"
+
+    if $HAS_SUBSTANTIVE; then
+        # Check if versions were already bumped in this push
+        VERSION_BUMPED=false
+        if echo "$CHANGED_FILES" | grep -q "plugin.json\|marketplace.json"; then
+            VERSION_BUMPED=true
+        fi
+
+        if ! $VERSION_BUMPED; then
+            echo "  Substantive changes detected without version bump — auto-bumping patch..."
+            "$BUMP_SCRIPT" patch
+            # Update Cargo.lock after Cargo.toml bumps
+            cargo check --workspace >/dev/null 2>&1 || true
+            # Stage and amend the version bump into the latest commit
+            git add \
+                "$REPO_ROOT/.claude-plugin/marketplace.json" \
+                "$REPO_ROOT/plugins/looper/.claude-plugin/plugin.json" \
+                "$REPO_ROOT/plugins/fallback-agent/.claude-plugin/plugin.json" \
+                "$REPO_ROOT/plugins/webscraping/.claude-plugin/plugin.json" \
+                "$REPO_ROOT/crates/fallback-agent/Cargo.toml" \
+                "$REPO_ROOT/crates/looper-watch/Cargo.toml" \
+                "$REPO_ROOT/Cargo.lock" \
+                2>/dev/null || true
+            # Only amend if there are staged changes
+            if ! git diff --cached --quiet; then
+                git commit --amend --no-edit
+                echo "  Version bump amended into latest commit"
+            fi
+        else
+            echo "  Versions already bumped"
+        fi
+    else
+        echo "  Version-only changes, skipping bump"
+    fi
+else
+    echo "  No remote tracking or no diff, skipping bump"
+fi
+
 # ShellCheck
 echo ">> ShellCheck"
 for script in plugins/looper/skills/looper/scripts/*; do
