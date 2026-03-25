@@ -55,8 +55,25 @@ if ! [ -f "$GITIGNORE" ] || ! grep -qxF '.worktrees' "$GITIGNORE"; then
     echo '.worktrees' >> "$GITIGNORE"
     git -C "$REPO_ROOT" add -- .gitignore
     git -C "$REPO_ROOT" diff --cached --quiet || \
-        git -C "$REPO_ROOT" commit -m "chore: gitignore .worktrees"
+        git -C "$REPO_ROOT" commit -m "chore: gitignore .worktrees" >/dev/null 2>&1
     echo "[setup-worktree] Added .worktrees to .gitignore" >&2
+fi
+
+# Detect remote default branch so new worktrees start from origin/<default-branch>
+# instead of local HEAD (which may contain unpushed commits).
+DEFAULT_REMOTE_BRANCH=""
+if git remote get-url origin >/dev/null 2>&1; then
+    git fetch origin 2>/dev/null || true
+    DEFAULT_REMOTE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
+        | sed 's@^refs/remotes/origin/@@' || true)
+    if [ -z "$DEFAULT_REMOTE_BRANCH" ]; then
+        for candidate in main master alpha dev; do
+            if git show-ref --quiet "refs/remotes/origin/$candidate"; then
+                DEFAULT_REMOTE_BRANCH="$candidate"
+                break
+            fi
+        done
+    fi
 fi
 
 # Create or reuse worktree
@@ -66,9 +83,13 @@ if [ -d "$WORKTREE_DIR" ]; then
 elif git show-ref --quiet "refs/heads/$BRANCH"; then
     git worktree add "$WORKTREE_DIR" "$BRANCH" >/dev/null 2>&1
     echo "[setup-worktree] Created worktree at $WORKTREE_DIR (existing branch $BRANCH)" >&2
+elif [ -n "$DEFAULT_REMOTE_BRANCH" ] && git show-ref --quiet "refs/remotes/origin/$DEFAULT_REMOTE_BRANCH"; then
+    git worktree add -b "$BRANCH" "$WORKTREE_DIR" "origin/$DEFAULT_REMOTE_BRANCH" >/dev/null 2>&1
+    echo "[setup-worktree] Created worktree at $WORKTREE_DIR (new branch $BRANCH from origin/$DEFAULT_REMOTE_BRANCH)" >&2
 else
+    # Fallback: no remote detected — use local HEAD
     git worktree add -b "$BRANCH" "$WORKTREE_DIR" HEAD >/dev/null 2>&1
-    echo "[setup-worktree] Created worktree at $WORKTREE_DIR (new branch $BRANCH)" >&2
+    echo "[setup-worktree] Created worktree at $WORKTREE_DIR (new branch $BRANCH from HEAD — no remote detected)" >&2
 fi
 
 # Guard again after worktree creation (git worktree add can sometimes trigger bare inference)
