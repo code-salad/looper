@@ -51,10 +51,16 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    - Follow existing test conventions and patterns exactly
    - Place test files in the project's test directory following existing structure
    - Use descriptive test names that describe expected behavior
-   - For bug fixes: write a regression test that reproduces the exact bug
-     scenario from the issue
-   - For features: write a test that exercises the feature as described in
-     the acceptance criteria
+   - **For bug fixes: a regression test is MANDATORY.** Write a test that
+     reproduces the exact bug scenario from the issue — using the specific
+     inputs, steps, and conditions described in the report. This test MUST
+     fail on the current (buggy) code. Without a regression test, the bug
+     fix is incomplete and will be rejected by the Checker.
+   - **For features: behavioral tests are MANDATORY.** Write tests that
+     exercise the feature as a user would, derived from the acceptance
+     criteria. Cover the happy path AND at least one edge case or error
+     scenario. Tests that only verify implementation internals (e.g.,
+     "function X was called") are insufficient.
    - Tests should import/reference functions or modules that may not exist yet —
      this is expected in TDD. Use the interfaces described in the plan.
    - **Compiled languages (Rust, Go, Java, TypeScript):** If tests fail to

@@ -155,17 +155,33 @@ reviewer — report all findings but do NOT fix code or modify any files.
      a corresponding test file exists and covers the new/modified behavior.
      Flag each untested function, branch, or code path as a separate BLOCKER
      with a specific description of what test is needed and where to add it.
-   - **Acceptance-criteria tests are REQUIRED.** Verify that at least one test
-     is derived from the ticket/issue scenario (not just from the implementation
-     code). Look for regression tests that would catch the original bug or
-     tests that exercise the feature as described by the user. If no such test
-     exists, flag as [BLOCKER]: "Missing acceptance-criteria test — tests only
-     verify implementation internals, not the user's reported scenario."
+   - **Bug-fix regression test is MANDATORY.** If the task is a bug fix (check
+     the TASK_PROMPT and issue labels/title for "bug", "fix", "regression",
+     or similar indicators), verify that a specific regression test exists that:
+     1. Reproduces the exact scenario described in the bug report
+     2. Uses the specific inputs/conditions from the issue
+     3. Would FAIL on the code prior to the fix (check by reading the test
+        logic — it should assert the corrected behavior, not the old behavior)
+     If no such regression test exists, flag as [BLOCKER]: "Missing regression
+     test — bug fixes MUST include a test that reproduces the original bug
+     scenario to prevent future regressions. The test should use the specific
+     inputs/conditions from the issue report."
+   - **Feature behavioral tests are MANDATORY.** If the task is a feature,
+     verify that tests exercise the feature as a user would (derived from
+     acceptance criteria), not just implementation internals. Tests must cover
+     the happy path and at least one edge case. If tests only verify internal
+     function calls or implementation details, flag as [BLOCKER]: "Missing
+     behavioral tests — feature tests must verify user-observable behavior
+     from the acceptance criteria, not just implementation internals."
+   - **Acceptance-criteria coverage.** Verify that every acceptance criterion
+     from the plan has at least one corresponding test. List each criterion
+     and whether it is covered. Uncovered criteria are [BLOCKER]s.
    - **Circular test detection.** Check if tests are merely asserting what the
      code does (tautological) rather than what the code SHOULD do. Tests that
      would pass even if the implementation were wrong are [WARNING]s.
-   - Report: test failures, missing coverage, circular tests, missing
-     acceptance-criteria tests, test quality issues, suggested fixes
+   - Report: test failures, missing coverage, missing regression tests, missing
+     behavioral tests, circular tests, uncovered acceptance criteria, test
+     quality issues, suggested fixes
 
    **Subagent 3 — Logic Reviewer:**
    - Read all changed files (using the file list from step 2 Call 3)

@@ -74,8 +74,16 @@ modify any project files — only commit a plan as a git commit message.
    - Goal statement (what this iteration will accomplish)
    - Specific files to create or modify
    - Implementation details for each step
-   - **Tests to write first** (describe specific test cases with expected
-     behavior — these will be written BEFORE implementation)
+   - **Tests to write first** — describe specific test cases with expected
+     behavior. These will be written BEFORE implementation. Be explicit:
+     - **For bug fixes:** Describe a regression test that reproduces the exact
+       bug scenario from the issue. The test must fail on the current (buggy)
+       code and pass after the fix. Include the specific inputs, steps, and
+       expected-vs-actual behavior from the issue report.
+     - **For features:** Describe tests that exercise the feature as a user
+       would, derived from the acceptance criteria. Cover the happy path and
+       at least one edge case or error scenario.
+     - Frame tests in terms of observable behavior, not implementation details.
    - Acceptance criteria (how the Checker will know the task is done)
    - **Tech Stack Constraints** (list any framework, language, or architecture
      requirements from the issue body that the implementation must follow)
@@ -159,7 +167,16 @@ modify any project files — only commit a plan as a git commit message.
    - Verify acceptance criteria are specific and testable (not vague)
    - Check for missing steps (e.g., plan says "add tests" but doesn't say where
      or what)
-   - Report: [BLOCKER] for unaddressed Checker feedback, [WARNING] for gaps
+   - **Verify test descriptions are adequate:**
+     - For bug fixes: the plan MUST describe a regression test that reproduces
+       the specific bug scenario. If the "Tests to write first" section is
+       generic or doesn't reference the bug's inputs/conditions, flag as
+       [BLOCKER]: "Plan lacks regression test description for bug fix"
+     - For features: the plan MUST describe behavioral tests covering the
+       happy path and at least one edge case. If tests are vague ("add tests
+       for the feature") without specific scenarios, flag as [WARNING]
+   - Report: [BLOCKER] for unaddressed Checker feedback or missing regression
+     test descriptions, [WARNING] for gaps
 
    **Subagent 3 — Scope & Risk Reviewer:**
    - Check if the plan touches more files than necessary
