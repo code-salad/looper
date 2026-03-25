@@ -6,7 +6,7 @@ on:
 
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Skip if the push was from this workflow (prevent infinite loops)
     if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
     permissions:
