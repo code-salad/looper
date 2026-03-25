@@ -45,14 +45,14 @@ gh repo view "$REPO" --json name --jq '.name'
 
 **Gate:** Abort if repo not found.
 
-Check that `looper-watch` is installed:
+Resolve the `looper-watch` launcher:
 
 ```bash
-which looper-watch
+LOOPER_WATCH="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)/plugins/looper}/bin/looper-watch"
 ```
 
-**Gate:** If not found, tell the user to install it:
-> "looper-watch binary not found. Install it from the releases page or build from `crates/looper-watch`."
+**Gate:** If the launcher does not exist, abort:
+> "looper-watch launcher not found at $LOOPER_WATCH"
 
 ---
 
@@ -61,7 +61,7 @@ which looper-watch
 Convert `INTERVAL` from minutes to seconds (multiply by 60). Launch in the background:
 
 ```bash
-looper-watch --repo "$REPO" --interval "$INTERVAL_SECONDS" &
+"$LOOPER_WATCH" --repo "$REPO" --interval "$INTERVAL_SECONDS" &
 ```
 
 Report to the user:
@@ -72,7 +72,7 @@ Report to the user:
 ## Phase 3: Confirm
 
 ```bash
-looper-watch --repo "$REPO" --once --dry-run
+"$LOOPER_WATCH" --repo "$REPO" --once --dry-run
 ```
 
 Show the user which issues are currently open and eligible.

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Auto-downloads the fallback-agent binary from GitHub Releases.
+# Auto-downloads the looper-watch binary from GitHub Releases.
 # Caches by version so it only downloads once per release.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO="code-salad/looper"
-BINARY_NAME="fallback-agent"
+BINARY_NAME="looper-watch"
 
 # Read version from plugin.json
 VERSION=$(jq -r '.version' "$PLUGIN_ROOT/.claude-plugin/plugin.json" 2>/dev/null || echo "")

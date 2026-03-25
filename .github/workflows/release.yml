@@ -8,81 +8,99 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.crate }} (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        crate:
-          - looper-watch
-          - fallback-agent
-
-        target:
-          - x86_64-unknown-linux-gnu
-          - blacksmith-4vcpu-ubuntu-2404-arm
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-        include:
-          # OS mapping
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            suffix: x86_64-linux
-          - target: blacksmith-4vcpu-ubuntu-2404-arm
-            os: ubuntu-latest
-            suffix: aarch64-linux
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            suffix: x86_64-macos
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            suffix: aarch64-macos
-
+  detect:
+    name: Detect changed crates
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    outputs:
+      looper-watch: ${{ steps.changes.outputs.looper-watch }}
+      fallback-agent: ${{ steps.changes.outputs.fallback-agent }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          fetch-depth: 0
 
-      - name: Install cross-compilation tools (aarch64 Linux)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
+      - name: Detect changes since last release tag
+        id: changes
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          # Find the previous tag (skip current)
+          PREV_TAG=$(git tag --sort=-v:refname | grep '^v' | sed -n '2p')
 
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found — building all crates"
+            echo "looper-watch=true" >> "$GITHUB_OUTPUT"
+            echo "fallback-agent=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Comparing $PREV_TAG..HEAD"
+          CHANGED=$(git diff --name-only "$PREV_TAG"..HEAD)
+          echo "$CHANGED"
+
+          LW=false
+          FA=false
+
+          if echo "$CHANGED" | grep -qE '^crates/looper-watch/|^Cargo\.lock$|^Cargo\.toml$'; then
+            LW=true
+          fi
+
+          if echo "$CHANGED" | grep -qE '^crates/fallback-agent/|^Cargo\.lock$|^Cargo\.toml$'; then
+            FA=true
+          fi
+
+          echo "looper-watch=$LW" >> "$GITHUB_OUTPUT"
+          echo "fallback-agent=$FA" >> "$GITHUB_OUTPUT"
+
+  build-looper-watch:
+    name: Build looper-watch
+    needs: detect
+    if: needs.detect.outputs.looper-watch == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Build
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        working-directory: crates/${{ matrix.crate }}
-        run: cargo build --release --target ${{ matrix.target }}
-
+        working-directory: crates/looper-watch
+        run: cargo build --release
       - name: Package
         run: |
-          ARCHIVE="${{ matrix.crate }}-${{ matrix.suffix }}.tar.gz"
-          # Find the binary name from Cargo.toml (handles crate name != binary name)
-          BIN=$(ls crates/${{ matrix.crate }}/target/${{ matrix.target }}/release/ \
-            | grep -v '\.d$' | head -1) || true
-          cd crates/${{ matrix.crate }}/target/${{ matrix.target }}/release
-          tar czf "$GITHUB_WORKSPACE/$ARCHIVE" ${{ matrix.crate }}
-          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          cd crates/looper-watch/target/release
+          tar czf "$GITHUB_WORKSPACE/looper-watch-x86_64-linux.tar.gz" looper-watch
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.crate }}-${{ matrix.suffix }}
-          path: ${{ env.ARCHIVE }}
+          name: looper-watch-x86_64-linux
+          path: looper-watch-x86_64-linux.tar.gz
+          if-no-files-found: error
+
+  build-fallback-agent:
+    name: Build fallback-agent
+    needs: detect
+    if: needs.detect.outputs.fallback-agent == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        working-directory: crates/fallback-agent
+        run: cargo build --release
+      - name: Package
+        run: |
+          cd crates/fallback-agent/target/release
+          tar czf "$GITHUB_WORKSPACE/fallback-agent-x86_64-linux.tar.gz" fallback-agent
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fallback-agent-x86_64-linux
+          path: fallback-agent-x86_64-linux.tar.gz
           if-no-files-found: error
 
   release:
     name: Create Release
-    needs: build
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    needs: [detect, build-looper-watch, build-fallback-agent]
+    if: always() && !failure() && !cancelled()
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
