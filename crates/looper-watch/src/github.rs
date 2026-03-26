@@ -185,7 +185,6 @@ where
     Err(last_err)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,7 +216,12 @@ mod tests {
         Issue {
             number: 1,
             title: "Test".to_string(),
-            labels: labels.iter().map(|n| Label { name: n.to_string() }).collect(),
+            labels: labels
+                .iter()
+                .map(|n| Label {
+                    name: n.to_string(),
+                })
+                .collect(),
             body: None,
             created_at: "2024-01-01T00:00:00Z".to_string(),
         }

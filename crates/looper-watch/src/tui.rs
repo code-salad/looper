@@ -111,7 +111,9 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     col_running.push(Line::from(vec![
                         Span::styled(
                             format!("#{}", issue.number),
-                            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
                         ),
                         Span::raw(format!(" {}", truncate_title(&issue.title, title_max))),
                     ]));
@@ -123,20 +125,22 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     }
                     if !labels.is_empty() {
                         col_running.push(Line::from(Span::styled(
-                            format!("  {}", truncate_title(&labels, col_inner_width.saturating_sub(2))),
+                            format!(
+                                "  {}",
+                                truncate_title(&labels, col_inner_width.saturating_sub(2))
+                            ),
                             Style::default().fg(Color::DarkGray),
                         )));
                     }
                     col_running.push(Line::from(""));
-                } else if history.iter().any(|e| {
-                    e.issue_number == issue.number && e.outcome.is_done()
-                }) {
+                } else if history
+                    .iter()
+                    .any(|e| e.issue_number == issue.number && e.outcome.is_done())
+                {
                     // Done column
                     let elapsed_str = history
                         .iter()
-                        .find(|e| {
-                            e.issue_number == issue.number && e.outcome.is_done()
-                        })
+                        .find(|e| e.issue_number == issue.number && e.outcome.is_done())
                         .and_then(|entry| {
                             entry
                                 .started_at
@@ -152,7 +156,9 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     col_done.push(Line::from(vec![
                         Span::styled(
                             format!("#{}", issue.number),
-                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD),
                         ),
                         Span::raw(format!(" {}", truncate_title(&issue.title, title_max))),
                     ]));
@@ -164,7 +170,10 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     }
                     if !labels.is_empty() {
                         col_done.push(Line::from(Span::styled(
-                            format!("  {}", truncate_title(&labels, col_inner_width.saturating_sub(2))),
+                            format!(
+                                "  {}",
+                                truncate_title(&labels, col_inner_width.saturating_sub(2))
+                            ),
                             Style::default().fg(Color::DarkGray),
                         )));
                     }
@@ -174,13 +183,18 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     col_open.push(Line::from(vec![
                         Span::styled(
                             format!("#{}", issue.number),
-                            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD),
                         ),
                         Span::raw(format!(" {}", truncate_title(&issue.title, title_max))),
                     ]));
                     if !labels.is_empty() {
                         col_open.push(Line::from(Span::styled(
-                            format!("  {}", truncate_title(&labels, col_inner_width.saturating_sub(2))),
+                            format!(
+                                "  {}",
+                                truncate_title(&labels, col_inner_width.saturating_sub(2))
+                            ),
                             Style::default().fg(Color::DarkGray),
                         )));
                     }
@@ -206,9 +220,14 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                     col_done.push(Line::from(vec![
                         Span::styled(
                             format!("#{}", entry.issue_number),
-                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD),
                         ),
-                        Span::raw(format!(" {}", truncate_title(&entry.issue_title, title_max))),
+                        Span::raw(format!(
+                            " {}",
+                            truncate_title(&entry.issue_title, title_max)
+                        )),
                     ]));
                     if !elapsed_str.is_empty() {
                         col_done.push(Line::from(Span::styled(
@@ -225,13 +244,16 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
                 .iter()
                 .filter(|i| {
                     !in_progress.contains(&i.number)
-                        && !history.iter().any(|e| {
-                            e.issue_number == i.number && e.outcome.is_done()
-                        })
+                        && !history
+                            .iter()
+                            .any(|e| e.issue_number == i.number && e.outcome.is_done())
                 })
                 .count();
             let count_running = in_progress.len();
-            let count_done = col_done.iter().filter(|l| !l.spans.is_empty() && l.spans[0].content.starts_with('#')).count();
+            let count_done = col_done
+                .iter()
+                .filter(|l| !l.spans.is_empty() && l.spans[0].content.starts_with('#'))
+                .count();
 
             // Adaptive session panel height: 3 (border + header) + rows, clamped to [4, 10]
             let session_rows_count = tmux_sessions.len() as u16;
@@ -246,11 +268,11 @@ pub async fn run_tui(app: AppState, repo: &str, state_path: &Path) -> io::Result
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),          // header
-                    Constraint::Length(board_h),     // kanban board
-                    Constraint::Length(session_h),   // tmux sessions (adaptive)
-                    Constraint::Length(log_h),       // log
-                    Constraint::Length(1),           // footer
+                    Constraint::Length(3),         // header
+                    Constraint::Length(board_h),   // kanban board
+                    Constraint::Length(session_h), // tmux sessions (adaptive)
+                    Constraint::Length(log_h),     // log
+                    Constraint::Length(1),         // footer
                 ])
                 .split(area);
 
@@ -527,7 +549,10 @@ mod tests {
     ) -> KanbanColumn {
         if in_progress.contains(&issue_number) {
             KanbanColumn::Running
-        } else if history.iter().any(|e| e.issue_number == issue_number && e.outcome.is_done()) {
+        } else if history
+            .iter()
+            .any(|e| e.issue_number == issue_number && e.outcome.is_done())
+        {
             KanbanColumn::Done
         } else {
             KanbanColumn::Open
@@ -549,7 +574,10 @@ mod tests {
     fn categorize_open_issue_with_no_progress_or_history() {
         let in_progress = HashSet::new();
         let history = vec![];
-        assert_eq!(categorize_issue(1, &in_progress, &history), KanbanColumn::Open);
+        assert_eq!(
+            categorize_issue(1, &in_progress, &history),
+            KanbanColumn::Open
+        );
     }
 
     #[test]
@@ -557,28 +585,50 @@ mod tests {
         let mut in_progress = HashSet::new();
         in_progress.insert(42);
         let history = vec![];
-        assert_eq!(categorize_issue(42, &in_progress, &history), KanbanColumn::Running);
+        assert_eq!(
+            categorize_issue(42, &in_progress, &history),
+            KanbanColumn::Running
+        );
     }
 
     #[test]
     fn categorize_done_issue_with_success_history() {
         let in_progress = HashSet::new();
         let history = vec![make_history_entry(10, Outcome::Success)];
-        assert_eq!(categorize_issue(10, &in_progress, &history), KanbanColumn::Done);
+        assert_eq!(
+            categorize_issue(10, &in_progress, &history),
+            KanbanColumn::Done
+        );
     }
 
     #[test]
     fn categorize_done_issue_with_completed_history() {
         let in_progress = HashSet::new();
-        let history = vec![make_history_entry(10, Outcome::Completed { detail: Some("tmux".into()) })];
-        assert_eq!(categorize_issue(10, &in_progress, &history), KanbanColumn::Done);
+        let history = vec![make_history_entry(
+            10,
+            Outcome::Completed {
+                detail: Some("tmux".into()),
+            },
+        )];
+        assert_eq!(
+            categorize_issue(10, &in_progress, &history),
+            KanbanColumn::Done
+        );
     }
 
     #[test]
     fn categorize_failed_issue_as_open_not_done() {
         let in_progress = HashSet::new();
-        let history = vec![make_history_entry(10, Outcome::Failed { detail: "err".into() })];
-        assert_eq!(categorize_issue(10, &in_progress, &history), KanbanColumn::Open);
+        let history = vec![make_history_entry(
+            10,
+            Outcome::Failed {
+                detail: "err".into(),
+            },
+        )];
+        assert_eq!(
+            categorize_issue(10, &in_progress, &history),
+            KanbanColumn::Open
+        );
     }
 
     #[test]
@@ -587,14 +637,20 @@ mod tests {
         let mut in_progress = HashSet::new();
         in_progress.insert(5);
         let history = vec![make_history_entry(5, Outcome::Success)];
-        assert_eq!(categorize_issue(5, &in_progress, &history), KanbanColumn::Running);
+        assert_eq!(
+            categorize_issue(5, &in_progress, &history),
+            KanbanColumn::Running
+        );
     }
 
     #[test]
     fn categorize_issue_not_in_any_set_is_open() {
         let in_progress = HashSet::new();
         let history = vec![make_history_entry(99, Outcome::Success)]; // different issue
-        assert_eq!(categorize_issue(1, &in_progress, &history), KanbanColumn::Open);
+        assert_eq!(
+            categorize_issue(1, &in_progress, &history),
+            KanbanColumn::Open
+        );
     }
 
     // ── truncate_title ───────────────────────────────────────────────

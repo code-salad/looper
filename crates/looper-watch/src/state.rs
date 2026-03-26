@@ -52,7 +52,9 @@ pub struct Entry {
 pub enum OutcomeField {
     Typed(Outcome),
     /// Legacy: plain `"outcome": "success"` strings from older state files.
-    Legacy { outcome: String },
+    Legacy {
+        outcome: String,
+    },
 }
 
 impl OutcomeField {
@@ -63,17 +65,31 @@ impl OutcomeField {
                 if outcome.starts_with("success") {
                     Outcome::Success
                 } else if outcome.starts_with("completed") {
-                    let detail = outcome.strip_prefix("completed").map(|s| {
-                        s.trim().trim_start_matches('(').trim_end_matches(')').to_string()
-                    }).filter(|s| !s.is_empty());
+                    let detail = outcome
+                        .strip_prefix("completed")
+                        .map(|s| {
+                            s.trim()
+                                .trim_start_matches('(')
+                                .trim_end_matches(')')
+                                .to_string()
+                        })
+                        .filter(|s| !s.is_empty());
                     Outcome::Completed { detail }
                 } else if outcome.starts_with("failed") {
                     Outcome::Failed {
-                        detail: outcome.strip_prefix("failed:").unwrap_or(outcome).trim().to_string(),
+                        detail: outcome
+                            .strip_prefix("failed:")
+                            .unwrap_or(outcome)
+                            .trim()
+                            .to_string(),
                     }
                 } else {
                     Outcome::Error {
-                        detail: outcome.strip_prefix("error:").unwrap_or(outcome).trim().to_string(),
+                        detail: outcome
+                            .strip_prefix("error:")
+                            .unwrap_or(outcome)
+                            .trim()
+                            .to_string(),
                     }
                 }
             }
@@ -248,7 +264,9 @@ mod tests {
         assert!(entry.outcome.is_done(), "completed should be done");
         assert_eq!(
             entry.outcome.as_outcome(),
-            Outcome::Completed { detail: Some("tmux".to_string()) }
+            Outcome::Completed {
+                detail: Some("tmux".to_string())
+            }
         );
     }
 
@@ -278,7 +296,9 @@ mod tests {
         assert!(!entry.outcome.is_done());
         assert_eq!(
             entry.outcome.as_outcome(),
-            Outcome::Failed { detail: "some error".to_string() }
+            Outcome::Failed {
+                detail: "some error".to_string()
+            }
         );
     }
 
@@ -295,24 +315,42 @@ mod tests {
     fn outcome_is_done_for_success_and_completed() {
         assert!(Outcome::Success.is_done());
         assert!(Outcome::Completed { detail: None }.is_done());
-        assert!(Outcome::Completed { detail: Some("tmux".into()) }.is_done());
-        assert!(!Outcome::Failed { detail: "err".into() }.is_done());
-        assert!(!Outcome::Error { detail: "err".into() }.is_done());
+        assert!(
+            Outcome::Completed {
+                detail: Some("tmux".into())
+            }
+            .is_done()
+        );
+        assert!(
+            !Outcome::Failed {
+                detail: "err".into()
+            }
+            .is_done()
+        );
+        assert!(
+            !Outcome::Error {
+                detail: "err".into()
+            }
+            .is_done()
+        );
     }
 
     #[test]
     fn outcome_display_formats_correctly() {
         assert_eq!(Outcome::Success.to_string(), "success");
         assert_eq!(
-            Outcome::Completed { detail: Some("tmux".into()) }.to_string(),
+            Outcome::Completed {
+                detail: Some("tmux".into())
+            }
+            .to_string(),
             "completed (tmux)"
         );
+        assert_eq!(Outcome::Completed { detail: None }.to_string(), "completed");
         assert_eq!(
-            Outcome::Completed { detail: None }.to_string(),
-            "completed"
-        );
-        assert_eq!(
-            Outcome::Failed { detail: "oops".into() }.to_string(),
+            Outcome::Failed {
+                detail: "oops".into()
+            }
+            .to_string(),
             "failed: oops"
         );
     }
@@ -326,12 +364,18 @@ mod tests {
 
     #[test]
     fn issue_from_session_parses_correctly() {
-        assert_eq!(issue_from_session("owner/repo", "looper-owner-repo-42"), Some(42));
+        assert_eq!(
+            issue_from_session("owner/repo", "looper-owner-repo-42"),
+            Some(42)
+        );
     }
 
     #[test]
     fn issue_from_session_returns_none_for_different_repo() {
-        assert_eq!(issue_from_session("owner/repo", "looper-other-repo-42"), None);
+        assert_eq!(
+            issue_from_session("owner/repo", "looper-other-repo-42"),
+            None
+        );
     }
 
     #[test]
@@ -341,7 +385,10 @@ mod tests {
 
     #[test]
     fn issue_from_session_returns_none_for_non_numeric_suffix() {
-        assert_eq!(issue_from_session("owner/repo", "looper-owner-repo-abc"), None);
+        assert_eq!(
+            issue_from_session("owner/repo", "looper-owner-repo-abc"),
+            None
+        );
     }
 
     #[test]
@@ -357,7 +404,12 @@ mod tests {
         assert!(state.history.is_empty());
 
         state.add_history(make_entry(1, Outcome::Success));
-        state.add_history(make_entry(2, Outcome::Failed { detail: "err".into() }));
+        state.add_history(make_entry(
+            2,
+            Outcome::Failed {
+                detail: "err".into(),
+            },
+        ));
 
         assert_eq!(state.history.len(), 2);
         assert_eq!(state.history[0].issue_number, 1);
@@ -385,7 +437,12 @@ mod tests {
 
         let mut state = State::default();
         state.add_history(make_entry(42, Outcome::Success));
-        state.add_history(make_entry(99, Outcome::Completed { detail: Some("tmux".into()) }));
+        state.add_history(make_entry(
+            99,
+            Outcome::Completed {
+                detail: Some("tmux".into()),
+            },
+        ));
         state.save(&path).await;
 
         let loaded = State::load(&path).await;
@@ -412,7 +469,9 @@ mod tests {
         let backup = path.with_extension("json.bak");
 
         // Write corrupt JSON
-        tokio::fs::write(&path, "{ not valid json !!!").await.unwrap();
+        tokio::fs::write(&path, "{ not valid json !!!")
+            .await
+            .unwrap();
 
         let state = State::load(&path).await;
         assert!(state.history.is_empty(), "should return empty state");
@@ -434,7 +493,10 @@ mod tests {
         state.save(&path).await;
 
         // Temp file should NOT exist after successful save (rename removes it)
-        assert!(!tmp.exists(), "temp file should be gone after atomic rename");
+        assert!(
+            !tmp.exists(),
+            "temp file should be gone after atomic rename"
+        );
         assert!(path.exists(), "final file should exist");
 
         let _ = tokio::fs::remove_file(&path).await;
