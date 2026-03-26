@@ -1,7 +1,7 @@
 {
   "name": "fallback-agent",
   "description": "Nested subagent — spawns fresh Claude processes with full tool access for unlimited nesting",
-  "version": "0.37.0",
+  "version": "0.37.1",
   "author": {
     "name": "code-salad"
   },
