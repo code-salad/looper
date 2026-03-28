@@ -122,8 +122,6 @@ git commit -m "$(cat <<'EOF'
 <type>[optional scope][optional !]: <summary>
 
 [optional body]
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 ```

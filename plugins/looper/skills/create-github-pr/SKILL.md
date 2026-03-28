@@ -246,8 +246,6 @@ git commit -m "$(cat <<'EOF'
 <type>: <short summary>
 
 <optional body: 1-2 sentences of context>
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -321,10 +319,6 @@ gh pr create \
 | Build | ✅ / ❌ / ⏭️ | success / failure |
 
 ---
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 ```
