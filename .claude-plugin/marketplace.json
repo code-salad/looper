@@ -8,7 +8,7 @@
     {
       "name": "looper",
       "description": "Plan-Do-Check loop orchestrator — three agents iterate until a Checker issues PASS",
-      "version": "0.37.1",
+      "version": "0.37.2",
       "author": {
         "name": "code-salad"
       },
@@ -18,7 +18,7 @@
     {
       "name": "webscraping",
       "description": "End-to-end web scraping toolkit — domain recon, method selection, .NET 10 implementation, anti-detection, and proxy management",
-      "version": "0.37.1",
+      "version": "0.37.2",
       "author": {
         "name": "code-salad"
       },
@@ -28,7 +28,7 @@
     {
       "name": "fallback-agent",
       "description": "Nested subagent — spawns fresh Claude processes with full tool access for unlimited nesting",
-      "version": "0.37.1",
+      "version": "0.37.2",
       "author": {
         "name": "code-salad"
       },
