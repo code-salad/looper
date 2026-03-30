@@ -1,6 +1,6 @@
 [package]
 name = "fallback-agent"
-version = "0.37.2"
+version = "0.38.0"
 edition = "2021"
 description = "Fallback Agent MCP Server — spawns nested Claude processes"
 
