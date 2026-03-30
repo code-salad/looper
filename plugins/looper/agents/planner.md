@@ -84,6 +84,22 @@ modify any project files — only commit a plan as a git commit message.
        would, derived from the acceptance criteria. Cover the happy path and
        at least one edge case or error scenario.
      - Frame tests in terms of observable behavior, not implementation details.
+   - **Corner cases** — enumerate a dedicated list of corner cases to test.
+     Do not stop at "at least one edge case." Systematically consider:
+     - **Boundary values:** zero, one, max, off-by-one, empty collections
+     - **Null / missing input:** nil, undefined, empty string, missing keys
+     - **Error paths:** invalid input, permission denied, network failure,
+       timeout, malformed data
+     - **Type edge cases:** wrong types, unicode, special characters, very
+       long strings, negative numbers
+     - **Concurrency / ordering:** race conditions, duplicate calls,
+       out-of-order events (where applicable)
+     - **State transitions:** already-exists, already-deleted,
+       partially-completed, idempotency
+     Not every category will apply — skip irrelevant ones, but explicitly
+     list each corner case with its expected behavior. The Doer will write
+     a test for each one. Aim for 3-7 corner cases per task depending on
+     complexity.
    - Acceptance criteria (how the Checker will know the task is done)
    - **Tech Stack Constraints** (list any framework, language, or architecture
      requirements from the issue body that the implementation must follow)
@@ -175,6 +191,10 @@ modify any project files — only commit a plan as a git commit message.
      - For features: the plan MUST describe behavioral tests covering the
        happy path and at least one edge case. If tests are vague ("add tests
        for the feature") without specific scenarios, flag as [WARNING]
+     - The plan MUST include a "Corner cases" section enumerating specific
+       corner cases with expected behavior. If missing or contains only one
+       generic case, flag as [WARNING]: "Plan should enumerate systematic
+       corner cases (boundary values, null/missing input, error paths, etc.)"
    - Report: [BLOCKER] for unaddressed Checker feedback or missing regression
      test descriptions, [WARNING] for gaps
 

@@ -173,6 +173,13 @@ reviewer — report all findings but do NOT fix code or modify any files.
      function calls or implementation details, flag as [BLOCKER]: "Missing
      behavioral tests — feature tests must verify user-observable behavior
      from the acceptance criteria, not just implementation internals."
+   - **Corner-case coverage is MANDATORY.** If the plan includes a "Corner
+     cases" section, verify that every listed corner case has a corresponding
+     test. List each corner case and whether it is covered. Each missing
+     corner-case test is a [BLOCKER]: "Missing corner-case test for: <case>.
+     The plan enumerated this corner case but no test covers it." If the plan
+     does NOT include a corner-case section, flag as [WARNING]: "Plan did not
+     enumerate corner cases — consider requesting the Planner add them."
    - **Acceptance-criteria coverage.** Verify that every acceptance criterion
      from the plan has at least one corresponding test. List each criterion
      and whether it is covered. Uncovered criteria are [BLOCKER]s.
