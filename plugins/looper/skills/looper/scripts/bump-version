@@ -101,14 +101,12 @@ echo "Bumping all versions by $BUMP_TYPE..."
 # JSON plugin manifests
 bump_json "$REPO_ROOT/.claude-plugin/plugin.json"
 bump_json "$REPO_ROOT/plugins/looper/.claude-plugin/plugin.json"
-bump_json "$REPO_ROOT/plugins/fallback-agent/.claude-plugin/plugin.json"
 bump_json "$REPO_ROOT/plugins/webscraping/.claude-plugin/plugin.json"
 
 # Marketplace manifest (array of plugins)
 bump_marketplace "$REPO_ROOT/.claude-plugin/marketplace.json"
 
 # Cargo.toml files
-bump_cargo "$REPO_ROOT/crates/fallback-agent/Cargo.toml"
 bump_cargo "$REPO_ROOT/crates/looper-watch/Cargo.toml"
 
 echo "Done."

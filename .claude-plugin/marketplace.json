@@ -24,23 +24,6 @@
       },
       "source": "./plugins/webscraping",
       "category": "development"
-    },
-    {
-      "name": "fallback-agent",
-      "description": "Nested subagent — spawns fresh Claude processes with full tool access for unlimited nesting",
-      "version": "0.40.0",
-      "author": {
-        "name": "code-salad"
-      },
-      "source": "./plugins/fallback-agent",
-      "category": "development",
-      "mcpServers": {
-        "fallback": {
-          "command": "${CLAUDE_PLUGIN_ROOT}/mcp-server-rs/bin/fallback-agent",
-          "args": []
-        }
-      },
-      "strict": false
     }
   ]
 }

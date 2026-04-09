@@ -19,7 +19,7 @@ Looper is a Claude Code plugin that orchestrates a Plan-Do-Check (PDC) loop usin
 - `jq`
 - `gh` (GitHub CLI — required for PR creation and issue automation)
 - `shellcheck` (for linting shell scripts)
-- Rust toolchain (only if modifying the `fallback-agent` MCP server)
+- Rust toolchain (only if modifying the `looper-watch` binary)
 
 ### Cloning the Repo
 
@@ -28,7 +28,7 @@ git clone https://github.com/code-salad/looper.git
 cd looper
 ```
 
-No additional build step is required. The plugin is plain shell scripts and Markdown files (plus a Rust binary for the fallback-agent MCP server).
+No additional build step is required. The plugin is plain shell scripts and Markdown files (plus a Rust binary for looper-watch).
 
 ### Setting Up Git Hooks
 
@@ -73,9 +73,6 @@ looper/
 │   │       ├── looper-ee/
 │   │       ├── looper-issue/
 │   │       └── looper-watch/
-│   ├── fallback-agent/      # Nested subagent MCP server plugin
-│   │   ├── agents/
-│   │   └── mcp-server-rs/   # Rust MCP server source
 │   └── webscraping/         # Web scraping plugin
 │       ├── agents/
 │       └── skills/

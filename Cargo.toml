@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "crates/fallback-agent",
     "crates/looper-watch",
 ]
 resolver = "2"
