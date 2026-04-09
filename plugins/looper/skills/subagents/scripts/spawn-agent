@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Spawns a Claude subagent via claude -p and returns the text response.
+# Bypasses nested-session detection and skips permission prompts.
+#
+# Usage:
+#   spawn-agent <agent-name> <prompt> [extra-flags...]
+#
+# Examples:
+#   spawn-agent fallback-agent:code-reviewer "Review src/main.ts for bugs"
+#   spawn-agent looper:planner "Plan the auth refactor" --max-turns 10
+#   spawn-agent general-purpose "Summarize this: $(cat file.txt)" --max-budget-usd 0.50
+
+AGENT="${1:?Usage: spawn-agent <agent-name> <prompt> [extra-flags...]}"
+PROMPT="${2:?Usage: spawn-agent <agent-name> <prompt> [extra-flags...]}"
+shift 2
+
+OUTFILE="/tmp/subagent-result-$$.json"
+trap 'rm -f "$OUTFILE"' EXIT
+
+env -u CLAUDECODE -u CLAUDE_CODE claude -p \
+  --agent "$AGENT" \
+  --output-format json \
+  --dangerously-skip-permissions \
+  "$PROMPT" \
+  "$@" \
+  > "$OUTFILE" 2>/dev/null
+
+jq -r '.result // empty' "$OUTFILE"

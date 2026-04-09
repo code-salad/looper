@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Lists all available Claude Code agents by scanning plugin cache files.
+# Useful as a fallback when `claude agents` is not available (e.g. in non-interactive mode).
+#
+# Usage: list-agents
+
+CACHE_DIR="${HOME}/.claude/plugins/cache"
+
+echo "Plugin agents:"
+for f in $(find "$CACHE_DIR" -name "*.md" -path "*/agents/*" 2>/dev/null | sort); do
+  plugin=$(echo "$f" | sed 's|.*cache/[^/]*/\([^/]*\)/[^/]*/.*|\1|')
+  agent=$(basename "$f" .md)
+  model=$(grep -m1 '^model:' "$f" 2>/dev/null | sed 's/model: *//' || echo "inherit")
+  desc=$(grep -m1 '^description:' "$f" 2>/dev/null | sed 's/description: *//' | head -c 80 || echo "")
+  echo "  ${plugin}:${agent} · ${model} — ${desc}"
+done
+
+echo ""
+echo "Built-in agents:"
+echo "  claude-code-guide · haiku — Answer questions about Claude Code, Agent SDK, Claude API"
+echo "  Explore · haiku — Fast codebase exploration"
+echo "  general-purpose · inherit — General-purpose research and multi-step tasks"
+echo "  Plan · inherit — Software architect for implementation plans"
+echo "  statusline-setup · sonnet — Configure status line settings"
