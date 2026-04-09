@@ -19,8 +19,8 @@ done
 
 echo ""
 echo "Built-in agents:"
-echo "  claude-code-guide · haiku — Answer questions about Claude Code, Agent SDK, Claude API"
-echo "  Explore · haiku — Fast codebase exploration"
-echo "  general-purpose · inherit — General-purpose research and multi-step tasks"
-echo "  Plan · inherit — Software architect for implementation plans"
-echo "  statusline-setup · sonnet — Configure status line settings"
+echo "  Explore · haiku — Fast read-only codebase exploration; prefer over manual Glob/Grep for multi-round or cross-cutting searches"
+echo "  Plan · inherit — Software architect for designing implementation strategies and step-by-step plans"
+echo "  general-purpose · inherit — General-purpose research, web search, and complex multi-step tasks (all tools)"
+echo "  claude-code-guide · haiku — Answer questions about Claude Code features, Agent SDK, and Claude API"
+echo "  statusline-setup · sonnet — Configure the Claude Code status line setting"

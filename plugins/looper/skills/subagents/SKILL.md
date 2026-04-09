@@ -18,6 +18,30 @@ Spawn subagents using `claude -p` when the **Agent tool is not available** — e
 
 ---
 
+## Built-in agents reference
+
+These agents are provided by the Claude Code harness and are always available for spawning:
+
+| Agent | Model | Best for |
+|-------|-------|----------|
+| **Explore** | haiku | Fast, read-only codebase exploration. Use for finding files by pattern, searching code for keywords, understanding how subsystems work, or answering questions about the codebase. **Prefer this over manual Glob/Grep when the search requires multiple rounds or cross-cutting context** (e.g. "how does auth flow through the app", "find all callers of X"). Cheaper and faster than general-purpose. |
+| **Plan** | inherit | Software architect agent. Use when you need to design an implementation strategy, identify critical files, and consider architectural trade-offs before writing code. Returns step-by-step plans. |
+| **general-purpose** | inherit | General-purpose research and multi-step tasks. Use for complex questions that span the codebase, web searches, or tasks that don't fit a specialized agent. Has access to all tools. |
+| **claude-code-guide** | haiku | Answers questions about Claude Code features, hooks, slash commands, MCP servers, settings, IDE integrations, the Agent SDK, and the Claude API. |
+| **statusline-setup** | sonnet | Configures the Claude Code status line setting. Narrow use case. |
+
+### When to spawn Explore vs. using Grep/Glob directly
+
+- **Use Grep/Glob directly** when you know exactly what you're looking for (a specific symbol, file name, or pattern) and a single query will suffice.
+- **Spawn Explore** when:
+  - The search is open-ended or requires multiple rounds of searching
+  - You need to understand how multiple files/modules relate to each other
+  - You need to trace a flow across the codebase (e.g. request handling, data pipeline)
+  - You're unfamiliar with the area of code and need orientation
+  - You'd otherwise need 3+ sequential Grep/Glob calls to find what you need
+
+---
+
 ## Phase 1: Discover available subagents
 
 Run the discovery script:
