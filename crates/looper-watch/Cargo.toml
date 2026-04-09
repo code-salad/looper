@@ -1,6 +1,6 @@
 [package]
 name = "looper-watch"
-version = "0.39.0"
+version = "0.40.0"
 edition = "2024"
 description = "Standalone GitHub issue watcher — polls for unassigned issues and dispatches them to claude"
 
