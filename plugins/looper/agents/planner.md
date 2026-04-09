@@ -145,96 +145,33 @@ modify any project files — only commit a plan as a git commit message.
 
    Run all three in parallel:
    ```bash
+   TMPDIR="/tmp/looper-${TASK_NAME}"
+   mkdir -p "$TMPDIR"
    SPAWN="$SUBAGENTS_DIR/spawn-agent"
-   $SPAWN "Plan" "<prompt for subagent 1>" > /tmp/review1.txt &
-   $SPAWN "Plan" "<prompt for subagent 2>" > /tmp/review2.txt &
-   $SPAWN "Plan" "<prompt for subagent 3>" > /tmp/review3.txt &
+   $SPAWN "looper:plan-feasibility" "<context>" > "$TMPDIR/plan-feasibility.txt" &
+   $SPAWN "looper:plan-completeness" "<context>" > "$TMPDIR/plan-completeness.txt" &
+   $SPAWN "looper:plan-scope" "<context>" > "$TMPDIR/plan-scope.txt" &
    wait
-   cat /tmp/review1.txt /tmp/review2.txt /tmp/review3.txt
+   cat "$TMPDIR"/plan-*.txt
    ```
 
-   **Subagent prompt template** (customize the focus section for each):
+   For `<context>`, pass a context prompt containing: task name, iteration number,
+   task prompt, the draft plan text from step 4, and prior loop context
+   (if iteration > 1, otherwise "First iteration — no prior context").
 
-   ```
-   You are a plan review subagent for the Planner agent in a Plan-Do-Check loop.
+   **Subagent 1 — Feasibility Reviewer** (`looper:plan-feasibility`):
+   Verifies all referenced files, APIs, and patterns exist in the codebase.
+   See `agents/plan-feasibility.md` for full instructions.
 
-   ## Task Context
-   - Task: <TASK_NAME>
-   - Iteration: <ITERATION>
-   - Task prompt: <TASK_PROMPT>
+   **Subagent 2 — Completeness Reviewer** (`looper:plan-completeness`):
+   Checks plan covers all task requirements, Checker feedback, and test descriptions.
+   See `agents/plan-completeness.md` for full instructions.
 
-   ## Draft Plan
-   <the plan text from step 4>
-
-   ## Prior Loop Context
-   <LOOP_CONTEXT if iteration > 1, otherwise "First iteration — no prior context">
-
-   ## Your Focus
-   <specific focus area per subagent — see below>
-
-   ## Rules
-   - Do NOT modify any files or make commits — only report findings
-   - Report each finding in this format:
-     [BLOCKER|WARNING|SUGGESTION] — <description>
-   - Be pragmatic — only flag issues that would cause the Doer to fail or produce poor work
-
-   ## Report Format
-   ## <Your Role> Report
-
-   ### Issues Found
-   1. [SEVERITY] — description
-
-   ### Summary
-   <1-2 sentence assessment of plan quality from your perspective>
-   ```
-
-   **Subagent 1 — Feasibility Reviewer:**
-   - Verify all referenced files actually exist (Glob/Read)
-   - Verify the APIs, functions, and patterns mentioned in the plan match what's
-     in the codebase
-   - Check that dependencies and imports referenced are real
-   - If the plan makes assumptions about runtime behavior (e.g., "this endpoint
-     returns X", "this function is called when Y"), verify those assumptions by
-     reading the code paths or, for web apps/APIs, starting the dev server on
-     `$LOOPER_DEV_PORT` and testing with curl. Flag incorrect assumptions.
-   - Cross-check the plan against the reproduction results from Track D
-     (if available) — does the plan address the actual observed behavior?
-   - Report: [BLOCKER] for phantom files/APIs or incorrect runtime assumptions,
-     [WARNING] for questionable assumptions
-
-   **Subagent 2 — Completeness Reviewer:**
-   - Check plan covers all aspects of the task prompt
-   - If iteration > 1, check plan addresses every action item from the Checker's
-     prior FAIL verdict
-   - Verify acceptance criteria are specific and testable (not vague)
-   - Check for missing steps (e.g., plan says "add tests" but doesn't say where
-     or what)
-   - **Verify test descriptions are adequate:**
-     - For bug fixes: the plan MUST describe a regression test that reproduces
-       the specific bug scenario. If the "Tests to write first" section is
-       generic or doesn't reference the bug's inputs/conditions, flag as
-       [BLOCKER]: "Plan lacks regression test description for bug fix"
-     - For features: the plan MUST describe behavioral tests covering the
-       happy path and at least one edge case. If tests are vague ("add tests
-       for the feature") without specific scenarios, flag as [WARNING]
-     - The plan MUST include a "Corner cases" section enumerating specific
-       corner cases with expected behavior. If missing or contains only one
-       generic case, flag as [WARNING]: "Plan should enumerate systematic
-       corner cases (boundary values, null/missing input, error paths, etc.)"
-   - Report: [BLOCKER] for unaddressed Checker feedback or missing regression
-     test descriptions, [WARNING] for gaps
-
-   **Subagent 3 — Scope & Risk Reviewer:**
-   - Check if the plan touches more files than necessary
-   - Flag risky changes (modifying shared utilities, changing public APIs,
-     altering DB schemas)
-   - Suggest simpler alternatives if the approach is over-engineered
-   - Check the plan is achievable in a single red-green cycle
-   - Report: [WARNING] for scope creep, [SUGGESTION] for simplifications
+   **Subagent 3 — Scope & Risk Reviewer** (`looper:plan-scope`):
+   Reviews plan scope for unnecessary changes and over-engineering.
+   See `agents/plan-scope.md` for full instructions.
 
    All three MUST be launched as parallel spawn-agent calls in one message.
-   Each subagent needs only: Read, Glob, Grep, Bash (read-only exploration to
-   verify the plan against the actual codebase). No write tools.
 
 4.6. **Revise the plan** — After all 3 subagents return:
    1. Collect all BLOCKER findings — these must be addressed

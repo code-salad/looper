@@ -127,218 +127,41 @@ reviewer — report all findings but do NOT fix code or modify any files.
    doer summary, changed files list, and acceptance criteria from step 2.
 
    ```bash
+   TMPDIR="/tmp/looper-${TASK_NAME}"
+   mkdir -p "$TMPDIR"
    SPAWN="$SUBAGENTS_DIR/spawn-agent"
-   $SPAWN "Explore" "<prompt for subagent 1>" > /tmp/check1.txt &
-   $SPAWN "Explore" "<prompt for subagent 2>" > /tmp/check2.txt &
-   $SPAWN "Explore" "<prompt for subagent 3>" > /tmp/check3.txt &
-   $SPAWN "Explore" "<prompt for subagent 4>" > /tmp/check4.txt &
+   $SPAWN "looper:check-build" "<context>" > "$TMPDIR/check-build.txt" &
+   $SPAWN "looper:check-tests" "<context>" > "$TMPDIR/check-tests.txt" &
+   $SPAWN "looper:check-code" "<context>" > "$TMPDIR/check-code.txt" &
+   $SPAWN "looper:check-runtime" "<context>" > "$TMPDIR/check-runtime.txt" &
    wait
-   cat /tmp/check1.txt /tmp/check2.txt /tmp/check3.txt /tmp/check4.txt
+   cat "$TMPDIR"/check-*.txt
    ```
 
-   **Subagent prompt template** (customize the focus section for each):
+   For `<context>`, pass a context prompt containing: plan summary from Call 1,
+   RED commit info from Call 2, GREEN commit info from Call 3, SIMPLIFY commit
+   info from Call 4, INTEGRATION commit info from Call 5, legacy doer commit
+   info from Call 6 (if applicable), changed files list, and acceptance criteria.
+   Also include the task variables: TASK_NAME, ITERATION, LOOPER_DEV_PORT,
+   HAS_COMPOSE, TASK_PROMPT.
 
-   ```
-   You are a review subagent for the Checker agent in a Plan-Do-Check loop.
+   NOTE: The context provides file lists and stats only. Subagents will use
+   Read/Glob to fetch actual file contents for any file they need to review.
 
-   ## Context
-   - Plan summary: <from step 2 Call 1>
-   - RED commit (tests): <from step 2 Call 2>
-   - GREEN commit (implementation): <from step 2 Call 3>
-   - Legacy doer commit (if no red/green): <from step 2 Call 4>
+   **Subagent 1 — Build & Types** (`looper:check-build`):
+   Verifies typecheck and build pass. See `agents/check-build.md` for full instructions.
 
-   NOTE: Step 2 provides file lists and stats only. Use Read/Glob to
-   fetch actual file contents for any file you need to review.
+   **Subagent 2 — Test & Coverage** (`looper:check-tests`):
+   Reviews test coverage, regression tests, corner cases, and acceptance criteria.
+   See `agents/check-tests.md` for full instructions.
 
-   ## Your Focus
-   <specific focus area — see below>
+   **Subagent 3 — Code Review** (`looper:check-code`):
+   Reviews code quality, lint, format, security, and tech stack compliance.
+   See `agents/check-code.md` for full instructions.
 
-   ## Rules
-   - Do NOT fix issues or commit changes — only report findings
-   - Report each finding in this format:
-     [BLOCKER|WARNING|SUGGESTION] <file>:<line> — <description>
-     Fix: <suggested fix>
-   - Be thorough but pragmatic — only flag real issues
-
-   ## Report Format
-   Return your findings as:
-
-   ## <Your Role> Report
-
-   ### Tool Results
-   - <tool>: EXIT_CODE=<N> (PASS/FAIL)
-
-   ### Issues Found
-   1. [SEVERITY] file:line — description
-      Fix: suggested fix
-
-   ### Summary
-   <1-2 sentence overall assessment>
-   ```
-
-   **Subagent 1 — Build & Types:**
-   - Run `$SCRIPTS_DIR/run-typecheck 2>&1; echo "EXIT_CODE=$?"`
-   - Run `$SCRIPTS_DIR/run-build 2>&1; echo "EXIT_CODE=$?"`
-   - Review type-related issues in changed files
-   - Report: type errors, build failures, severity, file+line, suggested fixes
-
-   **Subagent 2 — Test & Coverage:**
-   - Run `$SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"`
-   - Review test coverage for changed code
-   - Check that test names describe behavior, not just function names
-   - **Missing tests are BLOCKERs.** For every changed/added source file, verify
-     a corresponding test file exists and covers the new/modified behavior.
-     Flag each untested function, branch, or code path as a separate BLOCKER
-     with a specific description of what test is needed and where to add it.
-   - **Bug-fix regression test is MANDATORY.** If the task is a bug fix (check
-     the TASK_PROMPT and issue labels/title for "bug", "fix", "regression",
-     or similar indicators), verify that a specific regression test exists that:
-     1. Reproduces the exact scenario described in the bug report
-     2. Uses the specific inputs/conditions from the issue
-     3. Would FAIL on the code prior to the fix (check by reading the test
-        logic — it should assert the corrected behavior, not the old behavior)
-     If no such regression test exists, flag as [BLOCKER]: "Missing regression
-     test — bug fixes MUST include a test that reproduces the original bug
-     scenario to prevent future regressions. The test should use the specific
-     inputs/conditions from the issue report."
-   - **Feature behavioral tests are MANDATORY.** If the task is a feature,
-     verify that tests exercise the feature as a user would (derived from
-     acceptance criteria), not just implementation internals. Tests must cover
-     the happy path and at least one edge case. If tests only verify internal
-     function calls or implementation details, flag as [BLOCKER]: "Missing
-     behavioral tests — feature tests must verify user-observable behavior
-     from the acceptance criteria, not just implementation internals."
-   - **Corner-case coverage is MANDATORY.** If the plan includes a "Corner
-     cases" section, verify that every listed corner case has a corresponding
-     test. List each corner case and whether it is covered. Each missing
-     corner-case test is a [BLOCKER]: "Missing corner-case test for: <case>.
-     The plan enumerated this corner case but no test covers it." If the plan
-     does NOT include a corner-case section, flag as [WARNING]: "Plan did not
-     enumerate corner cases — consider requesting the Planner add them."
-   - **Acceptance-criteria coverage.** Verify that every acceptance criterion
-     from the plan has at least one corresponding test. List each criterion
-     and whether it is covered. Uncovered criteria are [BLOCKER]s.
-   - **Circular test detection.** Check if tests are merely asserting what the
-     code does (tautological) rather than what the code SHOULD do. Tests that
-     would pass even if the implementation were wrong are [WARNING]s.
-   - Report: test failures, missing coverage, missing regression tests, missing
-     behavioral tests, circular tests, uncovered acceptance criteria, test
-     quality issues, suggested fixes
-
-   **Subagent 3 — Code Review:**
-   - Run `$SCRIPTS_DIR/run-lint 2>&1; echo "EXIT_CODE=$?"`
-   - Run `$SCRIPTS_DIR/run-format 2>&1; echo "EXIT_CODE=$?"`
-   - Run `$SCRIPTS_DIR/security-scan 2>&1; echo "EXIT_CODE=$?"`
-   - Read all changed files (using the file list from step 2 Call 3)
-   - Review correctness: does the code match the plan's acceptance criteria?
-   - Review edge cases: null checks, error handling, boundary conditions, empty
-     inputs, concurrent access, resource cleanup
-   - **Tech stack compliance check.** Read the plan's "Tech Stack Constraints"
-     section (if present) and verify the Doer's implementation uses ONLY the
-     specified technologies. Flag each violation as [BLOCKER] — Tech Stack
-     Compliance failure if:
-     - Files from a different ecosystem are present (e.g., package.json when
-       the constraint says Rust-only)
-     - Dependencies from the wrong package manager were installed
-     - A framework other than the one specified was scaffolded
-   - Review code maintainability: naming, readability, DRY, hardcoded values
-   - Review convention compliance: project patterns from <project-context>,
-     file organization, import style
-   - Report: lint/format/security issues, logic errors, missing error handling,
-     unmet acceptance criteria, tech stack compliance violations, maintainability
-     concerns, convention violations, severity, file+line, suggested fixes
-
-   **Subagent 4 — Runtime Verification:**
-   - You are the last line of defense between code and production.
-   - Use `$SCRIPTS_DIR/detect-stack` to identify the project type and dev server command.
-   - **IMPORTANT — Port isolation:** Always use `$LOOPER_DEV_PORT` (from task
-     variables) instead of the project's default port. This avoids conflicts
-     with the user's dev server running in the main repo. Start dev servers with:
-     - Node: `PORT=$LOOPER_DEV_PORT npm run dev &` or `PORT=$LOOPER_DEV_PORT npx next dev -p $LOOPER_DEV_PORT &`
-     - Python: `PORT=$LOOPER_DEV_PORT python manage.py runserver 0.0.0.0:$LOOPER_DEV_PORT &`
-     - Go/Rust: set `PORT=$LOOPER_DEV_PORT` env var or use the framework's port flag
-     Poll with `curl --retry 10 --retry-delay 2 --retry-connrefused http://localhost:$LOOPER_DEV_PORT/`
-   - **Backing services (docker-compose):** If `HAS_COMPOSE` is `true` (from
-     task variables), start backing services BEFORE the dev server:
-     ```bash
-     $SCRIPTS_DIR/compose-lifecycle up --task $TASK_NAME
-     source .env.looper 2>/dev/null || true
-     ```
-     This starts databases, caches, and other services on isolated ports.
-     Connection strings (DATABASE_URL, REDIS_URL, etc.) are loaded from
-     `.env.looper`. Run `$SCRIPTS_DIR/compose-lifecycle down` in cleanup.
-   - If the project is a web app or API, perform a **two-phase test**:
-
-     **Phase 1 — Before snapshot (baseline):**
-     1. Save the current HEAD: `current_head=$(git rev-parse HEAD)`
-     2. Find the plan commit (the commit just before the doer's work) and
-        checkout it as the baseline:
-        ```
-        baseline=$(git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: $ITERATION" \
-            --all-match --format="%H" -1)
-        git stash && git checkout "$baseline"
-        ```
-     3. Install dependencies: `$SCRIPTS_DIR/install-deps`
-     4. Start the dev server on `$LOOPER_DEV_PORT` in background.
-     5. Exercise the specific endpoints/pages related to the task (see
-        "Ticket-Scenario Testing" below). Record response status codes,
-        response bodies, and any errors as `BEFORE_RESULTS`.
-     6. Kill the dev server: `kill %1`
-     7. Return to the doer's code: `git checkout $current_head && git stash pop`
-
-     **Phase 2 — After test (current code):**
-     1. Install dependencies: `$SCRIPTS_DIR/install-deps`
-     2. Start the dev server on `$LOOPER_DEV_PORT` in background.
-     3. Exercise the SAME endpoints/pages as Phase 1. Record as `AFTER_RESULTS`.
-     4. **Ticket-Scenario Testing** — Do NOT just test generic endpoints. Instead:
-        - Read the TASK_PROMPT and issue context from your input.
-        - Identify the specific user scenario described in the ticket.
-        - For bug fixes: reproduce the exact steps from the bug report and
-          verify the bug is fixed (BEFORE should show the bug, AFTER should not).
-        - For features: exercise the feature as the user would, following
-          the acceptance criteria from the ticket.
-        - For APIs: test the specific endpoints mentioned in the ticket with
-          the specific inputs described. Verify response shapes match expectations.
-        - For web UIs: use the `/agent-browser` skill to follow the exact user
-          flow from the ticket. Take screenshots of key states.
-     5. Kill the dev server: `kill %1`
-
-     **Phase 3 — Compare and report:**
-     - Compare `BEFORE_RESULTS` vs `AFTER_RESULTS`.
-     - Verify the change actually fixed/improved the behavior described in the ticket.
-     - Check for regressions: endpoints/pages that worked BEFORE but are broken AFTER.
-     - Each regression is a BLOCKER.
-     - If the ticket scenario is not fixed, that is a BLOCKER.
-
-   - If the project is a CLI tool: run it with the inputs from the ticket
-     scenario (not just generic inputs). Compare before/after behavior.
-   - If the project is a library with no runnable server:
-     Report "N/A — no runnable artifact to test manually." This is a
-     **[WARNING]** if the task involves user-facing behavioral changes
-     (not just internal refactoring).
-
-   - **Integration test verification:** Use `$SCRIPTS_DIR/detect-stack` to
-     identify if the project is runnable (web app, API, CLI).
-     A project is "runnable" if: framework is a web framework, dev_command is
-     not "none", or the project builds to an executable binary/CLI.
-   - **If runnable:** Check that `tests/integration/` directory exists and contains
-     at least one test script. If missing:
-     - [WARNING]: "No integration tests found for runnable project. Integration
-       tests in tests/integration/ would verify the app works end-to-end."
-   - **If integration tests exist:** Run them:
-     ```bash
-     $SCRIPTS_DIR/run-integration-tests --port $LOOPER_DEV_PORT 2>&1; echo "EXIT_CODE=$?"
-     ```
-     - If any test fails: [BLOCKER] for each failing test with the error output.
-     - If app fails to start: [BLOCKER] "Application failed to start for
-       integration testing — the built artifact may be broken."
-   - **If not runnable** (pure library, no server, no CLI): Report "N/A — no
-     runnable artifact for integration or manual testing."
-   - Check that integration tests are testing acceptance criteria scenarios,
-     not just generic health checks. Flag generic-only tests as [WARNING].
-   - Report: any runtime errors, broken endpoints, UI regressions, unfixed
-     ticket scenarios, unexpected behavior, crashes, integration test results,
-     missing coverage, app startup issues.
+   **Subagent 4 — Runtime Verification** (`looper:check-runtime`):
+   Verifies runtime behavior via dev server before/after testing and integration tests.
+   See `agents/check-runtime.md` for full instructions.
 
    All four MUST be launched as parallel spawn-agent calls in a single Bash command.
 
