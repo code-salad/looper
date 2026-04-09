@@ -20,31 +20,14 @@ Spawn subagents using `claude -p` when the **Agent tool is not available** — e
 
 ## Phase 1: Discover available subagents
 
-Run the discovery script to get the list of available agents:
+Run the discovery script:
 
 ```bash
-claude agents 2>&1
+# Try claude agents first (works when permissions allow)
+claude agents 2>&1 || ${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/list-agents
 ```
 
-If that fails (permission denied in non-interactive mode), fall back to scanning plugin files:
-
-```bash
-for f in $(find ~/.claude/plugins/cache -name "*.md" -path "*/agents/*" 2>/dev/null | sort); do
-  plugin=$(echo "$f" | sed 's|.*cache/[^/]*/\([^/]*\)/[^/]*/.*|\1|')
-  agent=$(basename "$f" .md)
-  model=$(grep -m1 '^model:' "$f" 2>/dev/null | sed 's/model: *//' || echo "inherit")
-  desc=$(grep -m1 '^description:' "$f" 2>/dev/null | sed 's/description: *//' | head -c 80 || echo "")
-  echo "  ${plugin}:${agent} · ${model} — ${desc}"
-done
-
-echo ""
-echo "Built-in agents:"
-echo "  claude-code-guide · haiku — Answer questions about Claude Code, Agent SDK, Claude API"
-echo "  Explore · haiku — Fast codebase exploration"
-echo "  general-purpose · inherit — General-purpose research and multi-step tasks"
-echo "  Plan · inherit — Software architect for implementation plans"
-echo "  statusline-setup · sonnet — Configure status line settings"
-```
+The `list-agents` script scans `~/.claude/plugins/cache` for agent definitions and lists all plugin and built-in agents. It works in any context, including non-interactive `claude -p` sessions where `claude agents` may be permission-denied.
 
 Report the full list to the user before proceeding.
 
@@ -52,89 +35,58 @@ Report the full list to the user before proceeding.
 
 ## Phase 2: Spawn a subagent
 
-Use `claude -p` with `--output-format json` to call a subagent and capture structured output.
+Use the `spawn-agent` script to call a subagent. It handles nested-session detection bypass, JSON output, and permission skipping.
 
-### Basic pattern
-
-```bash
-OUTFILE="/tmp/subagent-result-$(date +%s).json"
-
-env -u CLAUDECODE -u CLAUDE_CODE claude -p \
-  --agent "<agent-name>" \
-  --output-format json \
-  --max-turns 30 \
-  "Your prompt here" \
-  > "$OUTFILE" 2>/dev/null
-
-# Extract the text response
-jq -r '.result // empty' "$OUTFILE"
+```
+Scripts: ${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/
 ```
 
-**Important flags:**
-- `env -u CLAUDECODE -u CLAUDE_CODE` — bypasses nested-session detection
-- `--output-format json` — returns structured JSON with result, cost, token usage
-- `--agent "<name>"` — selects the subagent (e.g. `looper:planner`, `fallback-agent:code-reviewer`)
-- `--max-turns 30` — limits how many tool-use turns the subagent can take
-- `--max-budget-usd 0.50` — optional spending cap
+### Basic usage
+
+```bash
+SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
+
+# spawn-agent <agent-name> <prompt> [extra-flags...]
+$SPAWN "looper:checker" "Review the doer's work in the current worktree"
+$SPAWN "looper:planner" "Plan the auth refactor" --max-turns 10
+$SPAWN "general-purpose" "Summarize this: $(cat file.txt)" --max-budget-usd 0.50
+```
+
+The script:
+- Unsets `CLAUDECODE`/`CLAUDE_CODE` env vars to bypass nested-session detection
+- Runs with `--dangerously-skip-permissions` so the subagent isn't blocked on prompts
+- Returns the text response directly (extracts `.result` from the JSON)
 
 ### Run in background
 
-For long-running tasks, run in background and read the result later:
-
 ```bash
-OUTFILE="/tmp/subagent-result-$(date +%s).json"
+$SPAWN "looper:checker" "Review the doer's work in the current worktree" &
 
-env -u CLAUDECODE -u CLAUDE_CODE claude -p \
-  --agent "fallback-agent:code-reviewer" \
-  --output-format json \
-  "Review src/main.ts for bugs" \
-  > "$OUTFILE" 2>/dev/null &
-
-# Later, read the result
-jq -r '.result // empty' "$OUTFILE"
+# Later, wait and get result
+wait
 ```
 
 ### Run multiple subagents in parallel
 
 ```bash
-TASK1="/tmp/subagent-task1-$(date +%s).json"
-TASK2="/tmp/subagent-task2-$(date +%s).json"
-
-env -u CLAUDECODE -u CLAUDE_CODE claude -p \
-  --agent "fallback-agent:code-reviewer" \
-  --output-format json \
-  "Review src/auth.ts for security issues" \
-  > "$TASK1" 2>/dev/null &
-
-env -u CLAUDECODE -u CLAUDE_CODE claude -p \
-  --agent "fallback-agent:plan" \
-  --output-format json \
-  "Plan how to add rate limiting to the API" \
-  > "$TASK2" 2>/dev/null &
+$SPAWN "looper:planner" "Plan how to add rate limiting to the API" > /tmp/plan.txt &
+$SPAWN "Explore" "Find all API endpoint definitions in this repo" > /tmp/explore.txt &
 
 wait
 
-echo "=== Review ===" && jq -r '.result // empty' "$TASK1"
-echo "=== Plan ===" && jq -r '.result // empty' "$TASK2"
+echo "=== Plan ===" && cat /tmp/plan.txt
+echo "=== Explore ===" && cat /tmp/explore.txt
 ```
 
-### Pass context to subagent
+### Pass extra context
 
 ```bash
-# Pass file contents
-env -u CLAUDECODE -u CLAUDE_CODE claude -p \
-  --agent "fallback-agent:code-reviewer" \
-  --output-format json \
-  "Review this code: $(cat src/main.ts)" \
-  > "$OUTFILE" 2>/dev/null
+# Pass file contents in the prompt
+$SPAWN "Explore" "What does this code do: $(cat src/main.ts)"
 
-# Pass with system prompt
-env -u CLAUDECODE -u CLAUDE_CODE claude -p \
-  --agent "general-purpose" \
-  --output-format json \
-  --append-system-prompt "You are working on a Node.js backend." \
-  "Your prompt here" \
-  > "$OUTFILE" 2>/dev/null
+# Pass a system prompt
+$SPAWN "general-purpose" "Your prompt here" \
+  --append-system-prompt "You are working on a Node.js backend."
 ```
 
 ---
