@@ -339,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "fallback-agent"
-version = "0.37.1"
+version = "0.38.0"
 dependencies = [
  "rmcp",
  "serde",
@@ -604,7 +604,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "looper-watch"
-version = "0.37.1"
+version = "0.38.0"
 dependencies = [
  "chrono",
  "clap",

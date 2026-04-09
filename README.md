@@ -235,7 +235,6 @@ Each plugin lives under `plugins/<name>/` and can be installed independently.
 | Git Commit | `/looper:git-commit` | Conventional commit helper |
 | Create PR | `/looper:create-github-pr` | PR with architecture diagrams |
 | Worktree | `/looper:initiate-worktree "name"` | Git worktree helper |
-| Claude Wrap | `/looper:claude-wrap` | Spawn a nested Claude CLI instance from within Claude Code |
 | Looper EE | `/looper:looper-ee <issue_url>` | Work on a GitHub issue from an external repo |
 | Looper Issue | `/looper:looper-issue` | Auto-pick an open GitHub issue and work on it |
 | Looper Watch | `/looper:looper-watch <owner/repo> [interval]` | Poll a GitHub repo and work issues automatically |
