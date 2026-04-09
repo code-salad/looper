@@ -4,7 +4,8 @@ set -euo pipefail
 # run-corner-case-tests.sh — Run all corner-case tests for looper scripts
 # Executes: test-detect-stack.sh, test-detect-resume.sh,
 #           test-git-commit-loop-validation.sh, test-git-loop-context.sh,
-#           test-sync-with-remote.sh
+#           test-sync-with-remote.sh, test-check-blocked.sh,
+#           test-fetch-issue-context.sh, test-build-agent-context.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -30,6 +31,9 @@ run_suite "test-detect-resume.sh"
 run_suite "test-git-commit-loop-validation.sh"
 run_suite "test-git-loop-context.sh"
 run_suite "test-sync-with-remote.sh"
+run_suite "test-check-blocked.sh"
+run_suite "test-fetch-issue-context.sh"
+run_suite "test-build-agent-context.sh"
 
 echo "=============================="
 echo "Corner-case suite: $PASS suites passed, $FAIL suites failed"

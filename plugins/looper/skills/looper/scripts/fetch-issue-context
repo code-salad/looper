@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# fetch-issue-context — Extract issue number from args, check if blocked, format context
+#
+# Usage: fetch-issue-context --args "ARGUMENTS" [--repo owner/repo]
+#
+# Output protocol:
+#   Line 1:  NUMBER=<num>   (or empty if no issue found)
+#   Lines 2+: Formatted issue body (empty if no issue found or fetch failed)
+#
+# Exit codes:
+#   0: success (issue context output, or no issue ref found, or fetch failed gracefully)
+#   1: issue is blocked (blocking reason on stderr)
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+ARGS_STRING=""
+REPO_ARG=""
+ARGS_PROVIDED=false
+
+# Parse arguments
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --args)
+            ARGS_STRING="$2"
+            ARGS_PROVIDED=true
+            shift 2
+            ;;
+        --repo)
+            REPO_ARG="$2"
+            shift 2
+            ;;
+        *)
+            echo "Usage: fetch-issue-context --args \"ARGUMENTS\" [--repo owner/repo]" >&2
+            echo "Error: unknown argument: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [ "$ARGS_PROVIDED" = "false" ]; then
+    echo "Usage: fetch-issue-context --args \"ARGUMENTS\" [--repo owner/repo]" >&2
+    echo "Error: --args is required" >&2
+    exit 2
+fi
+
+# Extract issue number from args, trying three patterns in priority order:
+# 1. GitHub URL: https://github.com/<owner>/<repo>/issues/<NUMBER>
+# 2. Hash reference: #<NUMBER>
+# 3. Plain number at start: <NUMBER> <rest>
+
+ISSUE_NUMBER=""
+EXTRACTED_REPO=""
+
+# Pattern 1: GitHub URL
+if echo "$ARGS_STRING" | grep -qE 'https://github\.com/[^/]+/[^/]+/issues/[0-9]+'; then
+    URL=$(echo "$ARGS_STRING" | grep -oE 'https://github\.com/[^/]+/[^/]+/issues/[0-9]+' | head -1)
+    ISSUE_NUMBER=$(echo "$URL" | grep -oE '/issues/[0-9]+' | grep -oE '[0-9]+')
+    # Extract owner/repo from URL
+    EXTRACTED_REPO=$(echo "$URL" | grep -oE 'github\.com/[^/]+/[^/]+' | sed 's|github\.com/||')
+fi
+
+# Pattern 2: Hash reference #N
+if [ -z "$ISSUE_NUMBER" ]; then
+    if echo "$ARGS_STRING" | grep -qE '#[0-9]+'; then
+        ISSUE_NUMBER=$(echo "$ARGS_STRING" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+    fi
+fi
+
+# Pattern 3: Plain number at start of args
+if [ -z "$ISSUE_NUMBER" ]; then
+    if echo "$ARGS_STRING" | grep -qE '^[0-9]+( |$)'; then
+        ISSUE_NUMBER=$(echo "$ARGS_STRING" | grep -oE '^[0-9]+')
+    fi
+fi
+
+# No issue reference found
+if [ -z "$ISSUE_NUMBER" ]; then
+    exit 0
+fi
+
+# Build repo args
+GH_REPO_ARGS=()
+if [ -n "$REPO_ARG" ]; then
+    GH_REPO_ARGS=("--repo" "$REPO_ARG")
+elif [ -n "$EXTRACTED_REPO" ]; then
+    GH_REPO_ARGS=("--repo" "$EXTRACTED_REPO")
+fi
+
+# Allow overriding check-blocked path for testing
+CHECK_BLOCKED="${CHECK_BLOCKED_PATH:-$SCRIPT_DIR/check-blocked}"
+
+# Fetch issue metadata to verify it exists and is not blocked
+FETCH_OK=true
+gh issue view "$ISSUE_NUMBER" --json title,body,labels "${GH_REPO_ARGS[@]}" >/dev/null 2>&1 || FETCH_OK=false
+
+if [ "$FETCH_OK" = "false" ]; then
+    # Graceful degradation: gh failed, output empty and exit 0
+    exit 0
+fi
+
+# Check if the issue is blocked
+BLOCKED_REASON=$("$CHECK_BLOCKED" --issue "$ISSUE_NUMBER" "${GH_REPO_ARGS[@]}" 2>/dev/null) && BLOCKED_EXIT=0 || BLOCKED_EXIT=$?
+if [ "$BLOCKED_EXIT" -eq 1 ]; then
+    echo "${BLOCKED_REASON:-Issue #$ISSUE_NUMBER is blocked by open dependencies.}" >&2
+    exit 1
+fi
+
+# Format the issue body using gh template
+FORMATTED=$(gh issue view "$ISSUE_NUMBER" \
+    --json number,title,body,labels \
+    --template '## Issue #{{.number}}: {{.title}}{{"\n\n"}}### Labels{{"\n"}}{{range .labels}}- {{.name}}{{"\n"}}{{end}}{{"\n"}}### Description{{"\n"}}{{.body}}' \
+    "${GH_REPO_ARGS[@]}" 2>/dev/null) || FORMATTED=""
+
+# Output: first line is NUMBER=<num>, rest is formatted body
+printf 'NUMBER=%s\n' "$ISSUE_NUMBER"
+if [ -n "$FORMATTED" ]; then
+    printf '%s\n' "$FORMATTED"
+fi

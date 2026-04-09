@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# check-blocked — Check if a GitHub issue is blocked by open dependencies
+#
+# Usage: check-blocked --issue <NUMBER> [--repo owner/repo]
+# Exit 0: issue is NOT blocked (no output)
+# Exit 1: issue IS blocked (prints reason to stdout)
+
+ISSUE_NUMBER=""
+REPO_ARG=""
+
+# Parse arguments
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --issue)
+            ISSUE_NUMBER="$2"
+            shift 2
+            ;;
+        --repo)
+            REPO_ARG="$2"
+            shift 2
+            ;;
+        *)
+            echo "Usage: check-blocked --issue <NUMBER> [--repo owner/repo]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [ -z "$ISSUE_NUMBER" ]; then
+    echo "Usage: check-blocked --issue <NUMBER> [--repo owner/repo]" >&2
+    echo "Error: --issue is required" >&2
+    exit 2
+fi
+
+# Build gh base args
+GH_REPO_ARGS=()
+if [ -n "$REPO_ARG" ]; then
+    GH_REPO_ARGS=("--repo" "$REPO_ARG")
+fi
+
+# Fetch issue metadata
+ISSUE_JSON=$(gh issue view "$ISSUE_NUMBER" --json labels,body "${GH_REPO_ARGS[@]}" 2>/dev/null) || {
+    echo "Warning: could not fetch issue #$ISSUE_NUMBER" >&2
+    exit 0
+}
+
+# --- Label-based blocking ---
+LABELS=$(echo "$ISSUE_JSON" | jq -r '(.labels // []) | .[].name' 2>/dev/null || true)
+while IFS= read -r label; do
+    [ -z "$label" ] && continue
+    label_lower=$(echo "$label" | tr '[:upper:]' '[:lower:]')
+    if echo "$label_lower" | grep -q "blocked\|dependencies"; then
+        echo "Issue #$ISSUE_NUMBER is blocked: label '$label' matches blocking pattern"
+        exit 1
+    fi
+done <<< "$LABELS"
+
+# --- Body-based checks ---
+BODY=$(echo "$ISSUE_JSON" | jq -r '.body // ""' 2>/dev/null || true)
+if [ -z "$BODY" ] || [ "$BODY" = "null" ]; then
+    exit 0
+fi
+
+check_issue_state() {
+    local dep_num="$1"
+    gh issue view "$dep_num" --json state --jq '.state' "${GH_REPO_ARGS[@]}" 2>/dev/null || echo "CLOSED"
+}
+
+# --- Task-list dependency references: "- [ ] Depends on #N" or "- [ ] #N" ---
+DEP_NUMS=$(echo "$BODY" | grep -oE '\- \[ \] (Depends on )?#[0-9]+' | grep -oE '#[0-9]+' | tr -d '#' || true)
+while IFS= read -r dep_num; do
+    [ -z "$dep_num" ] && continue
+    STATE=$(check_issue_state "$dep_num")
+    if [ "$STATE" = "OPEN" ]; then
+        echo "Issue #$ISSUE_NUMBER is blocked: depends on open issue #$dep_num"
+        exit 1
+    fi
+done <<< "$DEP_NUMS"
+
+# --- "Blocked by #N" references (case-insensitive) ---
+BLOCKED_BY_NUMS=$(echo "$BODY" | grep -ioE 'blocked by #[0-9]+' | grep -oE '#[0-9]+' | tr -d '#' || true)
+while IFS= read -r dep_num; do
+    [ -z "$dep_num" ] && continue
+    STATE=$(check_issue_state "$dep_num")
+    if [ "$STATE" = "OPEN" ]; then
+        echo "Issue #$ISSUE_NUMBER is blocked: blocked by open issue #$dep_num"
+        exit 1
+    fi
+done <<< "$BLOCKED_BY_NUMS"
+
+# Not blocked
+exit 0

@@ -49,46 +49,21 @@ Store the result as `ISSUES`.
 
 ### 1b. Filter out blocked issues
 
-For each issue in `ISSUES`, apply the three blocking checks below. Remove any
-issue that fails at least one check.
-
-#### Label-based blocking
-
-Skip (block) the issue if any of its labels contain "blocked" or "dependencies"
-(case-insensitive match).
-
-```
-labels[].name | ascii_downcase | contains("blocked") or contains("dependencies")
-```
-
-#### Task-list dependency references
-
-Parse the issue body for lines matching either of these patterns:
-- `- [ ] Depends on #N`
-- `- [ ] #N`
-
-(where `N` is one or more digits)
-
-For each referenced issue number `N` found, check whether it is still open:
+For each issue in `ISSUES`, check if it is blocked using `check-blocked`:
 
 ```bash
-gh issue view N --json state --jq '.state'
+SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)/plugins/looper}/skills/looper/scripts"
+ELIGIBLE_ISSUES=()
+for issue_number in $(echo "$ISSUES" | jq -r '.[].number'); do
+    if $SCRIPTS_DIR/check-blocked --issue "$issue_number" >/dev/null 2>&1; then
+        ELIGIBLE_ISSUES+=("$issue_number")
+    fi
+done
 ```
 
-If the result is `"OPEN"`, the issue is blocked. Skip it.
-
-#### "Blocked by" references
-
-Parse the issue body for lines matching the pattern:
-- `Blocked by #N` (case-insensitive)
-
-For each referenced issue number `N`, check whether it is still open:
-
-```bash
-gh issue view N --json state --jq '.state'
-```
-
-If the result is `"OPEN"`, the issue is blocked. Skip it.
+`check-blocked` applies three checks: label-based blocking ("blocked" or
+"dependencies" labels), task-list dependency references (`- [ ] Depends on #N`
+or `- [ ] #N`), and "Blocked by #N" references. Exit 0 means not blocked.
 
 ### 1c. Select issue
 

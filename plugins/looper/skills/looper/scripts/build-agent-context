@@ -1,0 +1,316 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# build-agent-context — Assemble role-specific context strings for PDC loop agents
+#
+# Usage:
+#   build-agent-context --role planner|doer|checker \
+#     --task TASK_NAME --iteration N \
+#     --task-prompt PROMPT --scripts-dir DIR \
+#     --worktree-dir DIR --dev-port PORT \
+#     --compose BOOL --compose-services SERVICES \
+#     [--issue-body BODY] [--loop-context CTX] [--diff-context DIFF]
+#
+# Outputs fully assembled context string to stdout.
+
+# Required flags
+ROLE=""
+TASK_NAME=""
+ITERATION=""
+TASK_PROMPT=""
+SCRIPTS_DIR=""
+WORKTREE_DIR=""
+DEV_PORT=""
+COMPOSE=""
+COMPOSE_SERVICES=""
+
+# Optional flags
+ISSUE_BODY=""
+LOOP_CONTEXT=""
+DIFF_CONTEXT=""
+
+# Parse arguments
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --role) ROLE="$2"; shift 2 ;;
+        --task) TASK_NAME="$2"; shift 2 ;;
+        --iteration) ITERATION="$2"; shift 2 ;;
+        --task-prompt) TASK_PROMPT="$2"; shift 2 ;;
+        --scripts-dir) SCRIPTS_DIR="$2"; shift 2 ;;
+        --worktree-dir) WORKTREE_DIR="$2"; shift 2 ;;
+        --dev-port) DEV_PORT="$2"; shift 2 ;;
+        --compose) COMPOSE="$2"; shift 2 ;;
+        --compose-services) COMPOSE_SERVICES="$2"; shift 2 ;;
+        --issue-body) ISSUE_BODY="$2"; shift 2 ;;
+        --loop-context) LOOP_CONTEXT="$2"; shift 2 ;;
+        --diff-context) DIFF_CONTEXT="$2"; shift 2 ;;
+        *)
+            echo "Usage: build-agent-context --role planner|doer|checker --task NAME --iteration N ..." >&2
+            echo "Error: unknown argument: $1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# Validate required flags
+MISSING=""
+[ -z "$ROLE" ] && MISSING="$MISSING --role"
+[ -z "$TASK_NAME" ] && MISSING="$MISSING --task"
+[ -z "$ITERATION" ] && MISSING="$MISSING --iteration"
+[ -z "$TASK_PROMPT" ] && MISSING="$MISSING --task-prompt"
+[ -z "$SCRIPTS_DIR" ] && MISSING="$MISSING --scripts-dir"
+[ -z "$WORKTREE_DIR" ] && MISSING="$MISSING --worktree-dir"
+[ -z "$DEV_PORT" ] && MISSING="$MISSING --dev-port"
+[ -z "$COMPOSE" ] && MISSING="$MISSING --compose"
+[ -z "$COMPOSE_SERVICES" ] && MISSING="$MISSING --compose-services"
+
+if [ -n "$MISSING" ]; then
+    echo "Usage: build-agent-context --role planner|doer|checker --task NAME --iteration N ..." >&2
+    echo "Error: required flags missing:$MISSING" >&2
+    exit 2
+fi
+
+# Validate role
+case "$ROLE" in
+    planner|doer|checker) ;;
+    *)
+        echo "Error: --role must be one of: planner, doer, checker (got: $ROLE)" >&2
+        exit 2
+        ;;
+esac
+
+# --- Helper: read file if it exists, empty string otherwise ---
+read_file_if_exists() {
+    local path="$1"
+    if [ -f "$path" ]; then
+        cat "$path"
+    else
+        echo ""
+    fi
+}
+
+# --- Helper: format file content as project-context entry ---
+format_file_section() {
+    local filename="$1"
+    local content="$2"
+    if [ -n "$content" ]; then
+        printf '\n---\n## File: %s\n\n%s\n' "$filename" "$content"
+    fi
+}
+
+# --- Helper: extract a section from CONTRIBUTING.md by ## header ---
+# Extracts from "## HEADER" to the next "## " or EOF
+extract_section() {
+    local file="$1"
+    local header="$2"
+    if [ ! -f "$file" ]; then
+        echo ""
+        return
+    fi
+    # Use awk to extract from the header to the next ## header
+    awk -v header="## $header" '
+        $0 == header { found=1; next }
+        found && /^## / { exit }
+        found { print }
+    ' "$file"
+}
+
+# --- Read project files ---
+CONTRIBUTING_FILE="$WORKTREE_DIR/CONTRIBUTING.md"
+README_FILE="$WORKTREE_DIR/README.md"
+AGENTS_FILE="$WORKTREE_DIR/AGENTS.md"
+EDITORCONFIG_FILE="$WORKTREE_DIR/.editorconfig"
+PR_TEMPLATE_FILE="$WORKTREE_DIR/.github/PULL_REQUEST_TEMPLATE.md"
+PACKAGE_JSON_FILE="$WORKTREE_DIR/package.json"
+MAKEFILE_FILE="$WORKTREE_DIR/Makefile"
+PYPROJECT_FILE="$WORKTREE_DIR/pyproject.toml"
+CARGO_TOML_FILE="$WORKTREE_DIR/Cargo.toml"
+
+# Read full CONTRIBUTING.md
+CONTRIBUTING_FULL=$(read_file_if_exists "$CONTRIBUTING_FILE")
+
+# Extract sections from CONTRIBUTING.md
+CONTRIBUTING_CODE_STYLE=$(extract_section "$CONTRIBUTING_FILE" "Code Style")
+CONTRIBUTING_TESTING=$(extract_section "$CONTRIBUTING_FILE" "Testing and CI")
+
+# Read other docs
+README_CONTENT=$(read_file_if_exists "$README_FILE")
+AGENTS_CONTENT=$(read_file_if_exists "$AGENTS_FILE")
+EDITORCONFIG_CONTENT=$(read_file_if_exists "$EDITORCONFIG_FILE")
+PR_TEMPLATE_CONTENT=$(read_file_if_exists "$PR_TEMPLATE_FILE")
+
+# Build config files
+PACKAGE_JSON_CONTENT=""
+if [ -f "$PACKAGE_JSON_FILE" ]; then
+    PACKAGE_JSON_CONTENT=$(python3 -c "
+import json,sys
+try:
+    data = json.load(sys.stdin)
+    scripts = data.get('scripts', {})
+    print(json.dumps({'scripts': scripts}, indent=2))
+except Exception:
+    pass
+" < "$PACKAGE_JSON_FILE" 2>/dev/null || cat "$PACKAGE_JSON_FILE")
+fi
+
+MAKEFILE_CONTENT=""
+if [ -f "$MAKEFILE_FILE" ]; then
+    MAKEFILE_CONTENT=$(grep -E '^[a-zA-Z_-]+:' "$MAKEFILE_FILE" | sed 's/:.*//' || true)
+fi
+
+PYPROJECT_CONTENT=$(read_file_if_exists "$PYPROJECT_FILE")
+CARGO_TOML_CONTENT=$(read_file_if_exists "$CARGO_TOML_FILE")
+
+# --- Build role-specific PROJECT_CONTEXT ---
+PROJECT_CONTEXT=""
+
+case "$ROLE" in
+    planner)
+        # Full context: all docs + all build configs
+        if [ -n "$CONTRIBUTING_FULL" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "CONTRIBUTING.md" "$CONTRIBUTING_FULL")"
+        fi
+        if [ -n "$README_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "README.md" "$README_CONTENT")"
+        fi
+        if [ -n "$AGENTS_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "AGENTS.md" "$AGENTS_CONTENT")"
+        fi
+        if [ -n "$PR_TEMPLATE_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section ".github/PULL_REQUEST_TEMPLATE.md" "$PR_TEMPLATE_CONTENT")"
+        fi
+        if [ -n "$EDITORCONFIG_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section ".editorconfig" "$EDITORCONFIG_CONTENT")"
+        fi
+        if [ -n "$PACKAGE_JSON_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "package.json" "$PACKAGE_JSON_CONTENT")"
+        fi
+        if [ -n "$MAKEFILE_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Makefile (targets)" "$MAKEFILE_CONTENT")"
+        fi
+        if [ -n "$PYPROJECT_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "pyproject.toml" "$PYPROJECT_CONTENT")"
+        fi
+        if [ -n "$CARGO_TOML_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Cargo.toml" "$CARGO_TOML_CONTENT")"
+        fi
+        ;;
+
+    doer)
+        # Focused: Code Style section + .editorconfig + build config scripts only
+        CODE_STYLE_CONTENT=""
+        if [ -n "$CONTRIBUTING_CODE_STYLE" ]; then
+            CODE_STYLE_CONTENT="## Code Style
+
+$CONTRIBUTING_CODE_STYLE"
+        fi
+        if [ -n "$CODE_STYLE_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "CONTRIBUTING.md (Code Style)" "$CODE_STYLE_CONTENT")"
+        fi
+        if [ -n "$EDITORCONFIG_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section ".editorconfig" "$EDITORCONFIG_CONTENT")"
+        fi
+        if [ -n "$PACKAGE_JSON_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "package.json (scripts)" "$PACKAGE_JSON_CONTENT")"
+        fi
+        if [ -n "$MAKEFILE_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Makefile (targets)" "$MAKEFILE_CONTENT")"
+        fi
+        if [ -n "$PYPROJECT_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "pyproject.toml" "$PYPROJECT_CONTENT")"
+        fi
+        if [ -n "$CARGO_TOML_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Cargo.toml" "$CARGO_TOML_CONTENT")"
+        fi
+        ;;
+
+    checker)
+        # Minimal: Code Style + Testing sections + test/lint/build commands
+        CHECKER_CONTRIBUTING=""
+        if [ -n "$CONTRIBUTING_CODE_STYLE" ]; then
+            CHECKER_CONTRIBUTING="${CHECKER_CONTRIBUTING}## Code Style
+
+$CONTRIBUTING_CODE_STYLE
+"
+        fi
+        if [ -n "$CONTRIBUTING_TESTING" ]; then
+            CHECKER_CONTRIBUTING="${CHECKER_CONTRIBUTING}## Testing and CI
+
+$CONTRIBUTING_TESTING"
+        fi
+        if [ -n "$CHECKER_CONTRIBUTING" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "CONTRIBUTING.md (Code Style + Testing)" "$CHECKER_CONTRIBUTING")"
+        fi
+        if [ -n "$PACKAGE_JSON_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "package.json (scripts)" "$PACKAGE_JSON_CONTENT")"
+        fi
+        if [ -n "$MAKEFILE_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Makefile (targets)" "$MAKEFILE_CONTENT")"
+        fi
+        if [ -n "$PYPROJECT_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "pyproject.toml" "$PYPROJECT_CONTENT")"
+        fi
+        if [ -n "$CARGO_TOML_CONTENT" ]; then
+            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Cargo.toml" "$CARGO_TOML_CONTENT")"
+        fi
+        ;;
+esac
+
+# --- Assemble issue context ---
+ISSUE_SECTION="${ISSUE_BODY:-No issue linked. Use the TASK_PROMPT above as the source of requirements.}"
+
+# --- Build output ---
+cat << CONTEXT_EOF
+<project-context>
+${PROJECT_CONTEXT}
+</project-context>
+
+You MUST follow the conventions and instructions in <project-context>.
+Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
+
+---
+
+## Task Variables
+
+- **TASK_NAME:** ${TASK_NAME}
+- **ITERATION:** ${ITERATION}
+- **TASK_PROMPT:** ${TASK_PROMPT}
+- **SCRIPTS_DIR:** ${SCRIPTS_DIR}
+- **WORKTREE_DIR:** ${WORKTREE_DIR}
+- **LOOPER_DEV_PORT:** ${DEV_PORT}
+- **HAS_COMPOSE:** ${COMPOSE}
+- **COMPOSE_SERVICES:** ${COMPOSE_SERVICES}
+
+## Issue Context
+
+${ISSUE_SECTION}
+CONTEXT_EOF
+
+# Checker-specific: Changes This Iteration section
+if [ "$ROLE" = "checker" ]; then
+    DIFF_OUTPUT="${DIFF_CONTEXT:-First iteration — full review required.}"
+    cat << DIFF_EOF
+
+## Changes This Iteration (diff from last check)
+
+${DIFF_OUTPUT}
+DIFF_EOF
+fi
+
+# Prior Loop Context
+cat << LOOP_EOF
+
+## Prior Loop Context
+
+${LOOP_CONTEXT:-This is the first iteration. No prior context available.}
+LOOP_EOF
+
+# Planner iteration > 1: add pruning note
+if [ "$ROLE" = "planner" ] && [ "$ITERATION" -gt 1 ]; then
+    cat << PRUNE_EOF
+
+NOTE: This is iteration ${ITERATION}. Project context is the same as iteration 1.
+Spawn Explore subagents ONLY for the areas the Checker flagged — do not
+re-explore the entire codebase. The action items above are your focus.
+PRUNE_EOF
+fi
