@@ -53,9 +53,7 @@ if [ -n "$REMOTE_REF" ] && [ "$LOCAL_REF" != "$REMOTE_REF" ]; then
             git add \
                 "$REPO_ROOT/.claude-plugin/marketplace.json" \
                 "$REPO_ROOT/plugins/looper/.claude-plugin/plugin.json" \
-                "$REPO_ROOT/plugins/fallback-agent/.claude-plugin/plugin.json" \
                 "$REPO_ROOT/plugins/webscraping/.claude-plugin/plugin.json" \
-                "$REPO_ROOT/crates/fallback-agent/Cargo.toml" \
                 "$REPO_ROOT/crates/looper-watch/Cargo.toml" \
                 "$REPO_ROOT/Cargo.lock" \
                 2>/dev/null || true
