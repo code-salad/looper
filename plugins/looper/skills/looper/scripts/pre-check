@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# pre-check — Run mechanical checks before spawning the Checker agent
+# Usage: SCRIPTS_DIR=<path> pre-check
+# Runs run-tests, run-typecheck, run-lint in sequence.
+# Exits 0 with "ALL_CHECKS_PASSED" if all pass.
+# Exits 1 with structured failure output if any fail.
+
+SCRIPTS_DIR="${SCRIPTS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+
+FAILED_CHECKS=()
+ALL_OUTPUT=""
+
+run_check() {
+    local name="$1"
+    local script="$SCRIPTS_DIR/$name"
+
+    if [ ! -x "$script" ]; then
+        # Script doesn't exist or isn't executable — skip gracefully
+        return 0
+    fi
+
+    local output
+    local exit_code=0
+    output=$("$script" 2>&1) || exit_code=$?
+
+    if [ "$exit_code" -ne 0 ]; then
+        FAILED_CHECKS+=("$name")
+        ALL_OUTPUT+="=== FAILED: $name (exit $exit_code) ==="$'\n'
+        # Truncate to ~100 lines to avoid overwhelming output
+        ALL_OUTPUT+=$(echo "$output" | head -100)
+        ALL_OUTPUT+=$'\n\n'
+    fi
+}
+
+run_check "run-tests"
+run_check "run-typecheck"
+run_check "run-lint"
+
+if [ "${#FAILED_CHECKS[@]}" -eq 0 ]; then
+    echo "ALL_CHECKS_PASSED"
+    exit 0
+fi
+
+echo "PRE_CHECK_FAILED: ${FAILED_CHECKS[*]}"
+echo ""
+echo "$ALL_OUTPUT"
+exit 1

@@ -18,9 +18,10 @@ reviewer — report all findings but do NOT fix code or modify any files.
 
 `SUBAGENTS_DIR="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts"`
 
-1. **Verify Doer committed work (TDD sequence)** — The Doer must produce two
-   or three commits per iteration: `do-red` (tests), `do-green` (implementation),
-   and optionally `do-integration` (integration tests for runnable artifacts).
+1. **Verify Doer committed work and run TDD sequence checks** — The Doer must
+   produce two or three commits per iteration: `do-red` (tests), `do-green`
+   (implementation), and optionally `do-integration` (integration tests for
+   runnable artifacts).
 
    ```bash
    red_hash=$(git log --grep="Loop-Phase: do-red" --grep="Loop-Iteration: $ITERATION" \
@@ -39,9 +40,10 @@ reviewer — report all findings but do NOT fix code or modify any files.
        --all-match --format="%H" -1)
    ```
 
-   - If `red_hash` AND `green_hash` exist: TDD flow followed. Proceed.
-   - If only `doer_hash` exists: Legacy flow — proceed but flag as [WARNING]:
-     "Doer used single commit instead of TDD red-green sequence."
+   - If `red_hash` AND `green_hash` exist: TDD flow followed. Run TDD sequence
+     checks (below) and proceed.
+   - If only `doer_hash` exists: Legacy flow — proceed but add to issues:
+     [WARNING] "Doer used single commit instead of TDD red-green sequence."
    - If none exist: Issue FAIL immediately:
      ```bash
      $SCRIPTS_DIR/git-commit-loop \
@@ -54,6 +56,27 @@ reviewer — report all findings but do NOT fix code or modify any files.
          --verdict "FAIL"
      ```
      Then stop — do not proceed with the review.
+
+   **TDD sequence checks** (run when red_hash and green_hash both exist):
+   - Check `do-red` contains ONLY test files (patterns: `*test*`, `*spec*`,
+     `__tests__/*`, `tests/*`, `*_test.*`):
+     ```bash
+     git diff-tree --no-commit-id --name-only -r "$red_hash"
+     ```
+     If any source file is in the red commit: add [BLOCKER] "RED commit contains
+     implementation files — tests must be written before implementation."
+   - Check `do-green` contains ONLY source files (no new test files):
+     Minor test fixes (typo, assertion correction) are [WARNING], new test
+     files are [BLOCKER].
+   - Verify red was created before green:
+     ```bash
+     git merge-base --is-ancestor "$red_hash" "$green_hash" && echo "OK" || echo "FAIL"
+     ```
+     If FAIL: add [BLOCKER] "RED commit is not an ancestor of GREEN commit."
+   - If `do-simplify` exists: verify it only touches files modified in green.
+     New files are [WARNING]. Test file changes are [BLOCKER].
+   - If `do-integration` exists: verify it only touches `tests/integration/`.
+     Source or unit test changes are [BLOCKER].
 
 2. **Read context (parallel)** — Run git queries as separate Bash tool calls
    in a single message:
@@ -99,7 +122,7 @@ reviewer — report all findings but do NOT fix code or modify any files.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Spawn 7 parallel review subagents** — Launch all seven as parallel spawn-agent
+3. **Spawn 4 parallel review subagents** — Launch all four as parallel spawn-agent
    calls in a single Bash command. Each subagent receives the plan summary,
    doer summary, changed files list, and acceptance criteria from step 2.
 
@@ -109,11 +132,8 @@ reviewer — report all findings but do NOT fix code or modify any files.
    $SPAWN "Explore" "<prompt for subagent 2>" > /tmp/check2.txt &
    $SPAWN "Explore" "<prompt for subagent 3>" > /tmp/check3.txt &
    $SPAWN "Explore" "<prompt for subagent 4>" > /tmp/check4.txt &
-   $SPAWN "Explore" "<prompt for subagent 5>" > /tmp/check5.txt &
-   $SPAWN "Explore" "<prompt for subagent 6>" > /tmp/check6.txt &
-   $SPAWN "Explore" "<prompt for subagent 7>" > /tmp/check7.txt &
    wait
-   cat /tmp/check1.txt /tmp/check2.txt /tmp/check3.txt /tmp/check4.txt /tmp/check5.txt /tmp/check6.txt /tmp/check7.txt
+   cat /tmp/check1.txt /tmp/check2.txt /tmp/check3.txt /tmp/check4.txt
    ```
 
    **Subagent prompt template** (customize the focus section for each):
@@ -156,13 +176,13 @@ reviewer — report all findings but do NOT fix code or modify any files.
    <1-2 sentence overall assessment>
    ```
 
-   **Subagent 1 — Type Checker:**
+   **Subagent 1 — Build & Types:**
    - Run `$SCRIPTS_DIR/run-typecheck 2>&1; echo "EXIT_CODE=$?"`
    - Run `$SCRIPTS_DIR/run-build 2>&1; echo "EXIT_CODE=$?"`
    - Review type-related issues in changed files
    - Report: type errors, build failures, severity, file+line, suggested fixes
 
-   **Subagent 2 — Test Checker:**
+   **Subagent 2 — Test & Coverage:**
    - Run `$SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"`
    - Review test coverage for changed code
    - Check that test names describe behavior, not just function names
@@ -205,7 +225,10 @@ reviewer — report all findings but do NOT fix code or modify any files.
      behavioral tests, circular tests, uncovered acceptance criteria, test
      quality issues, suggested fixes
 
-   **Subagent 3 — Logic Reviewer:**
+   **Subagent 3 — Code Review:**
+   - Run `$SCRIPTS_DIR/run-lint 2>&1; echo "EXIT_CODE=$?"`
+   - Run `$SCRIPTS_DIR/run-format 2>&1; echo "EXIT_CODE=$?"`
+   - Run `$SCRIPTS_DIR/security-scan 2>&1; echo "EXIT_CODE=$?"`
    - Read all changed files (using the file list from step 2 Call 3)
    - Review correctness: does the code match the plan's acceptance criteria?
    - Review edge cases: null checks, error handling, boundary conditions, empty
@@ -218,20 +241,14 @@ reviewer — report all findings but do NOT fix code or modify any files.
        the constraint says Rust-only)
      - Dependencies from the wrong package manager were installed
      - A framework other than the one specified was scaffolded
-   - Report: logic errors, missing error handling, unmet acceptance criteria,
-     tech stack compliance violations, severity, file+line, suggested fixes
-
-   **Subagent 4 — Code Quality & Maintainability Reviewer:**
-   - Run `$SCRIPTS_DIR/run-lint 2>&1; echo "EXIT_CODE=$?"`
-   - Run `$SCRIPTS_DIR/run-format 2>&1; echo "EXIT_CODE=$?"`
-   - Run `$SCRIPTS_DIR/security-scan 2>&1; echo "EXIT_CODE=$?"`
    - Review code maintainability: naming, readability, DRY, hardcoded values
    - Review convention compliance: project patterns from <project-context>,
      file organization, import style
-   - Report: lint/format/security issues, maintainability concerns, convention
-     violations, severity, file+line, suggested fixes
+   - Report: lint/format/security issues, logic errors, missing error handling,
+     unmet acceptance criteria, tech stack compliance violations, maintainability
+     concerns, convention violations, severity, file+line, suggested fixes
 
-   **Subagent 5 — Manual / Integration Tester:**
+   **Subagent 4 — Runtime Verification:**
    - You are the last line of defense between code and production.
    - Use `$SCRIPTS_DIR/detect-stack` to identify the project type and dev server command.
    - **IMPORTANT — Port isolation:** Always use `$LOOPER_DEV_PORT` (from task
@@ -299,12 +316,9 @@ reviewer — report all findings but do NOT fix code or modify any files.
      Report "N/A — no runnable artifact to test manually." This is a
      **[WARNING]** if the task involves user-facing behavioral changes
      (not just internal refactoring).
-   - Report: any runtime errors, broken endpoints, UI regressions, unfixed
-     ticket scenarios, unexpected behavior, or crashes. Each issue is a BLOCKER.
 
-   **Subagent 6 — Integration Test Verifier:**
-   - Use `$SCRIPTS_DIR/detect-stack` to identify the project type.
-   - Determine if the project has a runnable artifact (web app, API, CLI).
+   - **Integration test verification:** Use `$SCRIPTS_DIR/detect-stack` to
+     identify if the project is runnable (web app, API, CLI).
      A project is "runnable" if: framework is a web framework, dev_command is
      not "none", or the project builds to an executable binary/CLI.
    - **If runnable:** Check that `tests/integration/` directory exists and contains
@@ -319,37 +333,17 @@ reviewer — report all findings but do NOT fix code or modify any files.
      - If app fails to start: [BLOCKER] "Application failed to start for
        integration testing — the built artifact may be broken."
    - **If not runnable** (pure library, no server, no CLI): Report "N/A — no
-     runnable artifact for integration testing."
+     runnable artifact for integration or manual testing."
    - Check that integration tests are testing acceptance criteria scenarios,
      not just generic health checks. Flag generic-only tests as [WARNING].
-   - Report: integration test results, missing coverage, app startup issues.
+   - Report: any runtime errors, broken endpoints, UI regressions, unfixed
+     ticket scenarios, unexpected behavior, crashes, integration test results,
+     missing coverage, app startup issues.
 
-   **Subagent 7 — TDD Sequence Verifier:**
-   - Verify the `do-red` commit exists and contains ONLY test files
-     (files matching common test patterns: `*test*`, `*spec*`, `__tests__/*`,
-     `tests/*`, `*_test.*`). If source files are in the red commit, flag as
-     [BLOCKER]: "RED commit contains implementation files — tests must be
-     written before implementation."
-   - Verify the `do-green` commit exists and contains ONLY source files
-     (no new test files). Minor test fixes (typo, assertion correction) are
-     acceptable as [WARNING], but new test files are [BLOCKER].
-   - Verify the `do-red` commit was created BEFORE `do-green` (check commit
-     timestamps or ancestry: `git merge-base --is-ancestor $red_hash $green_hash`).
-   - If a `do-simplify` commit exists, verify it contains ONLY source files
-     that were already modified in the `do-green` commit (refactoring existing
-     implementation, not adding new files or tests). New files in this commit
-     are [WARNING]. Test file changes are [BLOCKER].
-   - If a `do-integration` commit exists, verify it contains ONLY files under
-     `tests/integration/`. Source or unit test changes in this commit are [BLOCKER].
-   - If only a legacy `do` commit exists (no red/green split), flag as
-     [WARNING]: "TDD sequence not followed — single commit instead of
-     red-green split."
-   - Report: TDD compliance issues, file classification, severity
+   All four MUST be launched as parallel spawn-agent calls in a single Bash command.
 
-   All seven MUST be launched as parallel spawn-agent calls in a single Bash command.
-
-4. **Collect and consolidate results** — After all 7 subagents complete:
-   - Gather all BLOCKER issues (must fix before PASS)
+4. **Collect and consolidate results** — After all 4 subagents complete:
+   - Gather all BLOCKER issues from TDD checks in step 1 and subagent reports
    - Gather all WARNING issues (should fix)
    - Note SUGGESTION issues for the verdict body only
 
@@ -423,7 +417,7 @@ issue FAIL with action items listing what is still unfinished.
 - **FAIL** = Any of the following:
   - BLOCKER issues exist
   - The implementation does not satisfy the plan's acceptance criteria
-  - The ticket scenario is not actually fixed/working (verified by Subagent 5)
+  - The ticket scenario is not actually fixed/working (verified by Subagent 4)
   - Regressions detected: behavior that worked before is now broken
   - **The original task is only partially complete** — the plan covered a
     slice but remaining requirements from TASK_PROMPT/ISSUE_BODY are not yet
@@ -465,7 +459,7 @@ If any convention is violated, flag it in your verdict.
 - The verdict commit is ALWAYS your last commit
 - Be thorough but pragmatic — don't nitpick style if the linter is clean
 - **Integration test strictness:** If the task involves user-facing changes
-  (UI, API endpoints, CLI behavior) and Subagent 5 could not run integration
+  (UI, API endpoints, CLI behavior) and Subagent 4 could not run integration
   tests (reports "N/A"), flag this as [WARNING] in the verdict. The Doer
   should ensure adequate test coverage compensates for the lack of manual testing.
 - **Always use `$LOOPER_DEV_PORT`** for any dev server started during review.

@@ -92,25 +92,30 @@ _extract_action_items() {
     awk '/^## Action items/,/^## [^A]|^$/' | head -20
 }
 
-# Determine detail level for each iteration
-# N-1: full, N-2 and N-3: medium, older: minimal
+# Determine detail level for each iteration using verdict-adaptive compression:
+# - N-1 (last iteration): always full
+# - PASS iterations (any age except N-1): always minimal
+# - FAIL iterations within N-4: medium
+# - FAIL iterations older than N-4 (and not N-1): minimal
 LAST=$((ITERATION - 1))
-RECENT_START=$((ITERATION - 3))
-[ "$RECENT_START" -lt 1 ] && RECENT_START=1
+FAIL_MEDIUM_START=$((ITERATION - 4))
+[ "$FAIL_MEDIUM_START" -lt 1 ] && FAIL_MEDIUM_START=1
 
 for (( i=1; i<ITERATION; i++ )); do
-    # Calculate detail level
+    plan_body=$(_extract_body "plan" "$i")
+    verdict_body=$(_extract_body "check" "$i")
+    verdict=$(echo "$verdict_body" | grep -oE 'Loop-Verdict: (PASS|FAIL)' | head -1 | sed 's/Loop-Verdict: //' || echo "UNKNOWN")
+
+    # Calculate detail level (verdict-adaptive)
     if [ "$i" -eq "$LAST" ]; then
         detail="full"
-    elif [ "$i" -ge "$RECENT_START" ]; then
+    elif [ "$verdict" = "PASS" ]; then
+        detail="minimal"
+    elif [ "$verdict" = "FAIL" ] && [ "$i" -ge "$FAIL_MEDIUM_START" ]; then
         detail="medium"
     else
         detail="minimal"
     fi
-
-    plan_body=$(_extract_body "plan" "$i")
-    verdict_body=$(_extract_body "check" "$i")
-    verdict=$(echo "$verdict_body" | grep -oE 'Loop-Verdict: (PASS|FAIL)' | head -1 | sed 's/Loop-Verdict: //' || echo "UNKNOWN")
 
     # --- MINIMAL: one-line summary ---
     if [ "$detail" = "minimal" ]; then
