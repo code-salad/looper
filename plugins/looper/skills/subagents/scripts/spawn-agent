@@ -4,27 +4,62 @@ set -euo pipefail
 # Spawns a Claude subagent via claude -p and returns the text response.
 # Bypasses nested-session detection and skips permission prompts.
 #
-# Usage:
-#   spawn-agent <agent-name> <prompt> [extra-flags...]
+# Modes:
+#   sync  (default) — blocks until done, writes result to file, prints path
+#   async           — returns immediately, prints output path to poll
 #
-# Examples:
-#   spawn-agent looper:checker "Review the doer's work in the current worktree"
-#   spawn-agent looper:planner "Plan the auth refactor" --max-turns 10
-#   spawn-agent general-purpose "Summarize this: $(cat file.txt)" --max-budget-usd 0.50
+# Usage:
+#   spawn-agent [--async] <agent-name> <prompt> [extra-flags...]
+#
+# Sync examples (run in background Bash, read result file after):
+#   spawn-agent looper:checker "Review the doer's work"
+#   cat /tmp/subagent-response-<ts>-<pid>.txt
+#
+# Async examples (fire and poll):
+#   RESULT=$(spawn-agent --async Explore "Find all API endpoints")
+#   # ... do other work ...
+#   cat "$RESULT"
 
-AGENT="${1:?Usage: spawn-agent <agent-name> <prompt> [extra-flags...]}"
-PROMPT="${2:?Usage: spawn-agent <agent-name> <prompt> [extra-flags...]}"
+MODE="sync"
+if [[ "${1:-}" == "--async" ]]; then
+  MODE="async"
+  shift
+fi
+
+AGENT="${1:?Usage: spawn-agent [--async] <agent-name> <prompt> [extra-flags...]}"
+PROMPT="${2:?Usage: spawn-agent [--async] <agent-name> <prompt> [extra-flags...]}"
 shift 2
 
-OUTFILE="/tmp/subagent-result-$$.json"
-trap 'rm -f "$OUTFILE"' EXIT
+TIMESTAMP=$(date +%s%N)
+OUTFILE="/tmp/subagent-result-${TIMESTAMP}.json"
+RESULTFILE="/tmp/subagent-response-${TIMESTAMP}.txt"
 
-env -u CLAUDECODE -u CLAUDE_CODE claude -p \
-  --agent "$AGENT" \
-  --output-format json \
-  --dangerously-skip-permissions \
-  "$PROMPT" \
-  "$@" \
-  > "$OUTFILE" 2>/dev/null
+run_agent() {
+  local rc=0
+  env -u CLAUDECODE -u CLAUDE_CODE claude -p \
+    --agent "$AGENT" \
+    --output-format json \
+    --dangerously-skip-permissions \
+    "$PROMPT" \
+    "$@" \
+    >"$OUTFILE" 2>/dev/null || rc=$?
 
-jq -r '.result // empty' "$OUTFILE"
+  if [ -s "$OUTFILE" ]; then
+    jq -r '.result // empty' "$OUTFILE" > "$RESULTFILE" 2>/dev/null || cp "$OUTFILE" "$RESULTFILE"
+  else
+    echo "spawn-agent error: claude exited with code $rc" > "$RESULTFILE"
+  fi
+  rm -f "$OUTFILE"
+  return $rc
+}
+
+if [[ "$MODE" == "async" ]]; then
+  # Return the result path immediately, run in background
+  echo "$RESULTFILE"
+  run_agent "$@" &
+  disown
+else
+  # Block until complete, print the result path
+  run_agent "$@"
+  echo "$RESULTFILE"
+fi

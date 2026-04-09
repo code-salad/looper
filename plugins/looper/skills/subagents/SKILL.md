@@ -41,51 +41,67 @@ Use the `spawn-agent` script to call a subagent. It handles nested-session detec
 Scripts: ${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/
 ```
 
-### Basic usage
+### Sync mode (default)
+
+Blocks until the subagent completes. Prints the path to the result file.
+**Important:** Must be run via `run_in_background: true` in the Bash tool
+(Claude Code's Bash tool suppresses stdout from nested Claude processes in
+foreground mode).
 
 ```bash
 SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
 
-# spawn-agent <agent-name> <prompt> [extra-flags...]
-$SPAWN "looper:checker" "Review the doer's work in the current worktree"
-$SPAWN "looper:planner" "Plan the auth refactor" --max-turns 10
-$SPAWN "general-purpose" "Summarize this: $(cat file.txt)" --max-budget-usd 0.50
+# Run in background, then read result
+$SPAWN "looper:checker" "Review the doer's work" # prints /tmp/subagent-response-<ts>-<pid>.txt
 ```
 
-The script:
-- Unsets `CLAUDECODE`/`CLAUDE_CODE` env vars to bypass nested-session detection
-- Runs with `--dangerously-skip-permissions` so the subagent isn't blocked on prompts
-- Returns the text response directly (extracts `.result` from the JSON)
-
-### Run in background
-
 ```bash
-$SPAWN "looper:checker" "Review the doer's work in the current worktree" &
-
-# Later, wait and get result
-wait
+# Full pattern: launch in background Bash, read result file after
+RESULT=$($SPAWN "Explore" "What language is this repo?")
+cat "$RESULT"
 ```
 
-### Run multiple subagents in parallel
+### Async mode
+
+Returns the result file path immediately, runs the subagent in background.
+Ideal for parallel spawning — fire multiple agents, do other work, read later.
 
 ```bash
-$SPAWN "looper:planner" "Plan how to add rate limiting to the API" > /tmp/plan.txt &
-$SPAWN "Explore" "Find all API endpoint definitions in this repo" > /tmp/explore.txt &
+SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
 
-wait
-
-echo "=== Plan ===" && cat /tmp/plan.txt
-echo "=== Explore ===" && cat /tmp/explore.txt
+# Fire and get path back instantly
+RESULT=$($SPAWN --async "Explore" "Find all API endpoints")
+# ... do other work ...
+# Poll until file is non-empty
+cat "$RESULT"
 ```
 
-### Pass extra context
+### Run multiple subagents in parallel (async)
 
 ```bash
+SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
+
+R1=$($SPAWN --async "looper:planner" "Plan how to add rate limiting")
+R2=$($SPAWN --async "Explore" "Find all API endpoint definitions")
+
+# Wait for both to finish (poll until files are non-empty)
+while [ ! -s "$R1" ] || [ ! -s "$R2" ]; do sleep 2; done
+
+echo "=== Plan ===" && cat "$R1"
+echo "=== Explore ===" && cat "$R2"
+```
+
+### Extra flags
+
+```bash
+# Limit turns and budget
+$SPAWN "looper:planner" "Plan the auth refactor" --max-turns 10 --max-budget-usd 0.50
+
 # Pass file contents in the prompt
 $SPAWN "Explore" "What does this code do: $(cat src/main.ts)"
 
 # Pass a system prompt
-$SPAWN "general-purpose" "Your prompt here" \
+$SPAWN "general-purpose" "Your prompt" \
   --append-system-prompt "You are working on a Node.js backend."
 ```
 
