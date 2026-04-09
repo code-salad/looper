@@ -82,15 +82,17 @@ assert_count_equals() {
 echo "=== Test 1: checker.md has exactly 4 subagents ==="
 assert_file_exists "checker.md exists" "$CHECKER_MD"
 
-# Count "Subagent N —" pattern headings
-subagent_count=$(grep -c "^\*\*Subagent [0-9]" "$CHECKER_MD" 2>/dev/null || echo "0")
+# Count "**Subagent N" definition headings (may have leading spaces)
+subagent_count=$(grep -c "\*\*Subagent [0-9]" "$CHECKER_MD" 2>/dev/null || echo "0")
+# Remove any trailing whitespace/newline from count
+subagent_count=$(echo "$subagent_count" | tr -d '[:space:]')
 assert_count_equals "checker.md has exactly 4 subagents" "$subagent_count" "4"
 
 # --- Test 2: checker.md no longer has Subagent 5, 6, or 7 ---
 echo "=== Test 2: checker.md does not have Subagent 5, 6, or 7 ==="
-assert_file_not_contains "no Subagent 5 in checker.md" "$CHECKER_MD" "^\*\*Subagent 5"
-assert_file_not_contains "no Subagent 6 in checker.md" "$CHECKER_MD" "^\*\*Subagent 6"
-assert_file_not_contains "no Subagent 7 in checker.md" "$CHECKER_MD" "^\*\*Subagent 7"
+assert_file_not_contains "no Subagent 5 in checker.md" "$CHECKER_MD" "\*\*Subagent 5"
+assert_file_not_contains "no Subagent 6 in checker.md" "$CHECKER_MD" "\*\*Subagent 6"
+assert_file_not_contains "no Subagent 7 in checker.md" "$CHECKER_MD" "\*\*Subagent 7"
 
 # --- Test 3: checker.md has the expected 4 subagent names ---
 echo "=== Test 3: checker.md has the expected subagent names ==="

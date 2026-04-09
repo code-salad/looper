@@ -107,6 +107,19 @@ modify any project files — only commit a plan as a git commit message.
    - **Tech Stack Constraints** (list any framework, language, or architecture
      requirements from the issue body that the implementation must follow)
    - Any risks or considerations
+   - **File snippets for small files** — For files the plan references that are
+     small (<50 lines), embed the full file content in the plan body. Format as:
+     ```
+     ### File: path/to/file (embedded — N lines)
+     <file content>
+     ```
+     The Doer can skip reading these files, saving context window usage. For
+     files >50 lines, describe the relevant section and line numbers instead.
+
+   **On iteration > 1:** Project context is pruned — spawn Explore subagents
+   only for areas the Checker flagged, not for a full re-exploration of the
+   codebase. The Checker's FAIL verdict + action items contain the specific
+   areas that need attention.
 
    **Scope discipline — complete the task, slice only when necessary:** Plan to
    accomplish the ENTIRE task in this iteration. Most tasks can be completed in
