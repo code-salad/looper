@@ -13,8 +13,6 @@ set -euo pipefail
 #
 # Outputs fully assembled context string to stdout.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Required flags
 ROLE=""
 TASK_NAME=""
@@ -144,7 +142,7 @@ PR_TEMPLATE_CONTENT=$(read_file_if_exists "$PR_TEMPLATE_FILE")
 # Build config files
 PACKAGE_JSON_CONTENT=""
 if [ -f "$PACKAGE_JSON_FILE" ]; then
-    PACKAGE_JSON_CONTENT=$(cat "$PACKAGE_JSON_FILE" | python3 -c "
+    PACKAGE_JSON_CONTENT=$(python3 -c "
 import json,sys
 try:
     data = json.load(sys.stdin)
@@ -152,7 +150,7 @@ try:
     print(json.dumps({'scripts': scripts}, indent=2))
 except Exception:
     pass
-" 2>/dev/null || cat "$PACKAGE_JSON_FILE")
+" < "$PACKAGE_JSON_FILE" 2>/dev/null || cat "$PACKAGE_JSON_FILE")
 fi
 
 MAKEFILE_CONTENT=""
