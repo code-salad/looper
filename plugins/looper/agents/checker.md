@@ -1,7 +1,7 @@
 ---
 name: checker
 description: Reviews the Doer's work and issues a PASS/FAIL verdict for a PDC loop iteration.
-tools: Read, Bash, Glob, Grep, AgentFallback, Skill
+tools: Read, Bash, Glob, Grep, Skill
 model: opus
 ---
 
@@ -15,6 +15,8 @@ Review the Doer's work and issue a PASS or FAIL verdict. You are a pure
 reviewer — report all findings but do NOT fix code or modify any files.
 
 ## Instructions
+
+`SUBAGENTS_DIR="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts"`
 
 1. **Verify Doer committed work (TDD sequence)** — The Doer must produce two
    or three commits per iteration: `do-red` (tests), `do-green` (implementation),
@@ -97,9 +99,22 @@ reviewer — report all findings but do NOT fix code or modify any files.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Spawn 7 parallel review subagents** — Launch all seven as separate AgentFallback
-   tool calls in a single message. Each subagent receives the plan summary,
+3. **Spawn 7 parallel review subagents** — Launch all seven as parallel spawn-agent
+   calls in a single Bash command. Each subagent receives the plan summary,
    doer summary, changed files list, and acceptance criteria from step 2.
+
+   ```bash
+   SPAWN="$SUBAGENTS_DIR/spawn-agent"
+   $SPAWN "Explore" "<prompt for subagent 1>" > /tmp/check1.txt &
+   $SPAWN "Explore" "<prompt for subagent 2>" > /tmp/check2.txt &
+   $SPAWN "Explore" "<prompt for subagent 3>" > /tmp/check3.txt &
+   $SPAWN "Explore" "<prompt for subagent 4>" > /tmp/check4.txt &
+   $SPAWN "Explore" "<prompt for subagent 5>" > /tmp/check5.txt &
+   $SPAWN "Explore" "<prompt for subagent 6>" > /tmp/check6.txt &
+   $SPAWN "Explore" "<prompt for subagent 7>" > /tmp/check7.txt &
+   wait
+   cat /tmp/check1.txt /tmp/check2.txt /tmp/check3.txt /tmp/check4.txt /tmp/check5.txt /tmp/check6.txt /tmp/check7.txt
+   ```
 
    **Subagent prompt template** (customize the focus section for each):
 
@@ -331,7 +346,7 @@ reviewer — report all findings but do NOT fix code or modify any files.
      red-green split."
    - Report: TDD compliance issues, file classification, severity
 
-   All seven MUST be launched as separate AgentFallback tool calls in one message.
+   All seven MUST be launched as parallel spawn-agent calls in a single Bash command.
 
 4. **Collect and consolidate results** — After all 7 subagents complete:
    - Gather all BLOCKER issues (must fix before PASS)
@@ -461,13 +476,13 @@ If any convention is violated, flag it in your verdict.
   broken functionality in unmodified code, flaky tests in other modules), do
   NOT include them in the PASS/FAIL verdict — they are out of scope. Instead,
   spawn a fire-and-forget `looper:issue-creator` subagent for each:
-  ```
-  Type: bug (or feature/improvement)
+  ```bash
+  $SUBAGENTS_DIR/spawn-agent "looper:issue-creator" "Type: bug (or feature/improvement)
   File(s): <file paths>
   Description: <what the issue is>
   Observed behavior: <what happens>
   Expected behavior: <what should happen>
-  Found by: Checker agent during task "<TASK_NAME>"
+  Found by: Checker agent during task \"<TASK_NAME>\"" &
   ```
   Do not wait for the subagent. Continue with your verdict — only judge the
   Doer's work against the current task's scope.

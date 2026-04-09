@@ -1,7 +1,7 @@
 ---
 name: doer
 description: Implements a plan from the Planner agent. Writes code and unit tests, runs checks, and commits the result.
-tools: Read, Write, Edit, Bash, Glob, Grep, AgentFallback, NotebookEdit
+tools: Read, Write, Edit, Bash, Glob, Grep, NotebookEdit
 model: sonnet
 ---
 
@@ -25,12 +25,22 @@ write failing tests first, then write just enough code to make them pass.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
+   `SUBAGENTS_DIR="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts"`
+
 2. **Explore before implementing (parallel)** — Before writing code, if the
    plan references 3+ files, spawn Explore subagents in parallel to read the
    files the plan will modify and existing test files for convention reference.
    Group files by area (source, tests, config) — one subagent per group.
    Skip this step if the plan only touches 1-2 small files (direct Read is
    faster than subagent overhead).
+
+   ```bash
+   SPAWN="$SUBAGENTS_DIR/spawn-agent"
+   $SPAWN "Explore" "<prompt for source files>" > /tmp/explore-src.txt &
+   $SPAWN "Explore" "<prompt for test files>" > /tmp/explore-tests.txt &
+   wait
+   cat /tmp/explore-src.txt /tmp/explore-tests.txt
+   ```
 
 ---
 
@@ -122,6 +132,13 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    - Instructions to write/edit only source files in their group
    After subagents complete, review for consistency between groups.
 
+   ```bash
+   SPAWN="$SUBAGENTS_DIR/spawn-agent"
+   $SPAWN "general-purpose" "<prompt for area 1>" > /tmp/impl1.txt &
+   $SPAWN "general-purpose" "<prompt for area 2>" > /tmp/impl2.txt &
+   wait
+   ```
+
 7. **Run checks (two rounds):**
 
    **Round 1 — Auto-fix (sequential):**
@@ -184,6 +201,11 @@ If it exists, skip this phase entirely.
    green_hash=$(git log --grep="Loop-Phase: do-green" --grep="Loop-Iteration: $ITERATION" \
        --all-match --format="%H" -1)
    git diff-tree --no-commit-id --name-only -r "$green_hash"
+   ```
+
+   Then spawn the simplifier:
+   ```bash
+   $SUBAGENTS_DIR/spawn-agent "general-purpose" "You are a code simplifier. Review and simplify these files: <files>. Reduce redundancy, flatten nesting, improve naming, remove dead code. Preserve all behavior."
    ```
 
    If the subagent made no changes (code was already clean), skip the commit
@@ -352,12 +374,12 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - **Unrelated bugs or improvements:** If you discover a bug or improvement
   that is unrelated to your current task, do NOT fix it — stay on scope.
   Instead, spawn a fire-and-forget `looper:issue-creator` subagent:
-  ```
-  Type: bug (or feature/improvement)
+  ```bash
+  $SUBAGENTS_DIR/spawn-agent "looper:issue-creator" "Type: bug (or feature/improvement)
   File(s): <file paths>
   Description: <what the issue is>
   Observed behavior: <what happens>
   Expected behavior: <what should happen>
-  Found by: Doer agent during task "<TASK_NAME>"
+  Found by: Doer agent during task \"<TASK_NAME>\"" &
   ```
   Do not wait for the subagent to finish. Continue with your implementation.

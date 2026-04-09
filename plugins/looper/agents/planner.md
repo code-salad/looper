@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Plans implementation for a PDC loop iteration. Explores the codebase and produces an actionable plan committed to git. Does not modify project files.
-tools: Read, Glob, Grep, Bash, AgentFallback
+tools: Read, Glob, Grep, Bash
 disallowedTools: Write, Edit, NotebookEdit
 model: opus
 ---
@@ -17,6 +17,8 @@ modify any project files — only commit a plan as a git commit message.
 
 ## Instructions
 
+`SUBAGENTS_DIR="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts"`
+
 1. **Read prior context** — Check the dynamic context injected into this session.
    If this is not iteration 1, study the loop context carefully. Understand what
    was attempted, what worked, what failed, and what the Checker's feedback was.
@@ -27,11 +29,12 @@ modify any project files — only commit a plan as a git commit message.
      `$SCRIPTS_DIR/detect-stack` as two parallel Bash calls
    - **Track B (Glob):** Map project structure — top-level files, primary
      source directory, test directory
-   - **Track C (AgentFallback/Explore):** If iteration > 1, spawn an Explore subagent to
-     investigate files referenced in the Checker's prior feedback
-   - **Track D (AgentFallback — Reproduce/Observe):** If iteration 1 AND the
+   - **Track C:** If iteration > 1, spawn an Explore subagent to
+     investigate files referenced in the Checker's prior feedback:
+     `$SUBAGENTS_DIR/spawn-agent "Explore" "<prompt>"`
+   - **Track D:** If iteration 1 AND the
      task is a bug fix or involves changing runtime behavior of a web app/API/CLI,
-     spawn a subagent to **observe the current behavior before planning**:
+     use `$SUBAGENTS_DIR/spawn-agent "Explore" "<prompt>"` to spawn a subagent to **observe the current behavior before planning**:
      1. Run `$SCRIPTS_DIR/detect-stack` to identify the project type
      2. If `HAS_COMPOSE` is `true`: start backing services first:
         `$SCRIPTS_DIR/compose-lifecycle up --task $TASK_NAME` and
@@ -123,9 +126,19 @@ modify any project files — only commit a plan as a git commit message.
    details ("function Z should call W").
 
 4.5. **Review the draft plan (parallel subagents)** — Spawn 3 review subagents
-   in parallel via separate AgentFallback tool calls in a single message. Each receives
+   in parallel via spawn-agent calls in a single Bash block. Each receives
    the draft plan text and the task context. They are read-only reporters — they
    do NOT modify anything.
+
+   Run all three in parallel:
+   ```bash
+   SPAWN="$SUBAGENTS_DIR/spawn-agent"
+   $SPAWN "Plan" "<prompt for subagent 1>" > /tmp/review1.txt &
+   $SPAWN "Plan" "<prompt for subagent 2>" > /tmp/review2.txt &
+   $SPAWN "Plan" "<prompt for subagent 3>" > /tmp/review3.txt &
+   wait
+   cat /tmp/review1.txt /tmp/review2.txt /tmp/review3.txt
+   ```
 
    **Subagent prompt template** (customize the focus section for each):
 
@@ -206,7 +219,7 @@ modify any project files — only commit a plan as a git commit message.
    - Check the plan is achievable in a single red-green cycle
    - Report: [WARNING] for scope creep, [SUGGESTION] for simplifications
 
-   All three MUST be launched as separate AgentFallback tool calls in one message.
+   All three MUST be launched as parallel spawn-agent calls in one message.
    Each subagent needs only: Read, Glob, Grep, Bash (read-only exploration to
    verify the plan against the actual codebase). No write tools.
 

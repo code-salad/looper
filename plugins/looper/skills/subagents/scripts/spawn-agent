@@ -8,7 +8,7 @@ set -euo pipefail
 #   spawn-agent <agent-name> <prompt> [extra-flags...]
 #
 # Examples:
-#   spawn-agent fallback-agent:code-reviewer "Review src/main.ts for bugs"
+#   spawn-agent looper:checker "Review the doer's work in the current worktree"
 #   spawn-agent looper:planner "Plan the auth refactor" --max-turns 10
 #   spawn-agent general-purpose "Summarize this: $(cat file.txt)" --max-budget-usd 0.50
 
