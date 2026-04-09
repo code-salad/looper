@@ -67,7 +67,6 @@ looper/
 │   │       ├── looper/      # Main loop skill
 │   │       │   ├── SKILL.md
 │   │       │   └── scripts/ # Utility scripts (shell)
-│   │       ├── claude-wrap/
 │   │       ├── create-github-pr/
 │   │       ├── git-commit/
 │   │       ├── initiate-worktree/
