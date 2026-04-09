@@ -79,110 +79,27 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
 
 ### 4c. Fetch issue body and check blocking deps (if referenced)
 
-Check if `$ARGUMENTS` contains a GitHub issue reference. Look for:
-- A GitHub issue URL matching `https://github.com/.+/issues/(\d+)`
-- A hash-prefixed issue number like `#123`
-- A plain issue number at the start of the arguments (e.g., "42 fix the bug")
-
-If an issue reference is found, extract the issue number and:
-
-1. **Fetch the full issue metadata** for blocking checks and agent context:
-   ```bash
-   ISSUE_JSON=$(gh issue view <NUMBER> --json title,body,labels,state)
-   # If the issue URL included a repo (owner/repo), add: --repo owner/repo
-   ```
-   - If fetch fails, set `ISSUE_BODY=""` and skip to step 5 (do not abort).
-
-2. **Check for blocking dependencies** — apply the same three checks used by
-   `looper-issue` and `looper-watch`. If any check triggers, **abort** with a
-   clear message instead of assigning and working on a blocked issue.
-
-   #### Label-based blocking
-
-   Skip (block) the issue if any of its labels contain "blocked" or
-   "dependencies" (case-insensitive match).
-
-   #### Task-list dependency references
-
-   Parse the issue body for lines matching either of these patterns:
-   - `- [ ] Depends on #N`
-   - `- [ ] #N`
-
-   (where `N` is one or more digits)
-
-   For each referenced issue number `N` found, check whether it is still open:
-
-   ```bash
-   gh issue view N --json state --jq '.state'
-   ```
-
-   If the result is `"OPEN"`, the issue is blocked.
-
-   #### "Blocked by" references
-
-   Parse the issue body for lines matching the pattern:
-   - `Blocked by #N` (case-insensitive)
-
-   For each referenced issue number `N`, check whether it is still open:
-
-   ```bash
-   gh issue view N --json state --jq '.state'
-   ```
-
-   If the result is `"OPEN"`, the issue is blocked.
-
-   **If blocked:** Log "Issue #<NUMBER> is blocked by open dependencies. Aborting."
-   and **abort** — do NOT assign or proceed with the loop.
-
-3. **Assign the issue** (only after confirming it is not blocked):
-   ```bash
-   gh issue edit <NUMBER> --add-assignee @me
-   # If the issue URL included a repo (owner/repo), add: --repo owner/repo
-   ```
-   - **Success:** Log "Assigned issue #<NUMBER> to current user." and continue.
-   - **Failure:** Warn "Could not assign issue #<NUMBER>. Continuing anyway."
-     Do NOT abort — the loop should proceed regardless.
-
-4. **Format the issue body** for use as grounding context by all agents:
-   ```bash
-   ISSUE_BODY=$(gh issue view <NUMBER> --json title,body,labels --template '## Issue #{{.number}}: {{.title}}{{"\n\n"}}### Labels{{"\n"}}{{range .labels}}- {{.name}}{{"\n"}}{{end}}{{"\n"}}### Description{{"\n"}}{{.body}}')
-   ```
-   - If fetch fails, set `ISSUE_BODY=""` and continue.
-
-If no issue reference is found in `$ARGUMENTS`, set `ISSUE_BODY=""` and skip this step silently.
-
-### 5. Build project context (role-specific slices)
-
-Read the following files (skip any that don't exist) and assemble role-specific
-context slices. Each agent receives only the context it needs.
-
-**Build config helpers** (read once, used in all slices):
-- `package.json` — extract the `scripts` object
-- `Makefile` — extract target names (lines matching `^[a-zA-Z_-]+:`)
-- `pyproject.toml` — read entire file
-- `Cargo.toml` — read entire file
-
-Format each file as:
-```
----
-## File: <filename>
-
-<contents>
+```bash
+FETCH_OUTPUT=$($SCRIPTS_DIR/fetch-issue-context --args "$ARGUMENTS") \
+    && FETCH_EXIT=0 || FETCH_EXIT=$?
+if [ "$FETCH_EXIT" -eq 1 ]; then
+    echo "Issue is blocked. Aborting."
+    exit 1
+fi
+# First line is NUMBER=<num>, rest is formatted body
+ISSUE_NUMBER=$(echo "$FETCH_OUTPUT" | head -1 | sed 's/^NUMBER=//')
+ISSUE_BODY=$(echo "$FETCH_OUTPUT" | tail -n +2)
+if [ -n "$ISSUE_NUMBER" ]; then
+    gh issue edit "$ISSUE_NUMBER" --add-assignee @me 2>/dev/null \
+        && echo "Assigned issue #$ISSUE_NUMBER to current user." \
+        || echo "Warning: Could not assign issue #$ISSUE_NUMBER. Continuing."
+fi
 ```
 
-**`PROJECT_CONTEXT_PLANNER`** — Full context for the Planner:
-- All project docs: `CONTRIBUTING.md`, `AGENTS.md`, `README.md`,
-  `.github/PULL_REQUEST_TEMPLATE.md`, `.editorconfig`
-- All build config files (from above)
+### 5. Project context assembly
 
-**`PROJECT_CONTEXT_DOER`** — Focused context for the Doer (build commands only):
-- `CONTRIBUTING.md` — "Code Style" section only (skip other sections)
-- `.editorconfig` — full file
-- Build config files (from above) — scripts/targets only, not full config prose
-
-**`PROJECT_CONTEXT_CHECKER`** — Minimal context for the Checker (test/lint commands):
-- `CONTRIBUTING.md` — "Code Style" and "CI Checks" sections only
-- Build config files (from above) — test/lint/build commands only
+Role-specific project context is assembled by `build-agent-context` in step 7c.
+No manual file reading is needed here.
 
 ### 6. Detect resume iteration
 
@@ -240,81 +157,8 @@ The override file (`docker-compose.looper.yml`) and connection string file
 
 #### 7c. Build the agent context prompts (role-specific)
 
-Build separate context strings for Planner, Doer, and Checker using the
-role-specific context slices from step 5.
+First, compute the diff context for the Checker:
 
-**For Planner** — full project context. On iteration > 1, prune to a brief:
-```
-<project-context>
-${PROJECT_CONTEXT_PLANNER}
-</project-context>
-
-You MUST follow the conventions and instructions in <project-context>.
-Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
-
----
-
-## Task Variables
-
-- **TASK_NAME:** ${TASK_NAME}
-- **ITERATION:** ${ITERATION}
-- **TASK_PROMPT:** ${TASK_PROMPT}
-- **SCRIPTS_DIR:** ${SCRIPTS_DIR}
-- **WORKTREE_DIR:** ${WORKTREE_DIR}
-- **LOOPER_DEV_PORT:** ${LOOPER_DEV_PORT}
-- **HAS_COMPOSE:** ${HAS_COMPOSE:-false}
-- **COMPOSE_SERVICES:** ${COMPOSE_SERVICES:-none}
-
-## Issue Context
-
-${ISSUE_BODY:-No issue linked. Use the TASK_PROMPT above as the source of requirements.}
-
-## Prior Loop Context
-
-${LOOP_CONTEXT}
-```
-
-On iteration > 1, add this note to the Planner context:
-```
-NOTE: This is iteration ${ITERATION}. Project context is the same as iteration 1.
-Spawn Explore subagents ONLY for the areas the Checker flagged — do not
-re-explore the entire codebase. The action items above are your focus.
-```
-
-**For Doer** — focused build/style context only:
-```
-<project-context>
-${PROJECT_CONTEXT_DOER}
-</project-context>
-
-You MUST follow the conventions and instructions in <project-context>.
-Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
-
----
-
-## Task Variables
-
-- **TASK_NAME:** ${TASK_NAME}
-- **ITERATION:** ${ITERATION}
-- **TASK_PROMPT:** ${TASK_PROMPT}
-- **SCRIPTS_DIR:** ${SCRIPTS_DIR}
-- **WORKTREE_DIR:** ${WORKTREE_DIR}
-- **LOOPER_DEV_PORT:** ${LOOPER_DEV_PORT}
-- **HAS_COMPOSE:** ${HAS_COMPOSE:-false}
-- **COMPOSE_SERVICES:** ${COMPOSE_SERVICES:-none}
-
-## Issue Context
-
-${ISSUE_BODY:-No issue linked. Use the TASK_PROMPT above as the source of requirements.}
-
-## Prior Loop Context
-
-${LOOP_CONTEXT}
-```
-
-**For Checker** — minimal test/lint context plus diff-only on iteration > 1:
-
-First, compute the diff context (what changed this iteration):
 ```bash
 if [ "$ITERATION" -gt 1 ]; then
     LAST_CHECK_HASH=$(git log --grep="Loop-Phase: check" \
@@ -330,39 +174,21 @@ else
 fi
 ```
 
-Then build the Checker context:
-```
-<project-context>
-${PROJECT_CONTEXT_CHECKER}
-</project-context>
+Then build role-specific context using `build-agent-context`:
 
-You MUST follow the conventions and instructions in <project-context>.
-Pay special attention to CONTRIBUTING.md for build/test/lint/commit conventions.
+```bash
+CTX_COMMON=(
+    --task "$TASK_NAME" --iteration "$ITERATION"
+    --task-prompt "$TASK_PROMPT" --scripts-dir "$SCRIPTS_DIR"
+    --worktree-dir "$WORKTREE_DIR" --dev-port "$LOOPER_DEV_PORT"
+    --compose "${HAS_COMPOSE:-false}" --compose-services "${COMPOSE_SERVICES:-none}"
+    --issue-body "$ISSUE_BODY" --loop-context "$LOOP_CONTEXT"
+)
 
----
-
-## Task Variables
-
-- **TASK_NAME:** ${TASK_NAME}
-- **ITERATION:** ${ITERATION}
-- **TASK_PROMPT:** ${TASK_PROMPT}
-- **SCRIPTS_DIR:** ${SCRIPTS_DIR}
-- **WORKTREE_DIR:** ${WORKTREE_DIR}
-- **LOOPER_DEV_PORT:** ${LOOPER_DEV_PORT}
-- **HAS_COMPOSE:** ${HAS_COMPOSE:-false}
-- **COMPOSE_SERVICES:** ${COMPOSE_SERVICES:-none}
-
-## Issue Context
-
-${ISSUE_BODY:-No issue linked. Use the TASK_PROMPT above as the source of requirements.}
-
-## Changes This Iteration (diff from last check)
-
-${DIFF_CONTEXT}
-
-## Prior Loop Context
-
-${LOOP_CONTEXT}
+PLANNER_CONTEXT=$($SCRIPTS_DIR/build-agent-context --role planner "${CTX_COMMON[@]}")
+DOER_CONTEXT=$($SCRIPTS_DIR/build-agent-context --role doer "${CTX_COMMON[@]}")
+CHECKER_CONTEXT=$($SCRIPTS_DIR/build-agent-context --role checker "${CTX_COMMON[@]}" \
+    --diff-context "$DIFF_CONTEXT")
 ```
 
 #### 7d. Spawn agents
