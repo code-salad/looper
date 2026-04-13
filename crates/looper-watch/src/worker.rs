@@ -6,6 +6,7 @@ use tokio::process::Command;
 use tokio::sync::{Mutex, Notify};
 
 use crate::Cli;
+use crate::claim;
 use crate::github;
 use crate::state::{self, Entry, Outcome, OutcomeField, State};
 
@@ -148,7 +149,6 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
         .iter()
         .map(|issue| {
             let repo = cli.repo.clone();
-            let retries = cli.retries;
             let app_clone = app.clone();
             let state_path_clone = state_path.to_path_buf();
             let issue_number = issue.number;
@@ -168,16 +168,35 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
                     return;
                 }
 
-                // Assign with retries — skip this issue if it fails
-                if let Err(e) = github::assign_to_me(&repo, issue_number, retries).await {
-                    app_clone
-                        .log(&format!("#{issue_number}: assign failed: {e}"))
-                        .await;
-                    return;
-                }
-                app_clone
-                    .log(&format!("#{issue_number}: assigned to @me"))
-                    .await;
+                // Claim with write-then-verify protocol (local lock + remote
+                // claim comment + settle + verify earliest-comment-wins).
+                let cfg = claim::ClaimConfig::default_for(&repo);
+                let guard = match claim::try_claim(&repo, issue_number, &cfg).await {
+                    Ok(g) => {
+                        app_clone
+                            .log(&format!("#{issue_number}: claimed (run_id={})", g.run_id))
+                            .await;
+                        g
+                    }
+                    Err(claim::ClaimError::LocalLockHeld) => {
+                        app_clone
+                            .log(&format!("#{issue_number}: skipping (local lock held)"))
+                            .await;
+                        return;
+                    }
+                    Err(claim::ClaimError::LostRace { winner }) => {
+                        app_clone
+                            .log(&format!("#{issue_number}: lost race to {winner}"))
+                            .await;
+                        return;
+                    }
+                    Err(e) => {
+                        app_clone
+                            .log(&format!("#{issue_number}: claim error: {e}"))
+                            .await;
+                        return;
+                    }
+                };
 
                 // Remove from open issues list immediately so TUI reflects assignment
                 app_clone
@@ -186,8 +205,12 @@ pub async fn poll_once(cli: &Cli, state_path: &Path, app: &AppState) {
                     .await
                     .retain(|i| i.number != issue_number);
 
-                // Spawn claude in tmux as a background task
+                // Spawn claude in tmux as a background task.
+                // Move the guard into the spawned task so it lives for the
+                // full duration of the claude session; Drop removes the local
+                // lockfile when the session finishes.
                 tokio::spawn(async move {
+                    let _guard = guard;
                     run_claude(
                         &repo,
                         issue_number,

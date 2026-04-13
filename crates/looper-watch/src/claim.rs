@@ -35,6 +35,7 @@
 /// is best-effort and the claim is NOT aborted on label error.
 ///
 /// `LABEL_IS_BEST_EFFORT = true` — see `try_claim` implementation.
+#[allow(dead_code)]
 pub const LABEL_IS_BEST_EFFORT: bool = true;
 
 use std::fs::OpenOptions;
@@ -52,7 +53,9 @@ use serde::Deserialize;
 pub struct ClaimGuard {
     lock_path: PathBuf,
     pub run_id: String,
+    #[allow(dead_code)]
     pub repo: String,
+    #[allow(dead_code)]
     pub issue_number: u64,
 }
 
@@ -143,12 +146,10 @@ pub fn parse_claim_body(body: &str) -> Option<&str> {
 /// smallest `createdAt` timestamp string (RFC3339 lexicographic comparison).
 /// Ties on identical `createdAt` are broken by input order (first in slice).
 /// Returns `None` if no claim comments are present.
-pub fn earliest_claim<'a>(comments: &'a [Comment]) -> Option<(&'a str, &'a str)> {
+pub fn earliest_claim(comments: &[Comment]) -> Option<(&str, &str)> {
     comments
         .iter()
-        .filter_map(|c| {
-            parse_claim_body(&c.body).map(|run_id| (c.created_at.as_str(), run_id))
-        })
+        .filter_map(|c| parse_claim_body(&c.body).map(|run_id| (c.created_at.as_str(), run_id)))
         .min_by(|a, b| a.0.cmp(b.0))
 }
 
@@ -210,7 +211,11 @@ pub fn generate_run_id() -> String {
 /// - `Ok(lock_path)` — lock acquired, caller is responsible for deleting it.
 /// - `Err(ClaimError::LocalLockHeld)` — another process holds the lock.
 /// - `Err(ClaimError::Io(...))` — unexpected I/O error.
-pub fn try_local_lock(locks_dir: &Path, lock_name: &str, run_id: &str) -> Result<PathBuf, ClaimError> {
+pub fn try_local_lock(
+    locks_dir: &Path,
+    lock_name: &str,
+    run_id: &str,
+) -> Result<PathBuf, ClaimError> {
     std::fs::create_dir_all(locks_dir)
         .map_err(|e| ClaimError::Io(format!("create_dir_all failed: {e}")))?;
     let lock_path = locks_dir.join(lock_name);
@@ -308,9 +313,7 @@ pub async fn try_claim(
         Ok(o) => {
             let _ = std::fs::remove_file(&lock_path);
             let stderr = String::from_utf8_lossy(&o.stderr);
-            return Err(ClaimError::GhFailure(format!(
-                "comment failed: {stderr}"
-            )));
+            return Err(ClaimError::GhFailure(format!("comment failed: {stderr}")));
         }
         Err(e) => {
             let _ = std::fs::remove_file(&lock_path);
@@ -496,7 +499,10 @@ mod tests {
 
     #[test]
     fn earliest_claim_single_claim_comment() {
-        let comments = vec![make_comment("looper-claim:only-run", "2024-01-01T00:00:01Z")];
+        let comments = vec![make_comment(
+            "looper-claim:only-run",
+            "2024-01-01T00:00:01Z",
+        )];
         let result = earliest_claim(&comments);
         assert_eq!(result, Some(("2024-01-01T00:00:01Z", "only-run")));
     }
@@ -543,14 +549,20 @@ mod tests {
 
     #[test]
     fn verify_wins_with_single_own_claim_comment() {
-        let comments = vec![make_comment("looper-claim:our-only", "2024-01-01T00:00:01Z")];
+        let comments = vec![make_comment(
+            "looper-claim:our-only",
+            "2024-01-01T00:00:01Z",
+        )];
         let decision = decide_winner(&comments, "our-only");
         assert_eq!(decision, Decision::Won);
     }
 
     #[test]
     fn verify_loses_with_single_other_claim_comment() {
-        let comments = vec![make_comment("looper-claim:their-only", "2024-01-01T00:00:01Z")];
+        let comments = vec![make_comment(
+            "looper-claim:their-only",
+            "2024-01-01T00:00:01Z",
+        )];
         let decision = decide_winner(&comments, "our-run-id");
         assert_eq!(
             decision,
@@ -583,7 +595,10 @@ mod tests {
         let lock_path = result.unwrap();
         assert!(lock_path.exists(), "lock file should exist on disk");
         let contents = std::fs::read_to_string(&lock_path).unwrap();
-        assert_eq!(contents, "run-id-abc", "lock file should contain the run_id");
+        assert_eq!(
+            contents, "run-id-abc",
+            "lock file should contain the run_id"
+        );
         let _ = std::fs::remove_file(lock_path);
     }
 
@@ -602,8 +617,8 @@ mod tests {
     #[test]
     fn claim_guard_drop_removes_local_lockfile() {
         let locks_dir = tmp_locks_dir();
-        let lock_path = try_local_lock(&locks_dir, "drop-test.lock", "run-id")
-            .expect("should acquire lock");
+        let lock_path =
+            try_local_lock(&locks_dir, "drop-test.lock", "run-id").expect("should acquire lock");
         assert!(lock_path.exists(), "lock file should exist before drop");
 
         // Create a ClaimGuard that owns this lock_path
