@@ -76,17 +76,73 @@ or `- [ ] #N`), and "Blocked by #N" references. Exit 0 means not blocked.
 
 Store the selected issue's number as `NUMBER` and its title as `TITLE`.
 
-### 1d. Assign issue immediately
+### 1d. Generate run id
 
 ```bash
-gh issue edit $NUMBER --add-assignee @me
+RUN_ID="$(hostname)-$$-$(uuidgen)"
 ```
 
-- **Success:** Log:
-  > "Assigned issue #`$NUMBER` to current user."
-- **Failure:** Warn:
-  > "Could not assign issue #`$NUMBER`. Continuing anyway."
-  Do NOT abort — proceed regardless.
+### 1e. Local lock
+
+```bash
+LOCK_DIR=".looper/locks"
+mkdir -p "$LOCK_DIR"
+LOCK_FILE="$LOCK_DIR/${NUMBER}.lock"
+# O_EXCL via noclobber — atomic, no TOCTOU race
+if ! (set -o noclobber; echo "$RUN_ID" > "$LOCK_FILE") 2>/dev/null; then
+    echo "Issue #$NUMBER is locked locally by another process. Skipping."
+    exit 0
+fi
+trap 'rm -f "$LOCK_FILE"' EXIT
+```
+
+The EXIT trap keeps the lock file in place for the lifetime of this shell
+session (which encompasses the `/looper` invocation). The lockfile is
+automatically removed when the session exits.
+
+### 1f. Remote claim
+
+```bash
+# Label creation is best-effort — the assignee + comment are the
+# load-bearing parts of the claim protocol.
+gh label create looper-claimed --force 2>/dev/null || true
+
+gh issue edit "$NUMBER" --add-assignee @me --add-label looper-claimed || {
+    rm -f "$LOCK_FILE"
+    echo "Failed to claim issue #$NUMBER; skipping."
+    exit 0
+}
+
+gh issue comment "$NUMBER" -b "looper-claim:$RUN_ID" || {
+    rm -f "$LOCK_FILE"
+    echo "Failed to post claim comment for #$NUMBER; skipping."
+    exit 0
+}
+```
+
+### 1g. Settle and verify (earliest-comment-wins)
+
+```bash
+sleep 3
+
+WINNER=$(gh issue view "$NUMBER" --json comments \
+  --jq '[.comments[] | select(.body | startswith("looper-claim:"))] | sort_by(.createdAt) | .[0].body' \
+  | sed 's/^looper-claim://')
+
+if [ "$WINNER" != "$RUN_ID" ]; then
+    echo "Lost race to $WINNER; ceding issue #$NUMBER."
+    gh issue edit "$NUMBER" --remove-assignee @me --remove-label looper-claimed 2>/dev/null || true
+    rm -f "$LOCK_FILE"
+    exit 0
+fi
+
+echo "Won claim for issue #$NUMBER (run_id=$RUN_ID)."
+```
+
+Both instances evaluate the same GitHub-ordered comment list, so they always
+agree on the winner without a central lock. A 3-second settle window is well
+above observed GitHub comment replication lag. See `crates/looper-watch/src/claim.rs`
+for the equivalent Rust implementation and detailed commentary on edge cases.
 
 ---
 

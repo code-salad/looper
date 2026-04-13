@@ -51,6 +51,8 @@ pub async fn fetch_open_unassigned(repo: &str, retries: u32) -> Result<Vec<Issue
 }
 
 /// Assign an issue to the current user (@me).
+/// Kept for potential direct use; claim::try_claim is the preferred entry point.
+#[allow(dead_code)]
 pub async fn assign_to_me(repo: &str, issue_number: u64, retries: u32) -> Result<(), String> {
     retry(retries, || async {
         let output = Command::new("gh")
