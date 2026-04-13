@@ -58,6 +58,93 @@ Store as `ISSUE_TITLE`.
 
 ---
 
+## Phase 3b: Claim the Issue (upstream-aware)
+
+`looper-ee` is entered from two paths:
+
+1. **Fed by `looper-watch`:** the watcher has already run `claim::try_claim`
+   (local lock + remote write-then-verify) before spawning this session. The
+   issue is already assigned to `@me` and has the `looper-claimed` label,
+   and `ClaimGuard` is held for the full session lifetime in the parent
+   Rust process. Running the claim protocol again here would cede incorrectly
+   (the earliest `looper-claim:` comment belongs to the watcher, not to this
+   run).
+2. **Invoked manually (`/looper-ee <url>`):** the issue is unclaimed. This
+   phase is the only TOCTOU protection against two manual sessions racing.
+
+Detect upstream ownership first, then run the full claim protocol only if
+needed. Run the entire block as a **single Bash invocation** so the `EXIT`
+trap spans the full claim+verify window and `sleep 3` is not the first
+command (Claude Code harness requirements — see `looper-issue/SKILL.md`
+phase 1d for the rationale).
+
+```bash
+# Detect upstream claim: am I already assigned with the looper-claimed label?
+STATE=$(gh issue view "$ISSUE_NUMBER" --repo "$FULL_REPO" \
+    --json assignees,labels 2>/dev/null || echo '{}')
+ME=$(gh api user --jq .login 2>/dev/null)
+UPSTREAM_OWNED=$(echo "$STATE" | jq -r --arg me "$ME" '
+    ((.assignees // []) | map(.login) | any(. == $me))
+    and ((.labels // []) | map(.name) | any(. == "looper-claimed"))')
+
+if [ "$UPSTREAM_OWNED" = "true" ]; then
+    echo "Issue #$ISSUE_NUMBER already claimed upstream (assignee=$ME); skipping claim."
+else
+    RUN_ID="$(hostname)-$$-$(uuidgen)"
+
+    # Local O_EXCL fast-path inside the external repo (per-target-repo lock).
+    LOCK_DIR=".looper/locks"
+    mkdir -p "$LOCK_DIR"
+    LOCK_FILE="$LOCK_DIR/${ISSUE_NUMBER}.lock"
+    if ! (set -o noclobber; echo "$RUN_ID" > "$LOCK_FILE") 2>/dev/null; then
+        echo "Issue #$ISSUE_NUMBER is locked locally by another process. Skipping."
+        exit 0
+    fi
+    trap 'rm -f "$LOCK_FILE"' EXIT
+
+    # Label creation is best-effort — assignee + claim comment are load-bearing.
+    gh label create looper-claimed --repo "$FULL_REPO" --force 2>/dev/null || true
+
+    gh issue edit "$ISSUE_NUMBER" --repo "$FULL_REPO" \
+        --add-assignee @me --add-label looper-claimed || {
+        echo "Failed to claim issue #$ISSUE_NUMBER; skipping."
+        exit 0
+    }
+
+    gh issue comment "$ISSUE_NUMBER" --repo "$FULL_REPO" \
+        -b "looper-claim:$RUN_ID" && sleep 3
+
+    WINNER=$(gh issue view "$ISSUE_NUMBER" --repo "$FULL_REPO" --json comments \
+      --jq '[.comments[] | select(.body | startswith("looper-claim:"))] | sort_by(.createdAt) | .[0].body' \
+      | sed 's/^looper-claim://')
+
+    if [ "$WINNER" != "$RUN_ID" ]; then
+        echo "Lost race to $WINNER; ceding issue #$ISSUE_NUMBER."
+        gh issue edit "$ISSUE_NUMBER" --repo "$FULL_REPO" \
+            --remove-assignee @me --remove-label looper-claimed 2>/dev/null || true
+        exit 0
+    fi
+
+    echo "Won claim for issue #$ISSUE_NUMBER (run_id=$RUN_ID)."
+fi
+```
+
+Notes:
+- The upstream-owned check is `assignee == @me AND label looper-claimed`.
+  When `looper-watch` feeds this session, both are already true because
+  `claim::try_claim` set them before spawning claude. When invoked
+  manually, both are false and the full protocol runs.
+- The lockfile lives at `$REPO_DIR/.looper/locks/<issue>.lock`, so locks
+  are scoped per target repo — a race on `owner-a/repo-a#42` does not
+  block `owner-b/repo-b#42`.
+- **Minor gap:** two *manual* invocations on the same host *after* an
+  earlier session has already claimed-and-exited (leaving the assignee +
+  label in place) would both see "upstream owned" and proceed. That is
+  the correct behaviour: the first invocation is resuming the claim, and
+  a concurrent second invocation is the user's explicit choice.
+
+---
+
 ## Phase 4: Create Worktree
 
 **CRITICAL:** You MUST create a worktree before delegating to the looper skill.
