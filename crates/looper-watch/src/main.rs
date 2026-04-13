@@ -1,3 +1,4 @@
+mod claim;
 mod github;
 mod lock;
 mod state;
