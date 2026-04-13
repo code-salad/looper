@@ -236,7 +236,7 @@ The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.
   Never use the project's default port.
 - **Unrelated bugs or improvements:** If you discover a bug, missing feature,
   or improvement that is unrelated to your current task, do NOT include it in
-  your plan. Instead, spawn a fire-and-forget `looper:issue-creator` subagent:
+  your plan. Instead, spawn a fire-and-forget `looper:gh-issue-creator` subagent:
   ```
   Type: bug (or feature/improvement)
   File(s): <file paths>

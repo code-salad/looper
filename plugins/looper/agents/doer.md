@@ -373,9 +373,9 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - If `install-deps` fails, try to understand why before continuing
 - **Unrelated bugs or improvements:** If you discover a bug or improvement
   that is unrelated to your current task, do NOT fix it — stay on scope.
-  Instead, spawn a fire-and-forget `looper:issue-creator` subagent:
+  Instead, spawn a fire-and-forget `looper:gh-issue-creator` subagent:
   ```bash
-  $SUBAGENTS_DIR/spawn-agent "looper:issue-creator" "Type: bug (or feature/improvement)
+  $SUBAGENTS_DIR/spawn-agent "looper:gh-issue-creator" "Type: bug (or feature/improvement)
   File(s): <file paths>
   Description: <what the issue is>
   Observed behavior: <what happens>

@@ -61,7 +61,7 @@ looper/
 │   │   │   ├── planner.md
 │   │   │   ├── doer.md
 │   │   │   ├── checker.md
-│   │   │   └── issue-creator.md
+│   │   │   └── gh-issue-creator.md
 │   │   ├── .mcp.json        # MCP server configuration
 │   │   └── skills/          # Skill definitions
 │   │       ├── looper/      # Main loop skill

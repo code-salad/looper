@@ -292,9 +292,9 @@ If any convention is violated, flag it in your verdict.
   or issues unrelated to the current task (e.g., pre-existing vulnerabilities,
   broken functionality in unmodified code, flaky tests in other modules), do
   NOT include them in the PASS/FAIL verdict — they are out of scope. Instead,
-  spawn a fire-and-forget `looper:issue-creator` subagent for each:
+  spawn a fire-and-forget `looper:gh-issue-creator` subagent for each:
   ```bash
-  $SUBAGENTS_DIR/spawn-agent "looper:issue-creator" "Type: bug (or feature/improvement)
+  $SUBAGENTS_DIR/spawn-agent "looper:gh-issue-creator" "Type: bug (or feature/improvement)
   File(s): <file paths>
   Description: <what the issue is>
   Observed behavior: <what happens>

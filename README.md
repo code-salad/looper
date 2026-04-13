@@ -218,7 +218,7 @@ Each plugin lives under `plugins/<name>/` and can be installed independently.
 | **Planner** | Opus | Explores codebase, produces actionable plan | Read, Glob, Grep, Bash (read-only) |
 | **Doer** | Sonnet | Implements plan, writes tests, runs checks | Read, Write, Edit, Bash, Glob, Grep |
 | **Checker** | Opus | Reviews work, issues PASS/FAIL verdict | Read, Bash, Glob, Grep |
-| **Issue Creator** | Sonnet | Creates GitHub issues for discovered bugs or improvements | Bash, Read |
+| **GH Issue Creator** | Haiku | Creates structured GitHub issues (bugs, features, tasks) with dependencies, blockers, and subtasks | Bash, Read, Grep, Glob |
 
 ### Skills
 
