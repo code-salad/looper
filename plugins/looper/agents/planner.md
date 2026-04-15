@@ -32,6 +32,14 @@ modify any project files — only commit a plan as a git commit message.
    - **Track C:** If iteration > 1, spawn an Explore subagent to
      investigate files referenced in the Checker's prior feedback:
      `$SUBAGENTS_DIR/spawn-agent "Explore" "<prompt>"`
+     **In addition**, if the prior iteration FAILed on the same symptom that
+     a still-earlier iteration also failed on (i.e. the loop is stuck on the
+     same problem), spawn the systematic debugger in parallel to root-cause
+     it before you write the new plan:
+     `$SUBAGENTS_DIR/spawn-agent "looper:debugger" "<prior FAIL feedback +
+     failing test names + error output + files touched so far>"`
+     Use the debugger's Root Cause and Recommended Fix sections as the
+     foundation for the new plan instead of guessing a different approach.
    - **Track D:** If iteration 1 AND the
      task is a bug fix or involves changing runtime behavior of a web app/API/CLI,
      use `$SUBAGENTS_DIR/spawn-agent "Explore" "<prompt>"` to spawn a subagent to **observe the current behavior before planning**:
@@ -51,6 +59,23 @@ modify any project files — only commit a plan as a git commit message.
         "Expected behavior: <from the issue/task description>"
      7. If the bug cannot be reproduced, report that — it changes the plan.
      This subagent has: Read, Bash, Glob, Grep, Skill.
+     **After this Explore subagent reports back AND the bug was reproduced,
+     spawn the systematic debugger to find the root cause before planning.**
+     Pass it the reproduction steps, observed vs expected behavior, the exact
+     error output, and the issue description:
+     ```bash
+     $SUBAGENTS_DIR/spawn-agent "looper:debugger" "Task: $TASK_NAME (iteration 1, bug fix)
+     Issue: <issue title + body>
+     Reproduction: <steps from Track D>
+     Observed: <what Track D actually saw>
+     Expected: <what should happen>
+     Error output: <exact errors/stack traces>"
+     ```
+     Use the debugger's Root Cause and Recommended Fix sections as the
+     foundation of your plan — your plan should target the root cause it
+     identifies, not the surface symptom from the issue. If the debugger
+     returns LOW confidence, note that in the plan and have the Doer
+     gather more evidence before committing to an approach.
 
    All applicable tracks MUST be launched as separate tool calls in one
    message to maximize parallelism.
