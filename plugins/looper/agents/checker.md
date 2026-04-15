@@ -122,7 +122,7 @@ reviewer — report all findings but do NOT fix code or modify any files.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Spawn 4 parallel review subagents** — Launch all four as parallel spawn-agent
+3. **Spawn 5 parallel review subagents** — Launch all five as parallel spawn-agent
    calls in a single Bash command. Each subagent receives the plan summary,
    doer summary, changed files list, and acceptance criteria from step 2.
 
@@ -134,6 +134,7 @@ reviewer — report all findings but do NOT fix code or modify any files.
    $SPAWN "looper:check-tests" "<context>" > "$TMPDIR/check-tests.txt" &
    $SPAWN "looper:check-code" "<context>" > "$TMPDIR/check-code.txt" &
    $SPAWN "looper:check-runtime" "<context>" > "$TMPDIR/check-runtime.txt" &
+   $SPAWN "looper:check-adversarial" "<context>" > "$TMPDIR/check-adversarial.txt" &
    wait
    cat "$TMPDIR"/check-*.txt
    ```
@@ -163,9 +164,14 @@ reviewer — report all findings but do NOT fix code or modify any files.
    Verifies runtime behavior via dev server before/after testing and integration tests.
    See `agents/check-runtime.md` for full instructions.
 
-   All four MUST be launched as parallel spawn-agent calls in a single Bash command.
+   **Subagent 5 — Adversarial Reviewer** (`looper:check-adversarial`):
+   Tries to break the implementation. Hunts edge cases, boundary bugs, and
+   error-path failures the happy-path tests miss. Proposes concrete failing
+   test cases. See `agents/check-adversarial.md` for full instructions.
 
-4. **Collect and consolidate results** — After all 4 subagents complete:
+   All five MUST be launched as parallel spawn-agent calls in a single Bash command.
+
+4. **Collect and consolidate results** — After all 5 subagents complete:
    - Gather all BLOCKER issues from TDD checks in step 1 and subagent reports
    - Gather all WARNING issues (should fix)
    - Note SUGGESTION issues for the verdict body only
