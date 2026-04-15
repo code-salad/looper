@@ -162,6 +162,23 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    4. Only modify tests if they have a genuine bug (wrong assertion, typo),
       NOT because the implementation took a different approach
 
+   **If the same test is still failing after 2 fix attempts in this phase,
+   STOP guessing and spawn the systematic debugger** before attempting a third
+   fix. Random patches mask root causes and waste loop iterations.
+   ```bash
+   $SUBAGENTS_DIR/spawn-agent "looper:debugger" "Iteration: $ITERATION
+   Task: $TASK_NAME
+   Failing test(s): <test name + full error output>
+   GREEN commit files: <list>
+   Fix attempts so far: <brief summary of what you tried>
+   Plan acceptance criteria: <relevant excerpt>"
+   ```
+   Read the debugger's report. Apply ONLY its recommended fix (one change),
+   then re-run Round 2. Do not bundle other changes. If the debugger reports
+   "Architectural — 3+ fix attempts" or LOW confidence, commit what you have
+   with the debugger report in the commit body and let the Checker FAIL so
+   the Planner can reconsider next iteration.
+
 8. **Commit GREEN** — Commit implementation files. Choose the commit type
    based on the nature of the change: `feat` for new features, `fix` for
    bug fixes, `refactor` for restructuring.
