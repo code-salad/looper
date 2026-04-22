@@ -19,6 +19,10 @@ jobs:
       - name: Lint all bash scripts
         run: |
           for script in plugins/looper/skills/looper/scripts/*; do
+            [ -d "$script" ] && continue
+            shellcheck "$script"
+          done
+          for script in plugins/looper/skills/looper/scripts/backends/*.sh; do
             shellcheck "$script"
           done
 
@@ -38,6 +42,13 @@ jobs:
         run: |
           status=0
           for script in plugins/looper/skills/looper/scripts/*; do
+            [ -d "$script" ] && continue
+            if [ ! -x "$script" ]; then
+              echo "ERROR: $script is not executable"
+              status=1
+            fi
+          done
+          for script in plugins/looper/skills/looper/scripts/backends/*.sh; do
             if [ ! -x "$script" ]; then
               echo "ERROR: $script is not executable"
               status=1
