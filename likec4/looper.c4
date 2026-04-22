@@ -1,0 +1,165 @@
+model {
+  extend looper {
+
+  looperPlugin = plugin 'looper plugin' {
+    description 'Claude Code plugin at plugins/looper — agents, skills, and shell scripts that drive the PDC loop.'
+
+    loopSkill = skill 'loop skill' {
+      description '/looper:loop — orchestrates Plan-Do-Check iterations on a task.'
+    }
+
+    watchSkill = skill 'looper-watch skill' {
+      description '/looper:looper-watch — registers a watcher over a GitHub repo.'
+    }
+
+    issueSkill = skill 'looper-issue skill' {
+      description '/looper:looper-issue — picks an unassigned issue and loops it.'
+    }
+
+    prSkill = skill 'create-github-pr skill' {
+      description '/looper:create-github-pr — commits, pushes, opens a PR with context.'
+    }
+
+    commitSkill = skill 'git-commit skill' {
+      description '/looper:git-commit — conventional commit helper with loop trailers.'
+    }
+
+    worktreeSkill = skill 'initiate-worktree skill' {
+      description '/looper:initiate-worktree — creates the isolated .worktrees/<name> branch.'
+    }
+
+    planner = agent 'Planner' {
+      description 'Explores the codebase and produces a step-by-step plan. Does not modify code.'
+      technology 'Claude Opus'
+    }
+
+    doer = agent 'Doer' {
+      description 'Implements the plan, writes unit tests, runs local checks, commits the result.'
+      technology 'Claude Sonnet'
+    }
+
+    checker = agent 'Checker' {
+      description 'Reviews the Doers work and issues PASS / FAIL. Delegates to specialised check-* subagents.'
+      technology 'Claude Opus'
+    }
+
+    debugger = agent 'Debugger' {
+      description 'Systematic 4-phase root-cause debugger invoked when a loop gets stuck.'
+      technology 'Claude Opus'
+    }
+
+    issueCreator = agent 'GH Issue Creator' {
+      description 'Creates structured GitHub issues (bug / feature / task) with dependencies and subtasks.'
+      technology 'Claude Haiku'
+    }
+
+    summarizer = agent 'Summarizer' {
+      description 'Compresses verbose output between PDC phases into focused briefs.'
+      technology 'Claude Haiku'
+    }
+
+    scripts = service 'loop scripts' {
+      description 'Tech-stack-agnostic shell helpers: detect-stack, run-tests, run-lint, run-build, setup-worktree, build-agent-context, git-commit-loop, fetch-issue-context.'
+    }
+
+    loopSkill  -> planner      'phase 1: plan'
+    loopSkill  -> doer         'phase 2: implement'
+    loopSkill  -> checker      'phase 3: verify'
+    loopSkill  -> debugger     'on stuck iteration'
+    loopSkill  -> summarizer   'compresses phase output'
+    loopSkill  -> scripts      'invokes helpers'
+
+    planner    -> scripts      'build-agent-context, detect-stack'
+    doer       -> scripts      'run-tests / lint / build / commit'
+    checker    -> scripts      'run-tests / lint / build'
+
+    watchSkill -> issueSkill   'delegates per issue'
+    issueSkill -> loopSkill    'runs PDC loop on picked issue'
+    issueSkill -> issueCreator 'creates follow-up issues if needed'
+    prSkill    -> commitSkill  'reuses commit helper'
+    loopSkill  -> worktreeSkill 'sets up isolated worktree'
+    loopSkill  -> prSkill      'opens PR once Checker passes'
+  }
+
+  looperWatch = binary 'looper-watch' {
+    description 'Standalone Rust binary (crates/looper-watch) that polls GitHub and dispatches issues to Claude Code.'
+    technology 'Rust + Tokio + Ratatui'
+
+    cli = service 'CLI (main.rs)' {
+      description 'Parses flags: --repo, --interval, --concurrency, --state-file, --retries, --dry-run.'
+    }
+
+    worker = service 'Worker loop' {
+      description 'worker.rs — polls GitHub on the configured interval, claims work, spawns Claude sessions.'
+    }
+
+    githubClient = service 'GitHub client' {
+      description 'github.rs — queries open unassigned issues via the gh CLI.'
+    }
+
+    claim = service 'Claim / lock' {
+      description 'claim.rs + lock.rs — per-issue claims and a file lock preventing duplicate workers.'
+    }
+
+    tui = service 'TUI dashboard' {
+      description 'tui.rs — live Ratatui dashboard of watched issues and their loop state.'
+    }
+
+    state = store 'state.json' {
+      description 'Persistent state at ~/.local/share/looper-watch/<owner>-<repo>.json — per-issue progress.'
+    }
+
+    cli          -> worker       'starts polling loop'
+    cli          -> tui          'renders dashboard'
+    worker       -> githubClient 'fetches open issues'
+    worker       -> claim        'reserves an issue before work'
+    worker       -> state        'reads / writes progress'
+    tui          -> state        'reads progress'
+  }
+
+  webscraping = plugin 'webscraping plugin' {
+    description 'Secondary Claude Code plugin at plugins/webscraping — recon and scraper implementation.'
+
+    recon = agent 'Recon' {
+      description 'Discovers subdomains, endpoints, tech stack, and anti-bot signals for a target domain.'
+    }
+
+    scraper = agent 'Webscraping' {
+      description 'End-to-end scraper implementation (.NET 10, Playwright, proxy management).'
+    }
+
+    reconSkill = skill 'recon skill' {
+      description '/webscraping:recon — runs domain reconnaissance.'
+    }
+
+    scrapeSkill = skill 'webscraping skill' {
+      description '/webscraping:webscraping — builds a scraper end-to-end.'
+    }
+
+    reconSkill  -> recon
+    scrapeSkill -> scraper
+    scraper     -> recon 'consults recon first'
+  }
+
+  // Cross-component relationships
+  looperWatch.worker           -> tmux                 'spawns tmux session per issue'
+  looperWatch.worker           -> claudeCode           'runs claude -p inside tmux' { #spawn }
+  looperWatch.githubClient     -> github               'GET /repos/:o/:r/issues'
+
+  claudeCode                   -> looperPlugin         'loads agents + skills'
+  claudeCode                   -> webscraping          'loads agents + skills'
+
+  looperPlugin.planner         -> claudeApi            'model calls' { #opus }
+  looperPlugin.doer            -> claudeApi            'model calls' { #sonnet }
+  looperPlugin.checker         -> claudeApi            'model calls' { #opus }
+  looperPlugin.debugger        -> claudeApi            'model calls' { #opus }
+  looperPlugin.issueCreator    -> claudeApi            'model calls' { #haiku }
+  looperPlugin.summarizer      -> claudeApi            'model calls' { #haiku }
+
+  looperPlugin.doer            -> git                  'commits plan / do / check phases'
+  looperPlugin.scripts         -> git                  'creates worktrees, writes trailered commits'
+  looperPlugin.prSkill         -> github               'opens pull request'
+  looperPlugin.issueSkill      -> github               'assigns issue to current user'
+  looperPlugin.issueCreator    -> github               'creates new issues'
+  }
+}

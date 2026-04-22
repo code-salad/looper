@@ -1,0 +1,63 @@
+views {
+
+  view index {
+    title 'Looper — Landscape'
+    description 'Developer, Looper, and the external systems Looper integrates with.'
+    include *
+  }
+
+  view looper_internals of looper {
+    title 'Looper — Internal Structure'
+    description 'The two plugins and the Rust watcher binary that make up Looper.'
+    include *
+    include looper.looperPlugin.*
+    include looper.looperWatch.*
+    include looper.webscraping.*
+  }
+
+  view looper_plugin_detail of looper.looperPlugin {
+    title 'looper plugin — Agents and Skills'
+    description 'Internal agents, skills, and scripts of the Plan-Do-Check plugin.'
+    include *
+  }
+
+  view looper_watch_detail of looper.looperWatch {
+    title 'looper-watch binary — Components'
+    description 'Rust components of the GitHub issue watcher.'
+    include *
+  }
+
+  dynamic view pdc_loop {
+    title 'Plan-Do-Check loop'
+    description 'One iteration of the PDC loop driven by the loop skill.'
+
+    developer                          -> looper.looperPlugin.loopSkill      'invokes /looper:loop'
+    looper.looperPlugin.loopSkill      -> looper.looperPlugin.worktreeSkill  'setup worktree'
+    looper.looperPlugin.loopSkill      -> looper.looperPlugin.planner        'phase 1: plan'
+    looper.looperPlugin.planner        -> claudeApi                          'model call (Opus)'
+    looper.looperPlugin.planner        -> git                                'commit plan'
+    looper.looperPlugin.loopSkill      -> looper.looperPlugin.doer           'phase 2: implement'
+    looper.looperPlugin.doer           -> claudeApi                          'model call (Sonnet)'
+    looper.looperPlugin.doer           -> git                                'commit implementation'
+    looper.looperPlugin.loopSkill      -> looper.looperPlugin.checker        'phase 3: verify'
+    looper.looperPlugin.checker        -> claudeApi                          'model call (Opus)'
+    looper.looperPlugin.checker        -> looper.looperPlugin.loopSkill      'PASS / FAIL verdict'
+    looper.looperPlugin.loopSkill      -> looper.looperPlugin.prSkill        'on PASS: open PR'
+    looper.looperPlugin.prSkill        -> github                             'gh pr create'
+  }
+
+  dynamic view watch_flow {
+    title 'looper-watch — Issue dispatch flow'
+    description 'How the Rust watcher picks up a new issue and hands it off to Claude.'
+
+    developer                       -> looper.looperWatch.cli          'looper-watch --repo o/r'
+    looper.looperWatch.cli          -> looper.looperWatch.worker       'start polling'
+    looper.looperWatch.worker       -> looper.looperWatch.githubClient 'poll for issues'
+    looper.looperWatch.githubClient -> github                          'GET /issues'
+    looper.looperWatch.worker       -> looper.looperWatch.claim        'claim issue'
+    looper.looperWatch.worker       -> looper.looperWatch.state        'persist progress'
+    looper.looperWatch.worker       -> tmux                            'new session'
+    looper.looperWatch.worker       -> claudeCode                      'claude -p /looper:looper-issue'
+    claudeCode                      -> looper.looperPlugin.issueSkill  'dispatch skill'
+  }
+}

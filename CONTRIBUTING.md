@@ -197,6 +197,38 @@ These trailers allow querying loop state with `git log --grep`.
 
 ---
 
+## Architecture Diagrams (LikeC4)
+
+Looper keeps a textual architecture model under [`likec4/`](likec4/) using the [LikeC4](https://likec4.dev) DSL. The rendered PNGs in `likec4/exports/` are embedded in [README.md](README.md#architecture-diagrams).
+
+Layout:
+
+```
+likec4/
+├── specs.c4        # element kinds, relationship kinds, tags
+├── landscape.c4    # top-level actors + Looper + external systems
+├── looper.c4       # extend looper { ... } — plugins, agents, watcher internals
+├── views.c4        # the named views (landscape, internals, PDC loop, ...)
+└── exports/        # rendered PNGs, committed so they show on GitHub
+```
+
+Common commands (no install needed — uses `npx`):
+
+```bash
+# Validate + type-check the model
+npx likec4@latest validate -i likec4
+
+# Live-preview in a browser
+npx likec4@latest serve -i likec4
+
+# Re-render the PNGs used by README (run after any .c4 change)
+npx likec4@latest export png -i likec4 -o likec4/exports
+```
+
+When you add or rename an element, update `likec4/` **and** re-export the PNGs so the README stays in sync.
+
+---
+
 ## Testing and CI
 
 The CI pipeline (`.github/workflows/ci.yml`) validates:

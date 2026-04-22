@@ -1,0 +1,39 @@
+model {
+  developer = actor 'Developer' {
+    description 'Invokes /looper slash commands or runs the looper-watch binary.'
+  }
+
+  claudeCode = system 'Claude Code Harness' {
+    description 'The Claude Code CLI/IDE runtime that loads plugins and dispatches to agents.'
+  }
+
+  github = system 'GitHub' {
+    description 'Hosts source, issues, and pull requests. Accessed via the gh CLI and REST API.'
+  }
+
+  claudeApi = system 'Claude API' {
+    description 'Anthropic API serving Opus / Sonnet / Haiku to the PDC agents.'
+  }
+
+  tmux = system 'tmux' {
+    description 'Terminal multiplexer used by looper-watch to isolate concurrent Claude sessions.'
+  }
+
+  git = system 'Local Git + Worktrees' {
+    description 'Source of truth for loop progress. Commits carry Loop-Phase / Loop-Iteration / Loop-Verdict trailers.'
+  }
+
+  looper = system 'Looper' {
+    description 'Plan-Do-Check loop automation: plugins for Claude Code plus a Rust watcher.'
+    technology 'Rust + Claude Code plugins'
+  }
+
+  developer -> looper        'invokes /looper or runs looper-watch'
+  developer -> claudeCode    'uses CLI / IDE'
+
+  looper    -> claudeCode    'packaged as Claude Code plugins'
+  looper    -> claudeApi     'runs Planner / Doer / Checker via Claude'
+  looper    -> github        'reads issues, opens PRs'
+  looper    -> git           'creates worktrees and commits per iteration'
+  looper    -> tmux          'spawns claude sessions for concurrent issues'
+}

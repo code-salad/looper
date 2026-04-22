@@ -200,6 +200,30 @@ git log --grep="Loop-Verdict: PASS" --format="%B" -1
 
 ## Architecture
 
+### Architecture Diagrams
+
+Looper ships a [LikeC4](https://likec4.dev) model of its own architecture under [`likec4/`](likec4/). Rendered views:
+
+**Landscape — who talks to Looper**
+
+![Landscape](likec4/exports/index.png)
+
+**Inside Looper — the two plugins and the watcher binary**
+
+![Looper internals](likec4/exports/looper_internals.png)
+
+**Plan-Do-Check loop — one iteration**
+
+![PDC loop](likec4/exports/pdc_loop.png)
+
+Browse the full set of views (landscape, internals, `looper` plugin detail, `looper-watch` detail, PDC loop, watcher dispatch flow) with:
+
+```bash
+npx likec4@latest serve -i likec4
+```
+
+See [`likec4/`](likec4/) for the `.c4` sources and [CONTRIBUTING.md](CONTRIBUTING.md#architecture-diagrams-likec4) for how to update them.
+
 ### Plugins
 
 Looper uses a multi-plugin marketplace architecture. Three plugins ship together:
