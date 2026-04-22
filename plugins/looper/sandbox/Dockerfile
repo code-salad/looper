@@ -37,6 +37,17 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
         sh -s -- -y --default-toolchain stable --profile minimal \
     && /root/.cargo/bin/rustup component add clippy rustfmt
 
+# Docker CLI (client only — no daemon).
+# The container talks to the HOST daemon via a bind-mounted
+# /var/run/docker.sock (DooD). This lets compose-isolate /
+# compose-lifecycle spawn sibling containers from inside the sandbox.
+# No daemon ever runs in this image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+         docker.io \
+         docker-compose-v2 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Claude Code CLI (official install script).
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
@@ -60,6 +71,7 @@ RUN command -v git \
     && command -v claude \
     && command -v node \
     && command -v python3 \
-    && command -v cargo
+    && command -v cargo \
+    && command -v docker
 
 CMD ["/bin/bash"]
