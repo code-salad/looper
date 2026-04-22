@@ -170,6 +170,49 @@ flowchart TD
     PR --> CI["Wait for CI"]
 ```
 
+### Modes
+
+Looper supports two execution modes. Pick one per invocation.
+
+| Mode | Command | Isolation | Use when |
+|------|---------|-----------|----------|
+| **Worktree** (default) | `/looper:loop "<task>"` | Git worktree at `.worktrees/<name>/`. Host env, host network, host creds. | Single-developer, single-task, trusted environment. |
+| **Sandboxed** (opt-in) | `/looper:looper-sandboxed "<task>"` | `docker` backend (default): `docker run` + bind-mount + `/var/run/docker.sock` for nested Docker. `sbx` backend (opt-in): microVM + host-side secret proxy. | Concurrent loops, defense-in-depth, or preparing for remote fleet execution. |
+
+Both modes run the same PDC loop — only the execution environment differs.
+Sandboxed mode requires the selected backend (see Backends below).
+
+### Backends
+
+The sandboxed mode supports a pluggable backend via the
+`LOOPER_SANDBOX_BACKEND` env var.
+
+| Backend | Command | When to use | Security tradeoff |
+|---------|---------|-------------|-------------------|
+| `docker` (default) | `docker run` + bind-mount + `/var/run/docker.sock` | Hyper-V, WSL2, cloud VMs without KVM. Any host that can run Docker. | **DooD:** the sandbox has full access to the host Docker daemon via the socket mount — trivial container escape. Acceptable for single-user local use; not for untrusted agents. |
+| `sbx` (opt-in) | `sbx run --branch --policy balanced` | Hosts with KVM; want stronger isolation. | microVM + host-side secret proxy. Per-sandbox daemon — no socket mount, no host-exposure tradeoff. |
+| Future (`e2b`, `runloop`, ...) | TBD | Remote fleet execution. | TBD. |
+
+Select the backend per-invocation:
+
+```bash
+# Default
+/looper:looper-sandboxed "add input validation"
+
+# Opt in to sbx
+LOOPER_SANDBOX_BACKEND=sbx /looper:looper-sandboxed "add input validation"
+```
+
+Why nested Docker? Looper's integration-test helpers (`compose-isolate`,
+`compose-lifecycle`) run `docker compose up/down`. The sandbox must reach
+a Docker daemon.
+- `docker` backend: DooD via socket mount — compose services spawn as
+  *siblings* on the host.
+- `sbx` backend: native nested Docker — each sandbox has its own daemon.
+
+Rejected alternatives: `--privileged` DinD (security-hostile, slow) and
+rootless Docker-inside-sandbox (parked for a future hardened mode).
+
 ### State Management
 
 All state is stored in git commits with structured trailers:
@@ -255,6 +298,7 @@ Each plugin lives under `plugins/<name>/` and can be installed independently.
 | Looper EE | `/looper:looper-ee <issue_url>` | Work on a GitHub issue from an external repo |
 | Looper Issue | `/looper:looper-issue` | Auto-pick an open GitHub issue and work on it |
 | Looper Watch | `/looper:looper-watch <owner/repo> [interval]` | Poll a GitHub repo and work issues automatically |
+| Looper Sandboxed | `/looper:looper-sandboxed "task"` | Run the PDC loop inside a sandbox (`docker` default via DooD; `sbx` opt-in via `LOOPER_SANDBOX_BACKEND=sbx`) |
 
 ### Utility Scripts
 

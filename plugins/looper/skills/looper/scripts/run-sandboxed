@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# run-sandboxed — Run the PDC loop inside an isolated sandbox.
+#
+# Supports two backends selected via LOOPER_SANDBOX_BACKEND (default: docker):
+#
+#   docker (default)
+#     Runs `docker run --rm` with the project directory bind-mounted as /repo
+#     and /var/run/docker.sock bind-mounted for nested Docker (DooD). Compose
+#     services spawned inside the sandbox appear as sibling containers on the
+#     host daemon. Works on Hyper-V, WSL2, and cloud VMs without KVM. Requires
+#     the docker CLI and a running daemon accessible via /var/run/docker.sock.
+#
+#   sbx (opt-in)
+#     Runs `sbx run --branch --policy <POLICY>` for stronger isolation via a
+#     microVM with a host-side secret proxy. Requires the sbx CLI and KVM.
+#     Branch worktree is mounted at .sbx/<name>/ and pushed on success.
+#
+# LOOPER_SANDBOX_BACKEND is case-sensitive; an empty value collapses to docker.
+# Values other than "docker" or "sbx" cause exit 4.
+#
+# Exit codes:
+#   0   Inner loop succeeded.
+#   2   No task argument supplied.
+#   3   ANTHROPIC_API_KEY is unset (checked BEFORE backend switch).
+#   4   Unknown LOOPER_SANDBOX_BACKEND value.
+#   127 Selected backend binary missing on PATH.
+#   *   Inner claude -p (or docker run) exit code surfaced verbatim.
+#
+# Environment variables:
+#   ANTHROPIC_API_KEY      (required) — forwarded into the sandbox.
+#   GITHUB_TOKEN           (optional) — falls back to `gh auth token`.
+#   LOOPER_SANDBOX_BACKEND (optional) — backend to use (default: docker).
+#   LOOPER_SANDBOX_IMAGE   (optional) — container image (default below).
+#   LOOPER_SANDBOX_POLICY  (optional) — sbx policy only (default: balanced).
+
+if [ "$#" -eq 0 ]; then
+    echo "Usage: run-sandboxed <task description>" >&2
+    exit 2
+fi
+
+TASK="$*"
+BACKEND="${LOOPER_SANDBOX_BACKEND:-docker}"
+IMAGE="${LOOPER_SANDBOX_IMAGE:-ghcr.io/code-salad/looper-sandbox:latest}"
+POLICY="${LOOPER_SANDBOX_POLICY:-balanced}"
+
+# --- SHARED PRE-FLIGHT (runs before the backend switch) -----------------------
+
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "Error: ANTHROPIC_API_KEY is not set. Export it before invoking looper-sandboxed." >&2
+    exit 3
+fi
+
+GH_TOKEN="${GITHUB_TOKEN:-}"
+if [ -z "$GH_TOKEN" ]; then
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        GH_TOKEN="$(gh auth token 2>/dev/null || true)"
+    fi
+fi
+if [ -z "$GH_TOKEN" ]; then
+    echo "Warning: No GITHUB_TOKEN available (neither env nor \`gh auth token\`). PR creation inside the sandbox may fail." >&2
+fi
+
+SANDBOX_NAME="loop-$(date +%s)-$$"
+
+# --- Backend switch -----------------------------------------------------------
+
+case "$BACKEND" in
+  docker)
+    if ! command -v docker >/dev/null 2>&1; then
+        cat >&2 <<'EOF'
+Error: 'docker' is not installed (LOOPER_SANDBOX_BACKEND=docker).
+Install docker from https://docs.docker.com/engine/install/
+and ensure your user has access to /var/run/docker.sock.
+EOF
+        exit 127
+    fi
+
+    trap 'docker kill "$SANDBOX_NAME" >/dev/null 2>&1 || true' INT TERM
+
+    export GITHUB_TOKEN="$GH_TOKEN"
+
+    RUN_EXIT=0
+    docker run --rm --name "$SANDBOX_NAME" \
+        -v "$(pwd)":/repo \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -w /repo \
+        -e ANTHROPIC_API_KEY \
+        -e GITHUB_TOKEN \
+        -e LOOPER_SANDBOX_BACKEND=docker \
+        "$IMAGE" \
+        claude -p "/looper:loop $TASK" \
+          --allowed-tools Bash,Read,Write,Edit,Grep,Glob,Agent,Skill \
+        || RUN_EXIT=$?
+    exit "$RUN_EXIT"
+    ;;
+
+  sbx)
+    if ! command -v sbx >/dev/null 2>&1; then
+        cat >&2 <<'EOF'
+Error: `sbx` (Docker Sandboxes) is not installed.
+
+Install it with:
+    curl -fsSL https://sbx.sh/install | bash
+
+Or see: https://github.com/docker/sandbox
+
+Then re-run /looper:looper-sandboxed.
+EOF
+        exit 127
+    fi
+
+    # Inject secrets via sbx (host-side proxy; plaintext never enters the box).
+    sbx secret set ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY" >/dev/null
+    if [ -n "$GH_TOKEN" ]; then
+        sbx secret set GITHUB_TOKEN "$GH_TOKEN" >/dev/null
+    fi
+
+    # Cleanup trap: always remove the sandbox, even on failure.
+    cleanup() {
+        local exit_code=$?
+        if sbx ls 2>/dev/null | grep -q "^${SANDBOX_NAME}"; then
+            sbx rm "$SANDBOX_NAME" >/dev/null 2>&1 || true
+        fi
+        exit "$exit_code"
+    }
+    trap cleanup EXIT INT TERM
+
+    # `--branch` creates a git worktree at .sbx/<name>/ on the host, mounted
+    # into the sandbox. This means the inner `/looper:loop` still runs against
+    # a normal worktree from its own perspective.
+    RUN_EXIT=0
+    sbx run "$SANDBOX_NAME" \
+        --image "$IMAGE" \
+        --branch \
+        --policy "$POLICY" \
+        -- claude -p "/looper:loop $TASK" \
+           --allowed-tools Bash,Read,Write,Edit,Grep,Glob,Agent,Skill \
+        || RUN_EXIT=$?
+
+    if [ "$RUN_EXIT" -ne 0 ]; then
+        echo "Error: inner claude -p exited with status $RUN_EXIT. Sandbox will be removed; branch is preserved under .sbx/${SANDBOX_NAME}/ for inspection." >&2
+        exit "$RUN_EXIT"
+    fi
+
+    # On success: push the branch from the sandbox worktree.
+    SBX_WORKTREE=".sbx/$SANDBOX_NAME"
+    if [ -d "$SBX_WORKTREE/.git" ] || [ -f "$SBX_WORKTREE/.git" ]; then
+        (
+            cd "$SBX_WORKTREE"
+            git push origin HEAD
+        )
+    else
+        echo "Warning: expected worktree at $SBX_WORKTREE but none found. Skipping push." >&2
+    fi
+
+    # Cleanup handled by trap.
+    ;;
+
+  *)
+    echo "Error: unknown LOOPER_SANDBOX_BACKEND: '$BACKEND' (expected: docker | sbx)" >&2
+    exit 4
+    ;;
+esac
