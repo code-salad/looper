@@ -52,9 +52,6 @@ chmod +x "$TMPDIR/gh"
 
 # --- Case 1: No args -> exit 2, stderr contains "Usage:" ---
 
-stderr_out=$("$DISPATCHER" 2>&1 >/dev/null || true)
-exit_code=$(ANTHROPIC_API_KEY=k "$DISPATCHER" 2>&1 >/dev/null; echo $?) || true
-# Use a subshell to capture exit code properly
 set +e
 output=$(ANTHROPIC_API_KEY=k "$DISPATCHER" 2>&1); code=$?
 set -e
@@ -84,7 +81,7 @@ check "unknown backend: stderr lists null" "$(echo "$output" | grep -q 'null' &&
 
 rm -f "$TMPDIR/claude.log"
 set +e
-TMPDIR="$TMPDIR" PATH="$TMPDIR:$PATH" ANTHROPIC_API_KEY=k LOOPER_SANDBOX_BACKEND=null \
+env TMPDIR="$TMPDIR" PATH="$TMPDIR:$PATH" ANTHROPIC_API_KEY=k LOOPER_SANDBOX_BACKEND=null \
     "$DISPATCHER" "add logging" >/dev/null 2>&1; code=$?
 set -e
 check "null backend shim: exit code is 0" "$([ "$code" -eq 0 ] && echo true || echo false)"
@@ -101,17 +98,25 @@ check "null backend shim: LOOPER_SANDBOX_NAME starts with loop-" \
 
 rm -f "$TMPDIR/claude.log"
 set +e
-TMPDIR="$TMPDIR" PATH="$TMPDIR:$PATH" ANTHROPIC_API_KEY=k LOOPER_SANDBOX_BACKEND=null \
+env TMPDIR="$TMPDIR" PATH="$TMPDIR:$PATH" ANTHROPIC_API_KEY=k LOOPER_SANDBOX_BACKEND=null \
     "$DISPATCHER" "add logging and tracing" >/dev/null 2>&1; code=$?
 set -e
 check "multi-word task: claude.log contains full string" \
     "$(grep -q '/looper:loop add logging and tracing' "$TMPDIR/claude.log" && echo true || echo false)"
 
 # --- Case 6: Default backend (docker) with no docker on PATH -> exit 127 ---
+# Build a minimal PATH containing only essential tools (not docker) by creating
+# symlinks to needed binaries in a scratch directory.
 
-CLEAN_PATH="$TMPDIR"
+NODOCK_DIR="$TMPDIR/nodock"
+mkdir -p "$NODOCK_DIR"
+for tool in bash sh env date grep sed awk basename dirname pwd mktemp cat; do
+    src=$(command -v "$tool" 2>/dev/null || true)
+    [ -n "$src" ] && ln -sf "$src" "$NODOCK_DIR/$tool"
+done
+# Include the gh shim (already in $TMPDIR) to suppress auth warnings.
 set +e
-output=$(ANTHROPIC_API_KEY=k PATH="$CLEAN_PATH" \
+output=$(ANTHROPIC_API_KEY=k PATH="$NODOCK_DIR:$TMPDIR" \
     env -u LOOPER_SANDBOX_BACKEND "$DISPATCHER" "some task" 2>&1); code=$?
 set -e
 check "default docker, no docker on PATH: exit code is 127" "$([ "$code" -eq 127 ] && echo true || echo false)"
@@ -119,37 +124,49 @@ check "default docker, no docker on PATH: stderr mentions docker" \
     "$(echo "$output" | grep -q 'docker' && echo true || echo false)"
 
 # --- Case 7: Grep-based extraction-fidelity assertions ---
+# Patterns below contain literal $ for grepping shell variable references.
+# The grep patterns are stored in variables first to avoid SC2016 false positives
+# in check() invocations. SC2016 disabled for the pattern variable assignments.
+# shellcheck disable=SC2016
+BARE_TASK='"$TASK"'
+# shellcheck disable=SC2016
+BARE_SANDBOX_NAME='$SANDBOX_NAME'
+# shellcheck disable=SC2016
+BARE_IMAGE='"$IMAGE"'
+# shellcheck disable=SC2016
+BARE_POLICY='"$POLICY"'
+# shellcheck disable=SC2016
+SBX_WORKTREE_PATH='\.sbx/\$LOOPER_SANDBOX_NAME'
 
-# docker.sh must use contract variable names, not old bare names
 check "docker.sh uses LOOPER_SANDBOX_TASK" \
     "$(grep -q 'LOOPER_SANDBOX_TASK' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
-check "docker.sh does not use bare \$TASK (unquoted)" \
-    "$(! grep -qE '"\$TASK"' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
+check "docker.sh does not use bare dollar-TASK" \
+    "$(! grep -qE "$BARE_TASK" "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
 check "docker.sh uses LOOPER_SANDBOX_NAME" \
     "$(grep -q 'LOOPER_SANDBOX_NAME' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
-check "docker.sh does not use bare \$SANDBOX_NAME" \
-    "$(! grep -q '\$SANDBOX_NAME' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
+check "docker.sh does not use bare dollar-SANDBOX_NAME" \
+    "$(! grep -q "$BARE_SANDBOX_NAME" "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
 check "docker.sh uses LOOPER_SANDBOX_IMAGE" \
     "$(grep -q 'LOOPER_SANDBOX_IMAGE' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
-check "docker.sh does not use bare \$IMAGE" \
-    "$(! grep -qE '"\$IMAGE"' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
+check "docker.sh does not use bare dollar-IMAGE" \
+    "$(! grep -qE "$BARE_IMAGE" "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
 check "docker.sh retains socket mount" \
     "$(grep -q '/var/run/docker.sock:/var/run/docker.sock' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
 check "docker.sh retains --allowed-tools" \
-    "$(grep -q '\-\-allowed-tools' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
+    "$(grep -q -- '--allowed-tools' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
 check "docker.sh does NOT contain dropped GH_TOKEN export" \
     "$(! grep -q 'export GITHUB_TOKEN=.*GH_TOKEN' "$BACKENDS_DIR/docker.sh" && echo true || echo false)"
 
 check "sbx.sh uses LOOPER_SANDBOX_POLICY" \
     "$(grep -q 'LOOPER_SANDBOX_POLICY' "$BACKENDS_DIR/sbx.sh" && echo true || echo false)"
-check "sbx.sh does not use bare \$POLICY" \
-    "$(! grep -qE '"\$POLICY"' "$BACKENDS_DIR/sbx.sh" && echo true || echo false)"
+check "sbx.sh does not use bare dollar-POLICY" \
+    "$(! grep -qE "$BARE_POLICY" "$BACKENDS_DIR/sbx.sh" && echo true || echo false)"
 check "sbx.sh retains --branch" \
-    "$(grep -q '\-\-branch' "$BACKENDS_DIR/sbx.sh" && echo true || echo false)"
+    "$(grep -q -- '--branch' "$BACKENDS_DIR/sbx.sh" && echo true || echo false)"
 check "sbx.sh retains sbx secret set ANTHROPIC_API_KEY" \
     "$(grep -q 'sbx secret set ANTHROPIC_API_KEY' "$BACKENDS_DIR/sbx.sh" && echo true || echo false)"
-check "sbx.sh retains push-on-success path .sbx/\$LOOPER_SANDBOX_NAME" \
-    "$(grep -q '\.sbx/\$LOOPER_SANDBOX_NAME' "$BACKENDS_DIR/sbx.sh" && echo true || echo false)"
+check "sbx.sh retains push-on-success path .sbx/LOOPER_SANDBOX_NAME" \
+    "$(grep -qE "$SBX_WORKTREE_PATH" "$BACKENDS_DIR/sbx.sh" && echo true || echo false)"
 
 # --- Case 8: backends/README.md exists and contains "How to add a backend" ---
 
