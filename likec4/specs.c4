@@ -1,0 +1,35 @@
+specification {
+  element actor {
+    style {
+      shape person
+      color green
+    }
+  }
+
+  element system
+  element plugin
+  element binary
+  element agent
+  element skill
+
+  element service {
+    style { shape rectangle }
+  }
+
+  element store {
+    style { shape cylinder }
+  }
+
+  relationship async
+  relationship sync
+  relationship spawn
+
+  tag opus
+  tag sonnet
+  tag haiku
+  tag rust
+  tag shell
+  tag spawn
+
+  color brand #7a5cff
+}
