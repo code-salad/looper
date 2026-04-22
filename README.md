@@ -170,6 +170,18 @@ flowchart TD
     PR --> CI["Wait for CI"]
 ```
 
+### Modes
+
+Looper supports two execution modes. Pick one per invocation.
+
+| Mode | Command | Isolation | Use when |
+|------|---------|-----------|----------|
+| **Worktree** (default) | `/looper:loop "<task>"` | Git worktree at `.worktrees/<name>/`. Host env, host network, host creds. | Single-developer, single-task, trusted environment. |
+| **Sandboxed** (opt-in) | `/looper:looper-sandboxed "<task>"` | Docker sandbox via [`sbx`](https://github.com/docker/sandbox). Branch worktree mounted into container. Secrets injected via `sbx secret set` (plaintext never enters the box). | Concurrent loops, defense-in-depth, or preparing for remote fleet execution. |
+
+Both modes run the same PDC loop — only the execution environment differs.
+Sandboxed mode requires Docker and `sbx` on the host.
+
 ### State Management
 
 All state is stored in git commits with structured trailers:
@@ -255,6 +267,7 @@ Each plugin lives under `plugins/<name>/` and can be installed independently.
 | Looper EE | `/looper:looper-ee <issue_url>` | Work on a GitHub issue from an external repo |
 | Looper Issue | `/looper:looper-issue` | Auto-pick an open GitHub issue and work on it |
 | Looper Watch | `/looper:looper-watch <owner/repo> [interval]` | Poll a GitHub repo and work issues automatically |
+| Looper Sandboxed | `/looper:looper-sandboxed "task"` | Run the PDC loop inside a local Docker sandbox (`sbx`) |
 
 ### Utility Scripts
 

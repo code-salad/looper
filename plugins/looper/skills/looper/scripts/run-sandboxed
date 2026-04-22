@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# run-sandboxed — Run the PDC loop inside a local Docker sandbox via `sbx`.
+# Usage: run-sandboxed <task description>
+# Environment:
+#   ANTHROPIC_API_KEY (required) — forwarded to the sandbox via `sbx secret set`.
+#   GITHUB_TOKEN (optional)      — if unset, falls back to `gh auth token`.
+#   LOOPER_SANDBOX_IMAGE (optional) — override the default image reference.
+#   LOOPER_SANDBOX_POLICY (optional) — override sbx policy (default: balanced).
+
+DEFAULT_IMAGE="ghcr.io/code-salad/looper-sandbox:latest"
+DEFAULT_POLICY="balanced"
+
+if [ "$#" -eq 0 ]; then
+    echo "Usage: run-sandboxed <task description>" >&2
+    exit 2
+fi
+
+TASK="$*"
+IMAGE="${LOOPER_SANDBOX_IMAGE:-$DEFAULT_IMAGE}"
+POLICY="${LOOPER_SANDBOX_POLICY:-$DEFAULT_POLICY}"
+
+# --- Pre-flight: verify `sbx` is installed ------------------------------------
+if ! command -v sbx >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+Error: `sbx` (Docker Sandboxes) is not installed.
+
+Install it with:
+    curl -fsSL https://sbx.sh/install | bash
+
+Or see: https://github.com/docker/sandbox
+
+Then re-run /looper:looper-sandboxed.
+EOF
+    exit 127
+fi
+
+# --- Pre-flight: ANTHROPIC_API_KEY --------------------------------------------
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "Error: ANTHROPIC_API_KEY is not set. Export it before invoking looper-sandboxed." >&2
+    exit 3
+fi
+
+# --- Pre-flight: GITHUB_TOKEN (fallback to `gh auth token`) -------------------
+GH_TOKEN="${GITHUB_TOKEN:-}"
+if [ -z "$GH_TOKEN" ]; then
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        GH_TOKEN="$(gh auth token 2>/dev/null || true)"
+    fi
+fi
+if [ -z "$GH_TOKEN" ]; then
+    echo "Warning: No GITHUB_TOKEN available (neither env nor \`gh auth token\`). PR creation inside the sandbox will fail." >&2
+fi
+
+# --- Derive a unique sandbox name ---------------------------------------------
+SANDBOX_NAME="loop-$(date +%s)-$$"
+
+# --- Inject secrets via sbx (host-side proxy; plaintext never enters the box) -
+sbx secret set ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY" >/dev/null
+if [ -n "$GH_TOKEN" ]; then
+    sbx secret set GITHUB_TOKEN "$GH_TOKEN" >/dev/null
+fi
+
+# --- Cleanup trap: always remove the sandbox, even on failure -----------------
+cleanup() {
+    local exit_code=$?
+    if sbx ls 2>/dev/null | grep -q "^${SANDBOX_NAME}"; then
+        sbx rm "$SANDBOX_NAME" >/dev/null 2>&1 || true
+    fi
+    exit "$exit_code"
+}
+trap cleanup EXIT INT TERM
+
+# --- Run the inner loop -------------------------------------------------------
+# `--branch` creates a git worktree at .sbx/<name>/ on the host, mounted into
+# the sandbox. This means the inner `/looper:loop` still runs against a normal
+# worktree from its own perspective.
+RUN_EXIT=0
+sbx run "$SANDBOX_NAME" \
+    --image "$IMAGE" \
+    --branch \
+    --policy "$POLICY" \
+    -- claude -p "/looper:loop $TASK" \
+       --allowed-tools Bash,Read,Write,Edit,Grep,Glob,Agent,Skill \
+    || RUN_EXIT=$?
+
+if [ "$RUN_EXIT" -ne 0 ]; then
+    echo "Error: inner claude -p exited with status $RUN_EXIT. Sandbox will be removed; branch is preserved under .sbx/${SANDBOX_NAME}/ for inspection." >&2
+    exit "$RUN_EXIT"
+fi
+
+# --- On success: push the branch from the sandbox worktree --------------------
+SBX_WORKTREE=".sbx/$SANDBOX_NAME"
+if [ -d "$SBX_WORKTREE/.git" ] || [ -f "$SBX_WORKTREE/.git" ]; then
+    (
+        cd "$SBX_WORKTREE"
+        git push origin HEAD
+    )
+else
+    echo "Warning: expected worktree at $SBX_WORKTREE but none found. Skipping push." >&2
+fi
+
+# Cleanup handled by trap.

@@ -92,6 +92,43 @@ jobs:
           path: fallback-agent-x86_64-linux.tar.gz
           if-no-files-found: error
 
+  build-sandbox-image:
+    name: Build + Push Sandbox Image
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: plugins/looper/sandbox
+          file: plugins/looper/sandbox/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/code-salad/looper-sandbox:latest
+            ghcr.io/code-salad/looper-sandbox:${{ steps.version.outputs.tag }}
+          build-args: |
+            LOOPER_REF=${{ steps.version.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   release:
     name: Create Release
     needs: [detect, build-looper-watch, build-fallback-agent]

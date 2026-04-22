@@ -1,0 +1,10 @@
+.git
+.worktrees
+.sbx
+target
+crates/*/target
+node_modules
+plugins/*/node_modules
+*.log
+.env
+.env.*
