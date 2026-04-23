@@ -20,19 +20,42 @@ the loop, determine which mechanism to use:
   subagent, a `claude -p` session, or any non-interactive context where looper
   was invoked by another agent): you MUST fall back to the `subagents` skill's
   `spawn-agent` script. Do not attempt to call `Agent(...)` — it will fail.
-  Invoke the skill once (`Skill("subagents")`) to load its guidance, then use:
+  Invoke the skill once (`Skill("subagents")`) to load its guidance, then use
+  the `--async` pattern below.
+
+  **CRITICAL — stream watchdog:** Nested agents (planner/doer/checker) regularly
+  run for several minutes. Parent agents have a stream watchdog that kills the
+  child after ~600s of no tool-call activity. Do NOT run `spawn-agent` in
+  synchronous mode (`RESULT=$($SPAWN ...)`) — that single blocking Bash call
+  will trip the watchdog on any non-trivial subagent. Instead, launch `--async`
+  and poll with short bounded Bash calls so each poll emits a tool event that
+  keeps the watchdog alive.
 
   ```bash
   SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
-  # Run via Bash with run_in_background=true so Claude Code does not suppress
-  # stdout from the nested claude process. Capture the printed result path and
-  # read it once the background task completes.
-  RESULT_PATH=$($SPAWN "looper:planner" "$PLANNER_CONTEXT")
+  # 1. Fire async — returns result path instantly, subagent runs in background.
+  RESULT_PATH=$($SPAWN --async "looper:planner" "$PLANNER_CONTEXT")
+  ```
+
+  Then poll in a loop. Each Bash call is short (≤60s), so the watchdog resets
+  between iterations. Write one poll per Bash call — do NOT wrap the whole
+  `until` loop in a single long-running Bash invocation:
+
+  ```bash
+  # Each of these is a separate Bash tool call in the agent's turn.
+  # Repeat until it reports DONE.
+  test -s "$RESULT_PATH" && echo DONE || { sleep 30; echo WAIT; }
+  ```
+
+  Once the poll prints `DONE`, read the result:
+
+  ```bash
   AGENT_OUTPUT=$(cat "$RESULT_PATH")
   ```
 
   Every `Agent(subagent_type="X", prompt="Y")` call below has an equivalent
-  `$SPAWN "X" "Y"` form. Use whichever is appropriate for your context.
+  `$SPAWN --async "X" "Y"` + poll form. Use whichever is appropriate for your
+  context.
 
 ## Steps
 
@@ -224,7 +247,7 @@ to complete before proceeding to the next.
 
 1. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
    `Agent(subagent_type="looper:planner", prompt=<Planner context from 7c>)`
-   (Fallback when Agent tool is unavailable: `$SPAWN "looper:planner" "$PLANNER_CONTEXT"`)
+   (Fallback when Agent tool is unavailable: `$SPAWN --async "looper:planner" "$PLANNER_CONTEXT"` + poll, per "Agent spawning mode")
 
    After the Planner completes, compress the plan for the Doer:
    ```
@@ -232,17 +255,18 @@ to complete before proceeding to the next.
        --all-match --format="%B" -1)
    PLAN_SUMMARY=$(Agent(subagent_type="looper:summarizer",
        prompt="Compress this plan into a structured checklist for the Doer:\n\n${PLAN_BODY}"))
-   # Fallback:
-   #   R=$($SPAWN "looper:summarizer" "Compress this plan into a structured checklist for the Doer:
+   # Fallback (Agent tool unavailable — use --async + poll, see "Agent spawning mode"):
+   #   R=$($SPAWN --async "looper:summarizer" "Compress this plan into a structured checklist for the Doer:
    #
    #   ${PLAN_BODY}")
+   #   # poll: until [ -s "$R" ]; do sleep 30; done  — each poll is its own Bash call
    #   PLAN_SUMMARY=$(cat "$R")
    ```
    Append `PLAN_SUMMARY` to the Doer's context under a "## Plan Summary" section.
 
 2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase (TDD: red→green) ===`
    `Agent(subagent_type="looper:doer", prompt=<Doer context from 7c with PLAN_SUMMARY appended>)`
-   (Fallback when Agent tool is unavailable: `$SPAWN "looper:doer" "$DOER_CONTEXT"`)
+   (Fallback when Agent tool is unavailable: `$SPAWN --async "looper:doer" "$DOER_CONTEXT"` + poll, per "Agent spawning mode")
 
    Before spawning the Checker, run mechanical pre-checks:
    ```bash
@@ -267,17 +291,18 @@ to complete before proceeding to the next.
        --all-match --format="%B" -1)
    DOER_SUMMARY=$(Agent(subagent_type="looper:summarizer",
        prompt="Compress this multi-commit Doer output into a review brief for the Checker:\n\n${DOER_SUMMARIES}"))
-   # Fallback:
-   #   R=$($SPAWN "looper:summarizer" "Compress this multi-commit Doer output into a review brief for the Checker:
+   # Fallback (Agent tool unavailable — use --async + poll, see "Agent spawning mode"):
+   #   R=$($SPAWN --async "looper:summarizer" "Compress this multi-commit Doer output into a review brief for the Checker:
    #
    #   ${DOER_SUMMARIES}")
+   #   # poll: until [ -s "$R" ]; do sleep 30; done  — each poll is its own Bash call
    #   DOER_SUMMARY=$(cat "$R")
    ```
    Append `DOER_SUMMARY` to the Checker's context under a "## Doer Work Summary" section.
 
 3. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`
    `Agent(subagent_type="looper:checker", prompt=<Checker context from 7c with DOER_SUMMARY appended>)`
-   (Fallback when Agent tool is unavailable: `$SPAWN "looper:checker" "$CHECKER_CONTEXT"`)
+   (Fallback when Agent tool is unavailable: `$SPAWN --async "looper:checker" "$CHECKER_CONTEXT"` + poll, per "Agent spawning mode")
 
 #### 7e. Read verdict
 
