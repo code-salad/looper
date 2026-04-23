@@ -91,24 +91,26 @@ pub fn parse_dependencies_json(json: &str) -> Result<Vec<Dependency>, String> {
         Some(i) => i,
         None => return Ok(Vec::new()),
     };
-    let mut deps = Vec::new();
-    for n in issue.blocked_by.into_iter().flat_map(|c| c.nodes) {
-        deps.push(Dependency {
-            number: n.number,
-            repo: n.repository.name_with_owner,
-            state: parse_state(&n.state),
-            source: DepSource::BlockedBy,
-        });
+    let blocked_by = issue
+        .blocked_by
+        .into_iter()
+        .flat_map(|c| c.nodes)
+        .map(|n| node_to_dep(n, DepSource::BlockedBy));
+    let sub_issues = issue
+        .sub_issues
+        .into_iter()
+        .flat_map(|c| c.nodes)
+        .map(|n| node_to_dep(n, DepSource::SubIssue));
+    Ok(blocked_by.chain(sub_issues).collect())
+}
+
+fn node_to_dep(n: GqlDepNode, source: DepSource) -> Dependency {
+    Dependency {
+        number: n.number,
+        repo: n.repository.name_with_owner,
+        state: parse_state(&n.state),
+        source,
     }
-    for n in issue.sub_issues.into_iter().flat_map(|c| c.nodes) {
-        deps.push(Dependency {
-            number: n.number,
-            repo: n.repository.name_with_owner,
-            state: parse_state(&n.state),
-            source: DepSource::SubIssue,
-        });
-    }
-    Ok(deps)
 }
 
 fn parse_state(s: &str) -> DepState {
@@ -123,13 +125,10 @@ fn parse_state(s: &str) -> DepState {
 /// blocked via manual override (label names containing "blocked" or
 /// "dependencies", case-insensitive).
 pub fn label_blocks(issue: &Issue) -> Option<String> {
-    for label in &issue.labels {
+    issue.labels.iter().find_map(|label| {
         let lower = label.name.to_lowercase();
-        if lower.contains("blocked") || lower.contains("dependencies") {
-            return Some(label.name.clone());
-        }
-    }
-    None
+        (lower.contains("blocked") || lower.contains("dependencies")).then(|| label.name.clone())
+    })
 }
 
 /// Returns true if any dependency in the list is currently OPEN.
