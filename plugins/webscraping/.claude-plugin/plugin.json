@@ -1,7 +1,7 @@
 {
   "name": "webscraping",
   "description": "End-to-end web scraping toolkit — domain recon, method selection, .NET 10 implementation, anti-detection, and proxy management",
-  "version": "0.47.2",
+  "version": "0.47.3",
   "author": {
     "name": "code-salad"
   },
