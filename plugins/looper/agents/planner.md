@@ -23,6 +23,18 @@ modify any project files — only commit a plan as a git commit message.
    If this is not iteration 1, study the loop context carefully. Understand what
    was attempted, what worked, what failed, and what the Checker's feedback was.
 
+   - **Issue Context sub-sections.** The dynamic context injects `## Issue Context`
+     with up to three sub-sections:
+     - `### Description` — the issue body.
+     - `### Issue Comments` — prior discussion (first 30 comments, each truncated
+       to 500 chars). Comments often contain clarifications, scope changes, or
+       reproduction details that the body omits — treat them as first-class input
+       when deriving acceptance criteria and corner cases.
+     - `### Dependency Graph` — structural `blockedBy` / `subIssues` references.
+       Use this to scope the plan (do not re-implement something a sub-issue
+       already covers; respect closed blockers as "already-done" prerequisites).
+     Any sub-section may be absent if enrichment was unavailable at fetch time.
+
 2. **Gather context and explore in parallel** — Launch all four tracks as
    separate tool calls in a single message:
    - **Track A (Bash):** Run `$SCRIPTS_DIR/git-loop-context` and
@@ -271,3 +283,40 @@ The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.
   Found by: Planner agent during task "<TASK_NAME>"
   ```
   Continue with your planning — do not wait for the subagent to finish.
+
+## Rules — Querying GitHub on demand
+
+The pre-injected `## Issue Context` already contains the issue body, up to 30
+comments, and the dependency graph. For *external* artifacts referenced by
+the issue (specific PRs, commits, historically similar issues), you may use
+`gh` ad-hoc to fetch them.
+
+**Do NOT re-fetch:**
+- The issue body (already in `### Description`).
+- The issue's comments (already in `### Issue Comments`).
+- The issue's `blockedBy` / `subIssues` (already in `### Dependency Graph`).
+- `gh issue view <this-issue-number>` — redundant with the above.
+
+**Do query on demand when:**
+- A linked PR's diff or discussion would clarify the intended change.
+- A referenced commit SHA needs to be inspected.
+- You suspect a similar prior issue exists and want to compare approaches.
+
+**Budget:** at most ~3 ad-hoc `gh` calls per planning pass. Prefer `--jq`
+filters to bound response size.
+
+**Concrete examples:**
+```bash
+# View a referenced PR (title, body, changed files)
+gh pr view <NUMBER> --json title,body,files --jq '.'
+gh pr diff <NUMBER>
+
+# View a referenced commit
+gh api repos/:owner/:repo/commits/<SHA> --jq '.commit.message, .files[].filename'
+
+# Search for similar prior issues (including closed)
+gh issue list --state all --search "<keywords>" --limit 10 --json number,title,state
+
+# View a file at a specific ref
+gh api repos/:owner/:repo/contents/<path>?ref=<SHA>
+```

@@ -100,6 +100,19 @@ looper/
 - Use clear section headers and keep instructions unambiguous.
 - Avoid hard-coding file paths — use environment variables or relative paths.
 
+#### Tier-per-role model policy
+
+Every agent's frontmatter MUST specify an explicit `model:` value. The policy:
+
+| Tier | Used for |
+|------|----------|
+| `opus` (strongest) | Planner, Checker, Adversarial reviewer, Debugger — highest reasoning load; plan quality and verification compound downstream. |
+| `sonnet` (strong / mid) | Doer, mid-tier reviewers (`check-code`, `check-runtime`, `plan-feasibility`, `plan-completeness`, `plan-scope`) — strong coding and review capability without the full reasoning budget. |
+| `haiku` (cheapest) | Mechanical reviewers (`check-build`, `check-tests`), issue creator (`gh-issue-creator`) — pass/fail checks and rote formatting. |
+
+When adding a new agent, classify its reasoning load against this table and pick
+the matching tier. Do not default to `sonnet` by omission.
+
 ### Skills
 
 - Each skill lives in its own directory under `plugins/<plugin>/skills/<skill-name>/`.

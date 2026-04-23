@@ -10,7 +10,7 @@ Three subagents (Planner, Doer, Checker) iterate until the Checker issues a PASS
 
 ## Agent spawning mode
 
-This loop spawns subagents (planner, doer, checker, summarizer). Before running
+This loop spawns subagents (planner, doer, checker). Before running
 the loop, determine which mechanism to use:
 
 - **If the `Agent` tool is in your toolset** (the normal interactive case):
@@ -249,23 +249,8 @@ to complete before proceeding to the next.
    `Agent(subagent_type="looper:planner", prompt=<Planner context from 7c>)`
    (Fallback when Agent tool is unavailable: `$SPAWN --async "looper:planner" "$PLANNER_CONTEXT"` + poll, per "Agent spawning mode")
 
-   After the Planner completes, compress the plan for the Doer:
-   ```
-   PLAN_BODY=$(git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: ${ITERATION}" \
-       --all-match --format="%B" -1)
-   PLAN_SUMMARY=$(Agent(subagent_type="looper:summarizer",
-       prompt="Compress this plan into a structured checklist for the Doer:\n\n${PLAN_BODY}"))
-   # Fallback (Agent tool unavailable — use --async + poll, see "Agent spawning mode"):
-   #   R=$($SPAWN --async "looper:summarizer" "Compress this plan into a structured checklist for the Doer:
-   #
-   #   ${PLAN_BODY}")
-   #   # poll: until [ -s "$R" ]; do sleep 30; done  — each poll is its own Bash call
-   #   PLAN_SUMMARY=$(cat "$R")
-   ```
-   Append `PLAN_SUMMARY` to the Doer's context under a "## Plan Summary" section.
-
 2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase (TDD: red→green) ===`
-   `Agent(subagent_type="looper:doer", prompt=<Doer context from 7c with PLAN_SUMMARY appended>)`
+   `Agent(subagent_type="looper:doer", prompt=<Doer context from 7c>)`
    (Fallback when Agent tool is unavailable: `$SPAWN --async "looper:doer" "$DOER_CONTEXT"` + poll, per "Agent spawning mode")
 
    Before spawning the Checker, run mechanical pre-checks:
@@ -283,25 +268,8 @@ to complete before proceeding to the next.
    ```
    Then continue to the next iteration without spawning the Checker.
 
-   If pre-check passes, then:
-
-   After the Doer completes (and pre-check passes), compress Doer work for the Checker:
-   ```
-   DOER_SUMMARIES=$(git log --grep="Loop-Phase: do-" --grep="Loop-Iteration: ${ITERATION}" \
-       --all-match --format="%B" -1)
-   DOER_SUMMARY=$(Agent(subagent_type="looper:summarizer",
-       prompt="Compress this multi-commit Doer output into a review brief for the Checker:\n\n${DOER_SUMMARIES}"))
-   # Fallback (Agent tool unavailable — use --async + poll, see "Agent spawning mode"):
-   #   R=$($SPAWN --async "looper:summarizer" "Compress this multi-commit Doer output into a review brief for the Checker:
-   #
-   #   ${DOER_SUMMARIES}")
-   #   # poll: until [ -s "$R" ]; do sleep 30; done  — each poll is its own Bash call
-   #   DOER_SUMMARY=$(cat "$R")
-   ```
-   Append `DOER_SUMMARY` to the Checker's context under a "## Doer Work Summary" section.
-
 3. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`
-   `Agent(subagent_type="looper:checker", prompt=<Checker context from 7c with DOER_SUMMARY appended>)`
+   `Agent(subagent_type="looper:checker", prompt=<Checker context from 7c>)`
    (Fallback when Agent tool is unavailable: `$SPAWN --async "looper:checker" "$CHECKER_CONTEXT"` + poll, per "Agent spawning mode")
 
 #### 7e. Read verdict

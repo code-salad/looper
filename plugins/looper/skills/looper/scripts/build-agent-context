@@ -98,6 +98,13 @@ format_file_section() {
     fi
 }
 
+# --- Helper: strip at PLANNER-ONLY delimiter ---
+# If the delimiter is present, keep only lines before it.
+# If absent, print all lines (zero-regression passthrough when enrichment was skipped).
+strip_at_planner_only() {
+    awk '/<!-- PLANNER-ONLY -->/{exit} {print}'
+}
+
 # --- Helper: extract a section from CONTRIBUTING.md by ## header ---
 # Extracts from "## HEADER" to the next "## " or EOF
 extract_section() {
@@ -257,7 +264,21 @@ $CONTRIBUTING_TESTING"
 esac
 
 # --- Assemble issue context ---
-ISSUE_SECTION="${ISSUE_BODY:-No issue linked. Use the TASK_PROMPT above as the source of requirements.}"
+if [ -z "$ISSUE_BODY" ]; then
+    ISSUE_SECTION="No issue linked. Use the TASK_PROMPT above as the source of requirements."
+else
+    case "$ROLE" in
+        planner)
+            # Keep everything; just drop the delimiter marker line itself.
+            ISSUE_SECTION=$(printf '%s\n' "$ISSUE_BODY" | sed '/<!-- PLANNER-ONLY -->/d')
+            ;;
+        doer|checker)
+            # Truncate at the delimiter so the Planner-only enrichment is hidden.
+            # strip_at_planner_only passthrough is the correct fallback when delimiter is absent.
+            ISSUE_SECTION=$(printf '%s\n' "$ISSUE_BODY" | strip_at_planner_only)
+            ;;
+    esac
+fi
 
 # --- Build output ---
 cat << CONTEXT_EOF

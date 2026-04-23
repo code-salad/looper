@@ -118,3 +118,95 @@ printf 'NUMBER=%s\n' "$ISSUE_NUMBER"
 if [ -n "$FORMATTED" ]; then
     printf '%s\n' "$FORMATTED"
 fi
+
+# --- Enrichment: fetch comments + dep-graph via GraphQL ---
+
+# Resolve owner/name for GraphQL
+if [ -n "$REPO_ARG" ]; then
+    GQL_REPO="$REPO_ARG"
+elif [ -n "$EXTRACTED_REPO" ]; then
+    GQL_REPO="$EXTRACTED_REPO"
+else
+    GQL_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)
+fi
+
+if [ -z "$GQL_REPO" ]; then
+    # Cannot resolve repo — skip enrichment
+    exit 0
+fi
+
+GQL_OWNER="${GQL_REPO%%/*}"
+GQL_NAME="${GQL_REPO##*/}"
+
+# Build GraphQL query (single line to avoid heredoc quoting issues)
+GQL_QUERY=$(printf 'query { repository(owner: "%s", name: "%s") { issue(number: %s) { comments(first: 30) { nodes { author { login } createdAt body } } blockedBy(first: 50) { nodes { number state title repository { nameWithOwner } } } subIssues(first: 50) { nodes { number state title repository { nameWithOwner } } } } } }' "$GQL_OWNER" "$GQL_NAME" "$ISSUE_NUMBER")
+
+# Helper: emit degraded placeholder and exit
+emit_degraded() {
+    printf '\n<!-- PLANNER-ONLY -->\n\n### Issue Comments\n\n_(No comments fetched — GraphQL unavailable.)_\n'
+    exit 0
+}
+
+# Execute GraphQL — suppress stderr, capture output
+GQL_OUT=$(gh api graphql -f "query=$GQL_QUERY" 2>/dev/null) || emit_degraded
+
+# Treat empty output or invalid JSON as failure
+[ -n "$GQL_OUT" ] || emit_degraded
+echo "$GQL_OUT" | jq empty 2>/dev/null || emit_degraded
+
+# Extract comments (null-coalescing fallback to empty nodes array)
+COMMENTS_SECTION=""
+COMMENTS_COUNT=$(echo "$GQL_OUT" | jq '(.data.repository.issue.comments // {"nodes":[]}) | .nodes | length' 2>/dev/null || echo "0")
+if [ "$COMMENTS_COUNT" -eq 0 ]; then
+    COMMENTS_SECTION="### Issue Comments
+
+_(No comments yet.)_"
+else
+    COMMENTS_SECTION="### Issue Comments"
+    while IFS= read -r comment_line; do
+        COMMENTS_SECTION="${COMMENTS_SECTION}
+${comment_line}"
+    done < <(echo "$GQL_OUT" | jq -r '(.data.repository.issue.comments // {"nodes":[]}) | .nodes[] | "- @\(.author.login) (\(.createdAt | split("T")[0])): \(.body)"' 2>/dev/null | while IFS= read -r line; do
+        # Truncate to 500 chars
+        if [ "${#line}" -gt 520 ]; then
+            printf '%s...\n' "${line:0:520}"
+        else
+            printf '%s\n' "$line"
+        fi
+    done)
+fi
+
+# Extract blockedBy nodes (null-coalescing)
+BLOCKED_JSON=$(echo "$GQL_OUT" | jq -c '(.data.repository.issue.blockedBy // {"nodes":[]}) | .nodes' 2>/dev/null || echo "[]")
+BLOCKED_COUNT=$(echo "$BLOCKED_JSON" | jq 'length' 2>/dev/null || echo "0")
+
+# Extract subIssues nodes (null-coalescing)
+SUB_JSON=$(echo "$GQL_OUT" | jq -c '(.data.repository.issue.subIssues // {"nodes":[]}) | .nodes' 2>/dev/null || echo "[]")
+SUB_COUNT=$(echo "$SUB_JSON" | jq 'length' 2>/dev/null || echo "0")
+
+if [ "$BLOCKED_COUNT" -eq 0 ] && [ "$SUB_COUNT" -eq 0 ]; then
+    DEP_SECTION="### Dependency Graph
+
+_(No tracked dependencies.)_"
+else
+    DEP_SECTION="### Dependency Graph"
+    if [ "$BLOCKED_COUNT" -gt 0 ]; then
+        DEP_SECTION="${DEP_SECTION}
+- Blocked by:"
+        while IFS= read -r entry; do
+            DEP_SECTION="${DEP_SECTION}
+  - ${entry}"
+        done < <(echo "$BLOCKED_JSON" | jq -r '.[] | "\(.repository.nameWithOwner)#\(.number) (\(.state | ascii_downcase)) — \(.title)"' 2>/dev/null)
+    fi
+    if [ "$SUB_COUNT" -gt 0 ]; then
+        DEP_SECTION="${DEP_SECTION}
+- Sub-issues:"
+        while IFS= read -r entry; do
+            DEP_SECTION="${DEP_SECTION}
+  - ${entry}"
+        done < <(echo "$SUB_JSON" | jq -r '.[] | "\(.repository.nameWithOwner)#\(.number) (\(.state | ascii_downcase)) — \(.title)"' 2>/dev/null)
+    fi
+fi
+
+# Emit delimiter + enriched sections
+printf '\n<!-- PLANNER-ONLY -->\n\n%s\n\n%s\n' "$COMMENTS_SECTION" "$DEP_SECTION"
