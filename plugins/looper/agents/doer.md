@@ -27,7 +27,24 @@ write failing tests first, then write just enough code to make them pass.
 
    `SUBAGENTS_DIR="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts"`
 
-2. **Explore before implementing (parallel)** — Before writing code, if the
+2. **Size guard for oversize plans.** If the plan commit body exceeds ~400 lines,
+   do NOT try to hold the entire plan in working context. Extract only the focused
+   sections:
+   ```bash
+   PLAN_BODY=$(git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: $ITERATION" \
+       --all-match --format="%B" -1)
+   if [ "$(echo "$PLAN_BODY" | wc -l)" -gt 400 ]; then
+       echo "$PLAN_BODY" | awk '
+           /^## (Goal|Tech Stack|Files to|Implementation|Tests to write|Acceptance Criteria)/ { p=1 }
+           /^## / && !/(Goal|Tech Stack|Files to|Implementation|Tests to write|Acceptance Criteria)/ { p=0 }
+           p { print }
+       '
+   fi
+   ```
+   The 400-line threshold is a heuristic. The full plan stays retrievable via
+   `git show <plan-hash>` if a section the extractor dropped is needed later.
+
+3. **Explore before implementing (parallel)** — Before writing code, if the
    plan references 3+ files, spawn Explore subagents in parallel to read the
    files the plan will modify and existing test files for convention reference.
    Group files by area (source, tests, config) — one subagent per group.
@@ -54,7 +71,7 @@ git log --grep="Loop-Phase: do-red" --grep="Loop-Iteration: $ITERATION" \
 ```
 If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
 
-3. **Write tests first** — Based on the plan's test descriptions and
+4. **Write tests first** — Based on the plan's test descriptions and
    acceptance criteria, write test files ONLY. Do NOT write any implementation
    code yet.
 
@@ -81,7 +98,7 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
      scaffolding, not implementation — include them in the RED commit.
    - Install dependencies if needed (`$SCRIPTS_DIR/install-deps`)
 
-4. **Verify tests FAIL** — Run the tests:
+5. **Verify tests FAIL** — Run the tests:
    ```bash
    $SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"
    ```
@@ -103,7 +120,7 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
      $SCRIPTS_DIR/run-format --fix
      ```
 
-5. **Commit RED** — Commit test files only:
+6. **Commit RED** — Commit test files only:
    ```bash
    $SCRIPTS_DIR/git-commit-loop \
        --type "test" \
@@ -118,7 +135,7 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
 
 ### Phase 2: GREEN — Write minimal implementation
 
-6. **Implement just enough to pass** — Write the minimum code to make the
+7. **Implement just enough to pass** — Write the minimum code to make the
    failing tests pass. Do NOT:
    - Add features beyond what the tests require
    - Write additional tests (you already have them)
@@ -139,7 +156,7 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    wait
    ```
 
-7. **Run checks (two rounds):**
+8. **Run checks (two rounds):**
 
    **Round 1 — Auto-fix (sequential):**
    ```bash
@@ -179,7 +196,7 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    with the debugger report in the commit body and let the Checker FAIL so
    the Planner can reconsider next iteration.
 
-8. **Commit GREEN** — Commit implementation files. Choose the commit type
+9. **Commit GREEN** — Commit implementation files. Choose the commit type
    based on the nature of the change: `feat` for new features, `fix` for
    bug fixes, `refactor` for restructuring.
    ```bash
@@ -204,7 +221,7 @@ git log --grep="Loop-Phase: do-simplify" --grep="Loop-Iteration: $ITERATION" \
 ```
 If it exists, skip this phase entirely.
 
-9. **Run the code-simplifier** — Spawn a `code-simplifier` subagent to review
+10. **Run the code-simplifier** — Spawn a `code-simplifier` subagent to review
    and simplify the implementation files changed in the GREEN phase. The
    subagent should:
    - Read only the files modified in the GREEN commit (not test files)
@@ -228,7 +245,7 @@ If it exists, skip this phase entirely.
    If the subagent made no changes (code was already clean), skip the commit
    and proceed to Phase 3.
 
-10. **Verify tests still pass** after simplification:
+11. **Verify tests still pass** after simplification:
     ```bash
     $SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"
     ```
@@ -238,7 +255,7 @@ If it exists, skip this phase entirely.
     git checkout -- .
     ```
 
-11. **Commit SIMPLIFY** (only if changes were made):
+12. **Commit SIMPLIFY** (only if changes were made):
     ```bash
     $SCRIPTS_DIR/git-commit-loop \
         --type "refactor" \
@@ -264,7 +281,7 @@ git log --grep="Loop-Phase: do-integration" --grep="Loop-Iteration: $ITERATION" 
 ```
 If it exists, skip Phase 3 entirely.
 
-9. **Detect if integration tests are appropriate** — Run:
+13. **Detect if integration tests are appropriate** — Run:
    ```bash
    STACK=$($SCRIPTS_DIR/detect-stack)
    framework=$(echo "$STACK" | jq -r '.framework')
@@ -276,9 +293,9 @@ If it exists, skip Phase 3 entirely.
    - `dev_command` is not "none" (project has a runnable dev server)
    - The plan mentions API endpoints, routes, or CLI commands
 
-   If none apply, skip to step 8 commit above (no integration tests needed).
+   If none apply, skip to step 9 commit above (no integration tests needed).
 
-10. **Write integration test scripts** — Create scripts in `tests/integration/`
+14. **Write integration test scripts** — Create scripts in `tests/integration/`
     that exercise the running application with real HTTP requests or CLI invocations.
 
     Each script should:
@@ -322,7 +339,7 @@ If it exists, skip Phase 3 entirely.
     - For bug fixes: reproduce the exact bug scenario and verify it's fixed
     - Make scripts executable: `chmod +x tests/integration/*.sh`
 
-11. **Verify integration tests pass** — Run:
+15. **Verify integration tests pass** — Run:
     ```bash
     LOOPER_TASK_NAME=$TASK_NAME $SCRIPTS_DIR/run-integration-tests --port $LOOPER_DEV_PORT 2>&1; echo "EXIT_CODE=$?"
     ```
@@ -337,7 +354,7 @@ If it exists, skip Phase 3 entirely.
     - If tests fail, fix either the test assertions or the implementation
       (prefer fixing implementation if the test correctly reflects the acceptance criteria).
 
-12. **Commit INTEGRATION** — Commit integration test files:
+16. **Commit INTEGRATION** — Commit integration test files:
     ```bash
     $SCRIPTS_DIR/git-commit-loop \
         --type "test" \

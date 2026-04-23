@@ -2,7 +2,7 @@
 name: check-tests
 description: Reviews test coverage, regression tests, corner cases, and acceptance criteria for a PDC loop iteration.
 tools: Read, Bash, Glob, Grep
-model: sonnet
+model: haiku
 ---
 
 # Check-Tests Subagent

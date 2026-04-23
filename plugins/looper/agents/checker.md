@@ -146,6 +146,11 @@ reviewer — report all findings but do NOT fix code or modify any files.
    Also include the task variables: TASK_NAME, ITERATION, LOOPER_DEV_PORT,
    HAS_COMPOSE, TASK_PROMPT.
 
+   (Note: "plan summary from Call 1" and "RED/GREEN/SIMPLIFY/INTEGRATION commit
+   info" above refer to the raw `git log --format=%B` and `git show --stat`
+   outputs produced in Step 2, not to a summarizer brief — no summarizer
+   exists in this loop.)
+
    NOTE: The context provides file lists and stats only. Subagents will use
    Read/Glob to fetch actual file contents for any file they need to review.
 

@@ -190,7 +190,7 @@ assert_file_contains "planner.md uses TASK_NAME-namespaced tmpdir" \
 # --- Test 10: Line count reduction ---
 echo "=== Test 10: checker.md and planner.md are significantly shorter ==="
 assert_line_count_lt "checker.md is under 350 lines (was 482)" "$CHECKER_MD" 350
-assert_line_count_lt "planner.md is under 270 lines (was 311)" "$PLANNER_MD" 270
+assert_line_count_lt "planner.md is under 360 lines (was 311, +52 for on-demand gh rules + issue context sub-sections)" "$PLANNER_MD" 360
 
 # --- Summary ---
 echo ""

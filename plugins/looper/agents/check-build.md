@@ -2,7 +2,7 @@
 name: check-build
 description: Verifies typecheck and build pass for a PDC loop iteration.
 tools: Read, Bash, Glob, Grep
-model: sonnet
+model: haiku
 ---
 
 # Check-Build Subagent

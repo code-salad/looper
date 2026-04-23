@@ -113,9 +113,10 @@ assert_file_contains "checker.md has Code Review subagent" "$CHECKER_MD" "Code R
 assert_file_contains "checker.md has Runtime Verification subagent" "$CHECKER_MD" "Runtime Verification"
 assert_file_contains "checker.md has Adversarial Reviewer subagent" "$CHECKER_MD" "Adversarial"
 
-# --- Test 4: checker.md spawn command references 5 subagents (check1-check5) ---
+# --- Test 4: checker.md spawn command references 5 subagent output files ---
 echo "=== Test 4: checker.md spawn command uses 5 parallel subagents ==="
-assert_file_contains "checker.md spawns check5.txt" "$CHECKER_MD" "check5.txt"
+assert_file_contains "checker.md spawns check-adversarial.txt" "$CHECKER_MD" "check-adversarial.txt"
+assert_file_contains "checker.md spawns check-build.txt" "$CHECKER_MD" "check-build.txt"
 assert_file_not_contains "checker.md does not spawn check7.txt" "$CHECKER_MD" "check7.txt"
 
 # --- Test 5: SKILL.md has build-agent-context invocations for all three roles ---

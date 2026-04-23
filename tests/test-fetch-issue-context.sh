@@ -155,7 +155,7 @@ make_enriched_env() {
     local mock_dir="$1"
     make_test_env "$mock_dir"
 
-    # Override gh to also handle graphql
+    # Override gh to also handle graphql + repo view
     cat > "$mock_dir/gh" << 'GHEOF'
 #!/usr/bin/env bash
 if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
@@ -172,6 +172,10 @@ if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
         echo "Issue body for #$issue_num"
         exit 0
     fi
+fi
+if [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+    echo "testowner/testrepo"
+    exit 0
 fi
 if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
     cat << 'GQLEOF'
@@ -229,6 +233,10 @@ if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
         exit 0
     fi
 fi
+if [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+    echo "testowner/testrepo"
+    exit 0
+fi
 # graphql always fails
 if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
     echo "GraphQL error" >&2
@@ -260,6 +268,10 @@ if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
         echo "Issue body for #$issue_num"
         exit 0
     fi
+fi
+if [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+    echo "testowner/testrepo"
+    exit 0
 fi
 if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
     cat << 'GQLEOF'
@@ -305,6 +317,10 @@ if [ "\$1" = "issue" ] && [ "\$2" = "view" ]; then
         exit 0
     fi
 fi
+if [ "\$1" = "repo" ] && [ "\$2" = "view" ]; then
+    echo "testowner/testrepo"
+    exit 0
+fi
 if [ "\$1" = "api" ] && [ "\$2" = "graphql" ]; then
     echo '{"data":{"repository":{"issue":{"comments":{"nodes":[{"author":{"login":"alice"},"createdAt":"2026-04-20T10:00:00Z","body":"${long_body}"}]},"blockedBy":{"nodes":[]},"subIssues":{"nodes":[]}}}}}'
     exit 0
@@ -332,6 +348,10 @@ if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
         echo "## Issue #$issue_num"
         exit 0
     fi
+fi
+if [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+    echo "testowner/testrepo"
+    exit 0
 fi
 if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
     printf '%s\n' '{"data":{"repository":{"issue":{"comments":{"nodes":[{"author":{"login":"alice"},"createdAt":"2026-04-20T10:00:00Z","body":"Look at this code:\n```bash\necho hello\n```\nDone."}]},"blockedBy":{"nodes":[]},"subIssues":{"nodes":[]}}}}}'
@@ -361,6 +381,10 @@ if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
         exit 0
     fi
 fi
+if [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+    echo "testowner/testrepo"
+    exit 0
+fi
 if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
     # blockedBy and subIssues are null (feature not available on this repo)
     echo '{"data":{"repository":{"issue":{"comments":{"nodes":[{"author":{"login":"charlie"},"createdAt":"2026-04-22T09:00:00Z","body":"A comment"}]},"blockedBy":null,"subIssues":null}}}}'
@@ -389,6 +413,10 @@ if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
         echo "## Issue #$issue_num"
         exit 0
     fi
+fi
+if [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+    echo "testowner/testrepo"
+    exit 0
 fi
 if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
     # malformed JSON
