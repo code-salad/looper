@@ -2,26 +2,44 @@
 set -euo pipefail
 
 # git-loop-context — Read loop history from git log
-# Usage: git-loop-context --task <name> --iteration <N>
+# Usage: git-loop-context --task <name> --iteration <N> [--role planner|doer|checker]
 # Outputs structured markdown with progressive compression:
 #   - Last iteration (N-1):  full plan + changes + file stats + verdict
 #   - Recent iterations (N-2, N-3): plan first line + verdict action items
 #   - Older iterations: one-line summary (verdict + first line)
+#
+# --role planner  : emit only plan body + verdict body per iteration
+# --role doer     : emit only one-line summary per iteration (### Iteration N — VERDICT)
+# --role checker  : emit only verdict body per iteration
+# --role ""       : same as no --role (legacy full output)
 
 TASK=""
 ITERATION=""
+ROLE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --task) TASK="$2"; shift 2 ;;
         --iteration) ITERATION="$2"; shift 2 ;;
+        --role) ROLE="$2"; shift 2 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
 
 if [ -z "$TASK" ] || [ -z "$ITERATION" ]; then
-    echo "Usage: git-loop-context --task <name> --iteration <N>" >&2
+    echo "Usage: git-loop-context --task <name> --iteration <N> [--role planner|doer|checker]" >&2
     exit 1
+fi
+
+# Validate role if non-empty
+if [ -n "$ROLE" ]; then
+    case "$ROLE" in
+        planner|doer|checker) ;;
+        *)
+            echo "Unknown role: $ROLE (must be planner, doer, or checker)" >&2
+            exit 1
+            ;;
+    esac
 fi
 
 echo "## Loop Context: ${TASK}, Iteration ${ITERATION}"
@@ -106,7 +124,51 @@ for (( i=1; i<ITERATION; i++ )); do
     verdict_body=$(_extract_body "check" "$i")
     verdict=$(echo "$verdict_body" | grep -oE 'Loop-Verdict: (PASS|FAIL)' | head -1 | sed 's/Loop-Verdict: //' || echo "UNKNOWN")
 
-    # Calculate detail level (verdict-adaptive)
+    # --- Role-scoped output (when --role is set) ---
+    if [ -n "$ROLE" ]; then
+        case "$ROLE" in
+            planner)
+                # Plan body + verdict body; skip all do-* commits
+                echo "### Iteration ${i}"
+                echo ""
+                if [ -n "$plan_body" ]; then
+                    echo "#### Plan"
+                    echo ""
+                    echo "$plan_body" | _strip_trailers
+                    echo ""
+                fi
+                if [ -n "$verdict_body" ]; then
+                    echo "#### Verdict: ${verdict}"
+                    echo ""
+                    echo "$verdict_body" | _strip_trailers
+                    echo ""
+                fi
+                echo "---"
+                echo ""
+                ;;
+            doer)
+                # One-line summary per prior iteration; no bodies
+                echo "### Iteration ${i} — ${verdict}"
+                echo ""
+                ;;
+            checker)
+                # Verdict body only; skip plan and do-* commits
+                echo "### Iteration ${i}"
+                echo ""
+                if [ -n "$verdict_body" ]; then
+                    echo "#### Verdict: ${verdict}"
+                    echo ""
+                    echo "$verdict_body" | _strip_trailers
+                    echo ""
+                fi
+                echo "---"
+                echo ""
+                ;;
+        esac
+        continue
+    fi
+
+    # Calculate detail level (verdict-adaptive) — legacy full output
     if [ "$i" -eq "$LAST" ]; then
         detail="full"
     elif [ "$verdict" = "PASS" ]; then

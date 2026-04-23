@@ -399,13 +399,15 @@ else
 fi
 
 # D4: Available Skills entry for git-loop-context annotated
-avail_block=$(awk '/^## Available Skills/,/^## [^A]|^$/' "$PLANNER_FILE" 2>/dev/null | head -30 || true)
-glc_line=$(echo "$avail_block" | grep "git-loop-context" || true)
-if echo "$glc_line" | grep -qE "pre-injected|do not call manually"; then
+# Extract section from ## Available Skills to next ## header
+avail_block=$(awk '/^## Available Skills/{found=1;next} found && /^## /{exit} found{print}' "$PLANNER_FILE" 2>/dev/null || true)
+glc_annotation=$(echo "$avail_block" | grep -A2 "git-loop-context" | grep -E "pre-injected|do not call manually" || true)
+if [ -n "$glc_annotation" ]; then
     pass "D4: git-loop-context Available Skills entry annotated"
 else
+    glc_line=$(echo "$avail_block" | grep "git-loop-context" || true)
     fail "D4: git-loop-context Available Skills entry annotated" \
-        "git-loop-context line in Available Skills: '$glc_line'"
+        "git-loop-context line/context in Available Skills: '$glc_line'"
 fi
 
 # ---------------------------------------------------------------------------
