@@ -242,6 +242,63 @@ assert_exit_zero "no CONTRIBUTING.md: exit 0" "$EXIT_CODE"
 assert_output_contains "no CONTRIBUTING.md: still has task vars" "$OUTPUT" "TASK_NAME"
 cleanup
 
+# --- Test 15: Planner role strips PLANNER-ONLY delimiter but keeps enriched sections ---
+echo "=== Test 15: Planner role strips delimiter, keeps enriched content ==="
+setup_fixture_dir
+ISSUE_WITH_ENRICHMENT="## Issue #99: Test Issue
+
+### Description
+base body here
+
+<!-- PLANNER-ONLY -->
+
+### Issue Comments
+- @alice (2026-04-20): important comment
+
+### Dependency Graph
+- Blocked by: none"
+OUTPUT=$(eval "$BUILD_CTX --role planner $COMMON_FLAGS --worktree-dir $TMPDIR_TEST --issue-body \"$ISSUE_WITH_ENRICHMENT\"" 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_zero "planner-only: planner exit 0" "$EXIT_CODE"
+assert_output_contains "planner-only: planner has base body" "$OUTPUT" "base body here"
+assert_output_contains "planner-only: planner has Issue Comments" "$OUTPUT" "Issue Comments"
+assert_output_contains "planner-only: planner has alice comment" "$OUTPUT" "alice"
+assert_output_contains "planner-only: planner has Dependency Graph" "$OUTPUT" "Dependency Graph"
+assert_output_not_contains "planner-only: planner no delimiter marker" "$OUTPUT" "PLANNER-ONLY"
+cleanup
+
+# --- Test 16: Doer role truncates at PLANNER-ONLY delimiter ---
+echo "=== Test 16: Doer role truncates at delimiter ==="
+setup_fixture_dir
+OUTPUT=$(eval "$BUILD_CTX --role doer $COMMON_FLAGS --worktree-dir $TMPDIR_TEST --issue-body \"$ISSUE_WITH_ENRICHMENT\"" 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_zero "planner-only: doer exit 0" "$EXIT_CODE"
+assert_output_contains "planner-only: doer has base body" "$OUTPUT" "base body here"
+assert_output_not_contains "planner-only: doer no Issue Comments" "$OUTPUT" "Issue Comments"
+assert_output_not_contains "planner-only: doer no alice" "$OUTPUT" "important comment"
+assert_output_not_contains "planner-only: doer no delimiter marker" "$OUTPUT" "PLANNER-ONLY"
+cleanup
+
+# --- Test 17: Checker role truncates at PLANNER-ONLY delimiter ---
+echo "=== Test 17: Checker role truncates at delimiter ==="
+setup_fixture_dir
+OUTPUT=$(eval "$BUILD_CTX --role checker $COMMON_FLAGS --worktree-dir $TMPDIR_TEST --issue-body \"$ISSUE_WITH_ENRICHMENT\"" 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_zero "planner-only: checker exit 0" "$EXIT_CODE"
+assert_output_contains "planner-only: checker has base body" "$OUTPUT" "base body here"
+assert_output_not_contains "planner-only: checker no Issue Comments" "$OUTPUT" "Issue Comments"
+assert_output_not_contains "planner-only: checker no alice" "$OUTPUT" "important comment"
+cleanup
+
+# --- Test 18: No-delimiter passthrough — all roles see full body ---
+echo "=== Test 18: No PLANNER-ONLY delimiter -> all roles see full body ==="
+setup_fixture_dir
+PLAIN_BODY="body here with no enrichment sections at all"
+for role in planner doer checker; do
+    OUTPUT=$(eval "$BUILD_CTX --role $role $COMMON_FLAGS --worktree-dir $TMPDIR_TEST --issue-body \"$PLAIN_BODY\"" 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
+    assert_exit_zero "no-delim: $role exit 0" "$EXIT_CODE"
+    assert_output_contains "no-delim: $role sees full body" "$OUTPUT" "body here with no enrichment sections"
+    assert_output_not_contains "no-delim: $role no PLANNER-ONLY marker" "$OUTPUT" "PLANNER-ONLY"
+done
+cleanup
+
 # --- Summary ---
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
