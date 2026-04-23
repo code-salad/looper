@@ -296,6 +296,12 @@ If any convention is violated, flag it in your verdict.
   (UI, API endpoints, CLI behavior) and Subagent 4 could not run integration
   tests (reports "N/A"), flag this as [WARNING] in the verdict. The Doer
   should ensure adequate test coverage compensates for the lack of manual testing.
+- **Tech Stack Compliance:** Tech-stack violations reported by Subagent 3
+  (check-code) — files from a wrong ecosystem, dependencies from a
+  different package manager, or a framework other than the one the plan
+  specifies — are treated as [BLOCKER] severity and MUST cause a FAIL
+  verdict until fixed. Flag each violation as [BLOCKER] — Tech Stack
+  Compliance failure with the offending file path.
 - **Always use `$LOOPER_DEV_PORT`** for any dev server started during review.
   Never use the project's default port — this avoids conflicts with the user's
   running dev server in the main repo.
