@@ -8,6 +8,32 @@ tools: Bash, Read, Edit, Write, Grep, Glob, Agent, Skill
 
 Three subagents (Planner, Doer, Checker) iterate until the Checker issues a PASS verdict.
 
+## Agent spawning mode
+
+This loop spawns subagents (planner, doer, checker, summarizer). Before running
+the loop, determine which mechanism to use:
+
+- **If the `Agent` tool is in your toolset** (the normal interactive case):
+  spawn directly, e.g. `Agent(subagent_type="looper:planner", prompt=<context>)`.
+
+- **If the `Agent` tool is NOT in your toolset** (you are running inside a
+  subagent, a `claude -p` session, or any non-interactive context where looper
+  was invoked by another agent): you MUST fall back to the `subagents` skill's
+  `spawn-agent` script. Do not attempt to call `Agent(...)` — it will fail.
+  Invoke the skill once (`Skill("subagents")`) to load its guidance, then use:
+
+  ```bash
+  SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
+  # Run via Bash with run_in_background=true so Claude Code does not suppress
+  # stdout from the nested claude process. Capture the printed result path and
+  # read it once the background task completes.
+  RESULT_PATH=$($SPAWN "looper:planner" "$PLANNER_CONTEXT")
+  AGENT_OUTPUT=$(cat "$RESULT_PATH")
+  ```
+
+  Every `Agent(subagent_type="X", prompt="Y")` call below has an equivalent
+  `$SPAWN "X" "Y"` form. Use whichever is appropriate for your context.
+
 ## Steps
 
 ### 1. Validate environment
@@ -198,6 +224,7 @@ to complete before proceeding to the next.
 
 1. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
    `Agent(subagent_type="looper:planner", prompt=<Planner context from 7c>)`
+   (Fallback when Agent tool is unavailable: `$SPAWN "looper:planner" "$PLANNER_CONTEXT"`)
 
    After the Planner completes, compress the plan for the Doer:
    ```
@@ -205,11 +232,17 @@ to complete before proceeding to the next.
        --all-match --format="%B" -1)
    PLAN_SUMMARY=$(Agent(subagent_type="looper:summarizer",
        prompt="Compress this plan into a structured checklist for the Doer:\n\n${PLAN_BODY}"))
+   # Fallback:
+   #   R=$($SPAWN "looper:summarizer" "Compress this plan into a structured checklist for the Doer:
+   #
+   #   ${PLAN_BODY}")
+   #   PLAN_SUMMARY=$(cat "$R")
    ```
    Append `PLAN_SUMMARY` to the Doer's context under a "## Plan Summary" section.
 
 2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase (TDD: red→green) ===`
    `Agent(subagent_type="looper:doer", prompt=<Doer context from 7c with PLAN_SUMMARY appended>)`
+   (Fallback when Agent tool is unavailable: `$SPAWN "looper:doer" "$DOER_CONTEXT"`)
 
    Before spawning the Checker, run mechanical pre-checks:
    ```bash
@@ -234,11 +267,17 @@ to complete before proceeding to the next.
        --all-match --format="%B" -1)
    DOER_SUMMARY=$(Agent(subagent_type="looper:summarizer",
        prompt="Compress this multi-commit Doer output into a review brief for the Checker:\n\n${DOER_SUMMARIES}"))
+   # Fallback:
+   #   R=$($SPAWN "looper:summarizer" "Compress this multi-commit Doer output into a review brief for the Checker:
+   #
+   #   ${DOER_SUMMARIES}")
+   #   DOER_SUMMARY=$(cat "$R")
    ```
    Append `DOER_SUMMARY` to the Checker's context under a "## Doer Work Summary" section.
 
 3. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`
    `Agent(subagent_type="looper:checker", prompt=<Checker context from 7c with DOER_SUMMARY appended>)`
+   (Fallback when Agent tool is unavailable: `$SPAWN "looper:checker" "$CHECKER_CONTEXT"`)
 
 #### 7e. Read verdict
 
