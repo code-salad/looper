@@ -234,6 +234,18 @@ pub async fn list_repo_sessions_with_age(repo: &str) -> Vec<(String, Option<i64>
     }
 }
 
+/// Kill all tmux sessions for this repo.
+pub async fn kill_all_repo_sessions(repo: &str) -> usize {
+    let sessions = list_repo_sessions(repo).await;
+    for s in &sessions {
+        let _ = Command::new("tmux")
+            .args(["kill-session", "-t", s.as_str()])
+            .output()
+            .await;
+    }
+    sessions.len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -541,16 +553,4 @@ mod tests {
 
         let _ = tokio::fs::remove_file(&path).await;
     }
-}
-
-/// Kill all tmux sessions for this repo.
-pub async fn kill_all_repo_sessions(repo: &str) -> usize {
-    let sessions = list_repo_sessions(repo).await;
-    for s in &sessions {
-        let _ = Command::new("tmux")
-            .args(["kill-session", "-t", s.as_str()])
-            .output()
-            .await;
-    }
-    sessions.len()
 }
