@@ -7,6 +7,8 @@ pub struct Issue {
     pub number: u64,
     pub title: String,
     pub labels: Vec<Label>,
+    // body is fetched from GitHub but not read by is_blocked (kept for future TUI use)
+    #[allow(dead_code)]
     pub body: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: String,
@@ -27,14 +29,12 @@ pub struct Dependency {
     pub source: DepSource,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DepState {
     Open,
     Closed,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DepSource {
     BlockedBy,
@@ -42,23 +42,19 @@ pub enum DepSource {
 }
 
 // Private Serde helpers for GraphQL JSON decoding.
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct GqlResp {
     data: Option<GqlData>,
     errors: Option<serde_json::Value>,
 }
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct GqlData {
     repository: Option<GqlRepo>,
 }
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct GqlRepo {
     issue: Option<GqlIssue>,
 }
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct GqlIssue {
     #[serde(rename = "blockedBy")]
@@ -66,53 +62,134 @@ struct GqlIssue {
     #[serde(rename = "subIssues")]
     sub_issues: Option<GqlConn>,
 }
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct GqlConn {
     nodes: Vec<GqlDepNode>,
 }
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct GqlDepNode {
     number: u64,
     state: String,
     repository: GqlDepRepo,
 }
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct GqlDepRepo {
     #[serde(rename = "nameWithOwner")]
     name_with_owner: String,
 }
 
-/// Stub: parse_dependencies_json — NOT YET IMPLEMENTED (RED phase stub)
-#[allow(dead_code)]
-pub fn parse_dependencies_json(_json: &str) -> Result<Vec<Dependency>, String> {
-    panic!("not implemented")
+/// Parse a GraphQL response body into a flat Dependency list.
+/// Empty response (missing repo/issue, or dep graph feature disabled)
+/// returns `Ok(vec![])` — callers fall through to label-based blocking.
+pub fn parse_dependencies_json(json: &str) -> Result<Vec<Dependency>, String> {
+    let resp: GqlResp =
+        serde_json::from_str(json).map_err(|e| format!("graphql parse error: {e}"))?;
+    if let Some(errs) = resp.errors {
+        return Err(format!("graphql errors: {errs}"));
+    }
+    let issue = match resp.data.and_then(|d| d.repository).and_then(|r| r.issue) {
+        Some(i) => i,
+        None => return Ok(Vec::new()),
+    };
+    let mut deps = Vec::new();
+    for n in issue.blocked_by.into_iter().flat_map(|c| c.nodes) {
+        deps.push(Dependency {
+            number: n.number,
+            repo: n.repository.name_with_owner,
+            state: parse_state(&n.state),
+            source: DepSource::BlockedBy,
+        });
+    }
+    for n in issue.sub_issues.into_iter().flat_map(|c| c.nodes) {
+        deps.push(Dependency {
+            number: n.number,
+            repo: n.repository.name_with_owner,
+            state: parse_state(&n.state),
+            source: DepSource::SubIssue,
+        });
+    }
+    Ok(deps)
 }
 
-/// Stub: label_blocks — NOT YET IMPLEMENTED (RED phase stub)
-#[allow(dead_code)]
-pub fn label_blocks(_issue: &Issue) -> Option<String> {
-    panic!("not implemented")
+fn parse_state(s: &str) -> DepState {
+    if s.eq_ignore_ascii_case("OPEN") {
+        DepState::Open
+    } else {
+        DepState::Closed
+    }
 }
 
-/// Stub: any_open — NOT YET IMPLEMENTED (RED phase stub)
-#[allow(dead_code)]
-pub fn any_open(_deps: &[Dependency]) -> bool {
-    panic!("not implemented")
+/// Returns the matching label name if any label indicates this issue is
+/// blocked via manual override (label names containing "blocked" or
+/// "dependencies", case-insensitive).
+pub fn label_blocks(issue: &Issue) -> Option<String> {
+    for label in &issue.labels {
+        let lower = label.name.to_lowercase();
+        if lower.contains("blocked") || lower.contains("dependencies") {
+            return Some(label.name.clone());
+        }
+    }
+    None
 }
 
-/// Stub: format_deps_summary — NOT YET IMPLEMENTED (RED phase stub)
-#[allow(dead_code)]
-pub fn format_deps_summary(_deps: &[Dependency]) -> String {
-    panic!("not implemented")
+/// Returns true if any dependency in the list is currently OPEN.
+pub fn any_open(deps: &[Dependency]) -> bool {
+    deps.iter().any(|d| d.state == DepState::Open)
 }
 
-/// Stub: fetch_dependencies — NOT YET IMPLEMENTED (RED phase stub)
-#[allow(dead_code)]
-pub async fn fetch_dependencies(_repo: &str, _number: u64) -> Result<Vec<Dependency>, String> {
-    panic!("not implemented")
+/// Render a Dependency list for the log line — includes source so the reader
+/// can distinguish native "Depends on" edges from sub-issue edges.
+///   []                                                         when empty
+///   [blocked-by owner/repo#5(open), sub-issue owner/repo#9(closed)]
+pub fn format_deps_summary(deps: &[Dependency]) -> String {
+    if deps.is_empty() {
+        return "[]".to_string();
+    }
+    let parts: Vec<String> = deps
+        .iter()
+        .map(|d| {
+            let src = match d.source {
+                DepSource::BlockedBy => "blocked-by",
+                DepSource::SubIssue => "sub-issue",
+            };
+            let state = match d.state {
+                DepState::Open => "open",
+                DepState::Closed => "closed",
+            };
+            format!("{} {}#{}({})", src, d.repo, d.number, state)
+        })
+        .collect();
+    format!("[{}]", parts.join(", "))
+}
+
+/// Fetch tracked dependencies for an issue via GitHub GraphQL.
+///
+/// * Empty vec → issue has no deps, or the repo/org does not expose the
+///   dep-graph feature (caller treats as "not blocked by deps").
+/// * Err → gh invocation failure or GraphQL-level errors.
+///
+/// Note: we cap each connection at `first: 50`. Issues with more than 50
+/// direct deps are pathological for a dev-workflow watcher; add pagination
+/// later if this becomes a problem.
+pub async fn fetch_dependencies(repo: &str, number: u64) -> Result<Vec<Dependency>, String> {
+    let (owner, name) = match repo.split_once('/') {
+        Some((o, n)) if !o.is_empty() && !n.is_empty() => (o, n),
+        _ => return Err(format!("invalid repo format: {repo}")),
+    };
+    let query = format!(
+        r#"query {{ repository(owner: "{owner}", name: "{name}") {{ issue(number: {number}) {{ blockedBy(first: 50) {{ nodes {{ number state repository {{ nameWithOwner }} }} }} subIssues(first: 50) {{ nodes {{ number state repository {{ nameWithOwner }} }} }} }} }} }}"#
+    );
+    let output = Command::new("gh")
+        .args(["api", "graphql", "-f", &format!("query={query}")])
+        .output()
+        .await
+        .map_err(|e| format!("failed to run gh: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("gh api graphql failed: {stderr}"));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_dependencies_json(&stdout)
 }
 
 /// Fetch open unassigned issues from a GitHub repo.
@@ -177,83 +254,36 @@ pub async fn assign_to_me(repo: &str, issue_number: u64, retries: u32) -> Result
     .await
 }
 
-/// Check if a specific issue is open.
-pub async fn is_issue_open(repo: &str, number: u64) -> bool {
-    let output = Command::new("gh")
-        .args([
-            "issue",
-            "view",
-            &number.to_string(),
-            "--repo",
-            repo,
-            "--json",
-            "state",
-            "--jq",
-            ".state",
-        ])
-        .output()
-        .await;
-
-    match output {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim() == "OPEN",
-        _ => false,
-    }
-}
-
-/// Check if an issue is blocked by labels or body references.
+/// Check if an issue is blocked by labels (manual override) or by any open
+/// GitHub-tracked dependency (`blockedBy` + `subIssues`).
 pub async fn is_blocked(issue: &Issue, repo: &str) -> bool {
-    // Label-based blocking
-    for label in &issue.labels {
-        let name = label.name.to_lowercase();
-        if name.contains("blocked") || name.contains("dependencies") {
-            return true;
-        }
+    // 1. Label-based manual override (single source of truth: label_blocks).
+    if let Some(name) = label_blocks(issue) {
+        eprintln!("#{}: blocked by label '{}'", issue.number, name);
+        return true;
     }
 
-    let body = match &issue.body {
-        Some(b) => b,
-        None => return false,
-    };
-
-    // Check for dependency references
-    for line in body.lines() {
-        let is_dep_line = line.contains("- [ ] Depends on #")
-            || line.contains("- [ ] depends on #")
-            || line.starts_with("- [ ] #")
-            || line.to_lowercase().contains("blocked by #");
-
-        if is_dep_line {
-            for num in extract_issue_numbers(line) {
-                if is_issue_open(repo, num).await {
-                    return true;
-                }
-            }
+    // 2. Native GitHub dependency graph.
+    match fetch_dependencies(repo, issue.number).await {
+        Ok(deps) => {
+            let summary = format_deps_summary(&deps);
+            let blocked = any_open(&deps);
+            eprintln!(
+                "#{}: deps={} -> {}",
+                issue.number,
+                summary,
+                if blocked { "blocked" } else { "not blocked" }
+            );
+            blocked
+        }
+        Err(e) => {
+            eprintln!(
+                "#{}: dep-graph query failed ({}); treating as not blocked",
+                issue.number, e
+            );
+            false
         }
     }
-
-    false
-}
-
-fn extract_issue_numbers(line: &str) -> Vec<u64> {
-    let mut numbers = Vec::new();
-    let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '#' {
-            let mut num_str = String::new();
-            while let Some(&d) = chars.peek() {
-                if d.is_ascii_digit() {
-                    num_str.push(d);
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
-            if let Ok(n) = num_str.parse::<u64>() {
-                numbers.push(n);
-            }
-        }
-    }
-    numbers
 }
 
 /// Retry an async operation with exponential backoff.
@@ -289,29 +319,6 @@ where
 mod tests {
     use super::*;
 
-    /// Extract just the label-based blocking decision (no network needed).
-    fn is_blocked_by_labels(issue: &Issue) -> bool {
-        issue.labels.iter().any(|l| {
-            let name = l.name.to_lowercase();
-            name.contains("blocked") || name.contains("dependencies")
-        })
-    }
-
-    /// Check if the body contains dependency reference lines (without resolving them).
-    fn dependency_refs_in_body(body: &str) -> Vec<u64> {
-        let mut refs = Vec::new();
-        for line in body.lines() {
-            let is_dep_line = line.contains("- [ ] Depends on #")
-                || line.contains("- [ ] depends on #")
-                || line.starts_with("- [ ] #")
-                || line.to_lowercase().contains("blocked by #");
-            if is_dep_line {
-                refs.extend(extract_issue_numbers(line));
-            }
-        }
-        refs
-    }
-
     fn make_issue_with_labels(labels: &[&str]) -> Issue {
         Issue {
             number: 1,
@@ -325,111 +332,6 @@ mod tests {
             body: None,
             created_at: "2024-01-01T00:00:00Z".to_string(),
         }
-    }
-
-    // ── extract_issue_numbers ────────────────────────────────────────
-
-    #[test]
-    fn extract_single_issue_number() {
-        assert_eq!(extract_issue_numbers("Depends on #42"), vec![42]);
-    }
-
-    #[test]
-    fn extract_multiple_issue_numbers() {
-        assert_eq!(
-            extract_issue_numbers("- [ ] #10 and #20 and #30"),
-            vec![10, 20, 30]
-        );
-    }
-
-    #[test]
-    fn extract_no_issue_numbers_from_plain_text() {
-        assert!(extract_issue_numbers("no issues here").is_empty());
-    }
-
-    #[test]
-    fn extract_ignores_hash_without_digits() {
-        assert!(extract_issue_numbers("# Heading").is_empty());
-    }
-
-    #[test]
-    fn extract_handles_hash_at_end_of_line() {
-        assert!(extract_issue_numbers("trailing #").is_empty());
-    }
-
-    #[test]
-    fn extract_adjacent_hashes() {
-        assert_eq!(extract_issue_numbers("#1#2#3"), vec![1, 2, 3]);
-    }
-
-    // ── label-based blocking ─────────────────────────────────────────
-
-    #[test]
-    fn blocked_by_label_containing_blocked() {
-        let issue = make_issue_with_labels(&["blocked"]);
-        assert!(is_blocked_by_labels(&issue));
-    }
-
-    #[test]
-    fn blocked_by_label_containing_dependencies() {
-        let issue = make_issue_with_labels(&["dependencies"]);
-        assert!(is_blocked_by_labels(&issue));
-    }
-
-    #[test]
-    fn not_blocked_by_unrelated_labels() {
-        let issue = make_issue_with_labels(&["bug", "enhancement", "priority:high"]);
-        assert!(!is_blocked_by_labels(&issue));
-    }
-
-    #[test]
-    fn blocked_label_is_case_insensitive() {
-        let issue = make_issue_with_labels(&["BLOCKED"]);
-        assert!(is_blocked_by_labels(&issue));
-    }
-
-    #[test]
-    fn not_blocked_when_no_labels() {
-        let issue = make_issue_with_labels(&[]);
-        assert!(!is_blocked_by_labels(&issue));
-    }
-
-    // ── dependency reference detection ───────────────────────────────
-
-    #[test]
-    fn detects_depends_on_syntax() {
-        let body = "Some context\n- [ ] Depends on #15\n- [x] Done";
-        assert_eq!(dependency_refs_in_body(body), vec![15]);
-    }
-
-    #[test]
-    fn detects_lowercase_depends_on() {
-        let body = "- [ ] depends on #7";
-        assert_eq!(dependency_refs_in_body(body), vec![7]);
-    }
-
-    #[test]
-    fn detects_blocked_by_syntax() {
-        let body = "Blocked by #3 and #4";
-        assert_eq!(dependency_refs_in_body(body), vec![3, 4]);
-    }
-
-    #[test]
-    fn detects_checkbox_issue_ref() {
-        let body = "- [ ] #100\n- [x] #200";
-        // Only unchecked checkboxes starting with "- [ ] #" are dependency lines
-        assert_eq!(dependency_refs_in_body(body), vec![100]);
-    }
-
-    #[test]
-    fn no_refs_in_plain_body() {
-        let body = "This is a normal issue body with no dependencies.";
-        assert!(dependency_refs_in_body(body).is_empty());
-    }
-
-    #[test]
-    fn no_refs_when_body_empty() {
-        assert!(dependency_refs_in_body("").is_empty());
     }
 
     // ── parse_dependencies_json ──────────────────────────────────────

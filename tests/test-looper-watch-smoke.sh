@@ -203,8 +203,8 @@ assert_exit_zero "kanban categorization tests" "$rc"
 echo ""
 echo "=== Test: github parsing via Rust tests ==="
 rc=0
-cargo test -p looper-watch extract_ --quiet 2>&1 || rc=$?
-assert_exit_zero "github extract_issue_numbers tests" "$rc"
+cargo test -p looper-watch parse_dependencies_json_ --quiet 2>&1 || rc=$?
+assert_exit_zero "github parse_dependencies_json tests" "$rc"
 
 # ──────────────────────────────────────────────────────────────────────
 echo ""
