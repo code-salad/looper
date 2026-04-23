@@ -141,22 +141,18 @@ GQL_NAME="${GQL_REPO##*/}"
 # Build GraphQL query (single line to avoid heredoc quoting issues)
 GQL_QUERY=$(printf 'query { repository(owner: "%s", name: "%s") { issue(number: %s) { comments(first: 30) { nodes { author { login } createdAt body } } blockedBy(first: 50) { nodes { number state title repository { nameWithOwner } } } subIssues(first: 50) { nodes { number state title repository { nameWithOwner } } } } } }' "$GQL_OWNER" "$GQL_NAME" "$ISSUE_NUMBER")
 
+# Helper: emit degraded placeholder and exit
+emit_degraded() {
+    printf '\n<!-- PLANNER-ONLY -->\n\n### Issue Comments\n\n_(No comments fetched — GraphQL unavailable.)_\n'
+    exit 0
+}
+
 # Execute GraphQL — suppress stderr, capture output
-GQL_OUT=""
-GQL_OK=true
-GQL_OUT=$(gh api graphql -f "query=$GQL_QUERY" 2>/dev/null) || GQL_OK=false
+GQL_OUT=$(gh api graphql -f "query=$GQL_QUERY" 2>/dev/null) || emit_degraded
 
-if [ "$GQL_OK" = "false" ] || [ -z "$GQL_OUT" ]; then
-    # Graceful degradation: emit placeholder sections
-    printf '\n<!-- PLANNER-ONLY -->\n\n### Issue Comments\n\n_(No comments fetched — GraphQL unavailable.)_\n'
-    exit 0
-fi
-
-# Validate JSON — if jq can't parse it, treat as failure
-if ! echo "$GQL_OUT" | jq empty 2>/dev/null; then
-    printf '\n<!-- PLANNER-ONLY -->\n\n### Issue Comments\n\n_(No comments fetched — GraphQL unavailable.)_\n'
-    exit 0
-fi
+# Treat empty output or invalid JSON as failure
+[ -n "$GQL_OUT" ] || emit_degraded
+echo "$GQL_OUT" | jq empty 2>/dev/null || emit_degraded
 
 # Extract comments (null-coalescing fallback to empty nodes array)
 COMMENTS_SECTION=""
