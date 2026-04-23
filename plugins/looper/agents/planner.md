@@ -37,8 +37,11 @@ modify any project files — only commit a plan as a git commit message.
 
 2. **Gather context and explore in parallel** — Launch all four tracks as
    separate tool calls in a single message:
-   - **Track A (Bash):** Run `$SCRIPTS_DIR/git-loop-context` and
-     `$SCRIPTS_DIR/detect-stack` as two parallel Bash calls
+   - **Track A (Bash):** Run `$SCRIPTS_DIR/detect-stack` to identify the
+     project tech stack. (The prior loop context is already pre-injected
+     upstream in the `## Prior Loop Context` section of this prompt — do
+     NOT re-fetch it manually; that duplicates input tokens in the same
+     agent turn.)
    - **Track B (Glob):** Map project structure — top-level files, primary
      source directory, test directory
    - **Track C:** If iteration > 1, spawn an Explore subagent to
@@ -240,6 +243,7 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `detect-compose` — Detect docker-compose and extract service port mappings
 - `compose-lifecycle` — Start/stop docker-compose services (`up --task`, `down`)
 - `git-loop-context` — Read prior loop iterations from git log
+  (pre-injected as `## Prior Loop Context`; do not call manually)
 - `git-commit-loop` — Create commits with loop trailers
 
 The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.

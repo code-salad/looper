@@ -79,6 +79,16 @@ case "$ROLE" in
         ;;
 esac
 
+# If caller didn't pass --loop-context and we're past iter 1, fetch the loop
+# context scoped to the role. Preserve legacy passthrough: if --loop-context
+# is non-empty (even if just "placeholder"), use it verbatim.
+if [ -z "$LOOP_CONTEXT" ] && [ "$ITERATION" -gt 1 ]; then
+    LOOP_CONTEXT=$("$SCRIPTS_DIR/git-loop-context" \
+        --task "$TASK_NAME" \
+        --iteration "$ITERATION" \
+        --role "$ROLE")
+fi
+
 # --- Helper: read file if it exists, empty string otherwise ---
 read_file_if_exists() {
     local path="$1"
@@ -171,97 +181,101 @@ CARGO_TOML_CONTENT=$(read_file_if_exists "$CARGO_TOML_FILE")
 # --- Build role-specific PROJECT_CONTEXT ---
 PROJECT_CONTEXT=""
 
-case "$ROLE" in
-    planner)
-        # Full context: all docs + all build configs
-        if [ -n "$CONTRIBUTING_FULL" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "CONTRIBUTING.md" "$CONTRIBUTING_FULL")"
-        fi
-        if [ -n "$README_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "README.md" "$README_CONTENT")"
-        fi
-        if [ -n "$AGENTS_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "AGENTS.md" "$AGENTS_CONTENT")"
-        fi
-        if [ -n "$PR_TEMPLATE_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section ".github/PULL_REQUEST_TEMPLATE.md" "$PR_TEMPLATE_CONTENT")"
-        fi
-        if [ -n "$EDITORCONFIG_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section ".editorconfig" "$EDITORCONFIG_CONTENT")"
-        fi
-        if [ -n "$PACKAGE_JSON_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "package.json" "$PACKAGE_JSON_CONTENT")"
-        fi
-        if [ -n "$MAKEFILE_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Makefile (targets)" "$MAKEFILE_CONTENT")"
-        fi
-        if [ -n "$PYPROJECT_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "pyproject.toml" "$PYPROJECT_CONTENT")"
-        fi
-        if [ -n "$CARGO_TOML_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Cargo.toml" "$CARGO_TOML_CONTENT")"
-        fi
-        ;;
+if [ "$ITERATION" -eq 1 ]; then
+    case "$ROLE" in
+        planner)
+            # Full context: all docs + all build configs
+            if [ -n "$CONTRIBUTING_FULL" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "CONTRIBUTING.md" "$CONTRIBUTING_FULL")"
+            fi
+            if [ -n "$README_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "README.md" "$README_CONTENT")"
+            fi
+            if [ -n "$AGENTS_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "AGENTS.md" "$AGENTS_CONTENT")"
+            fi
+            if [ -n "$PR_TEMPLATE_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section ".github/PULL_REQUEST_TEMPLATE.md" "$PR_TEMPLATE_CONTENT")"
+            fi
+            if [ -n "$EDITORCONFIG_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section ".editorconfig" "$EDITORCONFIG_CONTENT")"
+            fi
+            if [ -n "$PACKAGE_JSON_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "package.json" "$PACKAGE_JSON_CONTENT")"
+            fi
+            if [ -n "$MAKEFILE_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Makefile (targets)" "$MAKEFILE_CONTENT")"
+            fi
+            if [ -n "$PYPROJECT_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "pyproject.toml" "$PYPROJECT_CONTENT")"
+            fi
+            if [ -n "$CARGO_TOML_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Cargo.toml" "$CARGO_TOML_CONTENT")"
+            fi
+            ;;
 
-    doer)
-        # Focused: Code Style section + .editorconfig + build config scripts only
-        CODE_STYLE_CONTENT=""
-        if [ -n "$CONTRIBUTING_CODE_STYLE" ]; then
-            CODE_STYLE_CONTENT="## Code Style
+        doer)
+            # Focused: Code Style section + .editorconfig + build config scripts only
+            CODE_STYLE_CONTENT=""
+            if [ -n "$CONTRIBUTING_CODE_STYLE" ]; then
+                CODE_STYLE_CONTENT="## Code Style
 
 $CONTRIBUTING_CODE_STYLE"
-        fi
-        if [ -n "$CODE_STYLE_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "CONTRIBUTING.md (Code Style)" "$CODE_STYLE_CONTENT")"
-        fi
-        if [ -n "$EDITORCONFIG_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section ".editorconfig" "$EDITORCONFIG_CONTENT")"
-        fi
-        if [ -n "$PACKAGE_JSON_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "package.json (scripts)" "$PACKAGE_JSON_CONTENT")"
-        fi
-        if [ -n "$MAKEFILE_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Makefile (targets)" "$MAKEFILE_CONTENT")"
-        fi
-        if [ -n "$PYPROJECT_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "pyproject.toml" "$PYPROJECT_CONTENT")"
-        fi
-        if [ -n "$CARGO_TOML_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Cargo.toml" "$CARGO_TOML_CONTENT")"
-        fi
-        ;;
+            fi
+            if [ -n "$CODE_STYLE_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "CONTRIBUTING.md (Code Style)" "$CODE_STYLE_CONTENT")"
+            fi
+            if [ -n "$EDITORCONFIG_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section ".editorconfig" "$EDITORCONFIG_CONTENT")"
+            fi
+            if [ -n "$PACKAGE_JSON_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "package.json (scripts)" "$PACKAGE_JSON_CONTENT")"
+            fi
+            if [ -n "$MAKEFILE_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Makefile (targets)" "$MAKEFILE_CONTENT")"
+            fi
+            if [ -n "$PYPROJECT_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "pyproject.toml" "$PYPROJECT_CONTENT")"
+            fi
+            if [ -n "$CARGO_TOML_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Cargo.toml" "$CARGO_TOML_CONTENT")"
+            fi
+            ;;
 
-    checker)
-        # Minimal: Code Style + Testing sections + test/lint/build commands
-        CHECKER_CONTRIBUTING=""
-        if [ -n "$CONTRIBUTING_CODE_STYLE" ]; then
-            CHECKER_CONTRIBUTING="${CHECKER_CONTRIBUTING}## Code Style
+        checker)
+            # Minimal: Code Style + Testing sections + test/lint/build commands
+            CHECKER_CONTRIBUTING=""
+            if [ -n "$CONTRIBUTING_CODE_STYLE" ]; then
+                CHECKER_CONTRIBUTING="${CHECKER_CONTRIBUTING}## Code Style
 
 $CONTRIBUTING_CODE_STYLE
 "
-        fi
-        if [ -n "$CONTRIBUTING_TESTING" ]; then
-            CHECKER_CONTRIBUTING="${CHECKER_CONTRIBUTING}## Testing and CI
+            fi
+            if [ -n "$CONTRIBUTING_TESTING" ]; then
+                CHECKER_CONTRIBUTING="${CHECKER_CONTRIBUTING}## Testing and CI
 
 $CONTRIBUTING_TESTING"
-        fi
-        if [ -n "$CHECKER_CONTRIBUTING" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "CONTRIBUTING.md (Code Style + Testing)" "$CHECKER_CONTRIBUTING")"
-        fi
-        if [ -n "$PACKAGE_JSON_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "package.json (scripts)" "$PACKAGE_JSON_CONTENT")"
-        fi
-        if [ -n "$MAKEFILE_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Makefile (targets)" "$MAKEFILE_CONTENT")"
-        fi
-        if [ -n "$PYPROJECT_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "pyproject.toml" "$PYPROJECT_CONTENT")"
-        fi
-        if [ -n "$CARGO_TOML_CONTENT" ]; then
-            PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Cargo.toml" "$CARGO_TOML_CONTENT")"
-        fi
-        ;;
-esac
+            fi
+            if [ -n "$CHECKER_CONTRIBUTING" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "CONTRIBUTING.md (Code Style + Testing)" "$CHECKER_CONTRIBUTING")"
+            fi
+            if [ -n "$PACKAGE_JSON_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "package.json (scripts)" "$PACKAGE_JSON_CONTENT")"
+            fi
+            if [ -n "$MAKEFILE_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Makefile (targets)" "$MAKEFILE_CONTENT")"
+            fi
+            if [ -n "$PYPROJECT_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "pyproject.toml" "$PYPROJECT_CONTENT")"
+            fi
+            if [ -n "$CARGO_TOML_CONTENT" ]; then
+                PROJECT_CONTEXT="${PROJECT_CONTEXT}$(format_file_section "Cargo.toml" "$CARGO_TOML_CONTENT")"
+            fi
+            ;;
+    esac
+else
+    PROJECT_CONTEXT="See Planner commit from iteration 1 — project context unchanged."
+fi
 
 # --- Assemble issue context ---
 if [ -z "$ISSUE_BODY" ]; then
@@ -325,13 +339,3 @@ cat << LOOP_EOF
 
 ${LOOP_CONTEXT:-This is the first iteration. No prior context available.}
 LOOP_EOF
-
-# Planner iteration > 1: add pruning note
-if [ "$ROLE" = "planner" ] && [ "$ITERATION" -gt 1 ]; then
-    cat << PRUNE_EOF
-
-NOTE: This is iteration ${ITERATION}. Project context is the same as iteration 1.
-Spawn Explore subagents ONLY for the areas the Checker flagged — do not
-re-explore the entire codebase. The action items above are your focus.
-PRUNE_EOF
-fi

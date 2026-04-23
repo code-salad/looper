@@ -164,11 +164,10 @@ MAX_ITERATIONS="${LOOPER_MAX_ITERATIONS:-10}"
 
 For each iteration from `START_ITERATION` to `MAX_ITERATIONS`:
 
-#### 7a. Get loop context
+#### 7a. Get loop context (per-role, inside `build-agent-context`)
 
-```bash
-LOOP_CONTEXT=$($SCRIPTS_DIR/git-loop-context --task "$TASK_NAME" --iteration $ITERATION)
-```
+Loop context is fetched per-role inside `build-agent-context` in step 7c.
+No upstream shared fetch is needed.
 
 #### 7b. Generate isolated dev port
 
@@ -231,7 +230,7 @@ CTX_COMMON=(
     --task-prompt "$TASK_PROMPT" --scripts-dir "$SCRIPTS_DIR"
     --worktree-dir "$WORKTREE_DIR" --dev-port "$LOOPER_DEV_PORT"
     --compose "${HAS_COMPOSE:-false}" --compose-services "${COMPOSE_SERVICES:-none}"
-    --issue-body "$ISSUE_BODY" --loop-context "$LOOP_CONTEXT"
+    --issue-body "$ISSUE_BODY"
 )
 
 PLANNER_CONTEXT=$($SCRIPTS_DIR/build-agent-context --role planner "${CTX_COMMON[@]}")
