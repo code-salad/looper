@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# check-scope — Verify a commit's changed files are within an expected-files set
+#
+# Usage: check-scope --expected-files <list> --commit <hash>
+#        check-scope --expected-files-file <path> --commit <hash>
+#
+# --expected-files    Comma-separated or newline-separated list of expected paths.
+#                     Each entry may be a plain file path or a glob (matched via
+#                     bash extended globbing).
+# --expected-files-file  Path to a file with one expected path per line.
+# --commit            Commit hash to inspect. The script diffs <hash>^..<hash>.
+#
+# Exit 0: All changed files are within the expected set (+ their tests + common
+#         companion edits). Prints nothing.
+# Exit 1: One or more changed files fall outside the expected set. Prints drift
+#         files one per line to stdout, then a human-readable summary to stderr.
+# Exit 2: Invalid arguments or git failure.
+#
+# Tolerance rules (companion edits allowed without being explicitly listed):
+#   - <package>-lock files when the matching manifest is expected:
+#       Cargo.toml      -> Cargo.lock
+#       package.json    -> package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb
+#       pyproject.toml  -> poetry.lock, uv.lock
+#       Gemfile         -> Gemfile.lock
+#       go.mod          -> go.sum
+#       composer.json   -> composer.lock
+#   - Test files that match an expected source file via common conventions
+#     (e.g. tests/test_<name>.sh, __tests__/<name>.test.*, <name>_test.*,
+#     tests/<name>_test.rs). Test files that do NOT derive from an expected
+#     source stem are treated as drift — unrelated tests dropped under
+#     tests/ are precisely the kind of scope creep this guard should catch.
+#   - Snapshot files under __snapshots__/, snapshots/, or *.snap alongside
+#     expected files.
+
+EXPECTED_LIST=""
+EXPECTED_FILE=""
+COMMIT=""
+
+usage() {
+    cat >&2 <<'USAGE'
+Usage: check-scope --expected-files <list> --commit <hash>
+       check-scope --expected-files-file <path> --commit <hash>
+
+Options:
+  --expected-files <list>        Comma- or newline-separated expected paths.
+  --expected-files-file <path>   File with one expected path per line.
+  --commit <hash>                Commit hash to inspect (diffs <hash>^..<hash>).
+  -h, --help                     Show this help.
+USAGE
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --expected-files)
+            EXPECTED_LIST="$2"
+            shift 2
+            ;;
+        --expected-files-file)
+            EXPECTED_FILE="$2"
+            shift 2
+            ;;
+        --commit)
+            COMMIT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+if [ -z "$COMMIT" ]; then
+    echo "Error: --commit is required" >&2
+    usage
+    exit 2
+fi
+
+if [ -z "$EXPECTED_LIST" ] && [ -z "$EXPECTED_FILE" ]; then
+    echo "Error: one of --expected-files or --expected-files-file is required" >&2
+    usage
+    exit 2
+fi
+
+# Collect expected paths into an array, stripping blanks and comments.
+declare -a EXPECTED=()
+add_expected() {
+    local raw="$1"
+    # Allow comma-separated or newline-separated
+    while IFS= read -r line; do
+        # Trim whitespace
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        # Skip blanks and comment lines
+        [ -z "$line" ] && continue
+        case "$line" in \#*) continue ;; esac
+        # Strip surrounding quotes/backticks commonly seen in markdown plans
+        line="${line#\`}"
+        line="${line%\`}"
+        line="${line#\"}"
+        line="${line%\"}"
+        EXPECTED+=("$line")
+    done < <(printf '%s\n' "$raw" | tr ',' '\n')
+}
+
+if [ -n "$EXPECTED_FILE" ]; then
+    if [ ! -f "$EXPECTED_FILE" ]; then
+        echo "Error: expected-files file not found: $EXPECTED_FILE" >&2
+        exit 2
+    fi
+    add_expected "$(cat "$EXPECTED_FILE")"
+fi
+
+if [ -n "$EXPECTED_LIST" ]; then
+    add_expected "$EXPECTED_LIST"
+fi
+
+if [ "${#EXPECTED[@]}" -eq 0 ]; then
+    echo "Error: no expected files parsed from input" >&2
+    exit 2
+fi
+
+# Get the list of changed files in the commit.
+CHANGED=$(git diff --name-only "$COMMIT^..$COMMIT" 2>/dev/null) || {
+    echo "Error: could not diff $COMMIT^..$COMMIT" >&2
+    exit 2
+}
+
+if [ -z "$CHANGED" ]; then
+    # No changes — trivially within scope.
+    exit 0
+fi
+
+# Build the companion-edit map based on expected manifests.
+declare -a COMPANIONS=()
+add_companion() {
+    COMPANIONS+=("$1")
+}
+
+for exp in "${EXPECTED[@]}"; do
+    base="$(basename "$exp")"
+    dir="$(dirname "$exp")"
+    # Normalize "." dir to empty
+    [ "$dir" = "." ] && dir=""
+    prefix=""
+    [ -n "$dir" ] && prefix="${dir}/"
+    case "$base" in
+        Cargo.toml)
+            add_companion "${prefix}Cargo.lock"
+            ;;
+        package.json)
+            add_companion "${prefix}package-lock.json"
+            add_companion "${prefix}yarn.lock"
+            add_companion "${prefix}pnpm-lock.yaml"
+            add_companion "${prefix}bun.lockb"
+            ;;
+        pyproject.toml)
+            add_companion "${prefix}poetry.lock"
+            add_companion "${prefix}uv.lock"
+            ;;
+        Gemfile)
+            add_companion "${prefix}Gemfile.lock"
+            ;;
+        go.mod)
+            add_companion "${prefix}go.sum"
+            ;;
+        composer.json)
+            add_companion "${prefix}composer.lock"
+            ;;
+    esac
+done
+
+# match_path: returns 0 if $path is within the expected/tolerance set.
+match_path() {
+    local path="$1"
+    local exp
+    local base
+    local stem
+    local dir
+
+    # 1. Exact or glob match against expected
+    for exp in "${EXPECTED[@]}"; do
+        if [ "$path" = "$exp" ]; then
+            return 0
+        fi
+        # Glob match (bash pattern). Use [[ ]] with pattern on RHS unquoted.
+        # Extglob patterns may be present; enable extglob for the match.
+        shopt -s extglob
+        # shellcheck disable=SC2053
+        if [[ "$path" == $exp ]]; then
+            shopt -u extglob
+            return 0
+        fi
+        shopt -u extglob
+        # Directory-prefix expected: "foo/" or "foo" treated as dir if it exists
+        if [ -d "$exp" ] || [[ "$exp" == */ ]]; then
+            local trimmed="${exp%/}"
+            if [[ "$path" == "$trimmed"/* ]]; then
+                return 0
+            fi
+        fi
+    done
+
+    # 2. Companion match
+    for exp in "${COMPANIONS[@]}"; do
+        if [ "$path" = "$exp" ]; then
+            return 0
+        fi
+    done
+
+    # 3. Test-file heuristics for each expected source file.
+    base="$(basename "$path")"
+    for exp in "${EXPECTED[@]}"; do
+        local exp_base
+        exp_base="$(basename "$exp")"
+        # Strip extension to get the stem
+        stem="${exp_base%.*}"
+        [ -z "$stem" ] && continue
+        # Skip if expected is itself a test-y file — no derivation
+        # Accept test files that reference the stem in common conventions:
+        #   test_<stem>.*        tests/test_<stem>.*
+        #   <stem>_test.*        <stem>.test.*  <stem>.spec.*
+        #   __tests__/<stem>.*   __tests__/<stem>.test.*
+        case "$path" in
+            *"test_${stem}".*|*"tests/test_${stem}".*) return 0 ;;
+            *"${stem}_test".*|*"${stem}.test".*|*"${stem}.spec".*) return 0 ;;
+            *"__tests__/${stem}".*|*"__tests__/${stem}/"*) return 0 ;;
+            *"tests/${stem}_test".*|*"tests/${stem}".*) return 0 ;;
+        esac
+    done
+
+    # 4. Snapshot updates alongside expected files.
+    dir="$(dirname "$path")"
+    case "$path" in
+        *__snapshots__/*|*/snapshots/*|*.snap)
+            # Accept if the containing parent dir matches any expected dir.
+            for exp in "${EXPECTED[@]}"; do
+                local exp_dir
+                exp_dir="$(dirname "$exp")"
+                if [[ "$dir" == "$exp_dir"* ]]; then
+                    return 0
+                fi
+            done
+            ;;
+    esac
+
+    return 1
+}
+
+declare -a DRIFT=()
+while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    if ! match_path "$file"; then
+        DRIFT+=("$file")
+    fi
+done <<< "$CHANGED"
+
+if [ "${#DRIFT[@]}" -eq 0 ]; then
+    exit 0
+fi
+
+# Print drift files to stdout, one per line (machine-readable).
+for f in "${DRIFT[@]}"; do
+    printf '%s\n' "$f"
+done
+
+# Human-readable summary to stderr.
+{
+    echo ""
+    echo "Scope drift detected in commit $COMMIT:"
+    echo "  ${#DRIFT[@]} file(s) changed outside the expected set."
+    echo ""
+    echo "Expected files:"
+    for exp in "${EXPECTED[@]}"; do
+        echo "  - $exp"
+    done
+    echo ""
+    echo "Action: revert the extraneous changes OR document why they were"
+    echo "necessary in the GREEN commit body. Undocumented drift will be"
+    echo "treated as scope creep by the Checker."
+} >&2
+
+exit 1

@@ -192,6 +192,62 @@ echo "=== Test 10: checker.md and planner.md are significantly shorter ==="
 assert_line_count_lt "checker.md is under 350 lines (was 482)" "$CHECKER_MD" 350
 assert_line_count_lt "planner.md is under 360 lines (was 311, +52 for on-demand gh rules + issue context sub-sections)" "$PLANNER_MD" 360
 
+# --- Test 11: simplifier.md agent exists with valid frontmatter ---
+echo "=== Test 11: simplifier.md exists with valid frontmatter ==="
+SIMPLIFIER_MD="$AGENTS_DIR/simplifier.md"
+assert_file_exists "simplifier.md exists" "$SIMPLIFIER_MD"
+if [ -f "$SIMPLIFIER_MD" ]; then
+    first_line="$(head -1 "$SIMPLIFIER_MD" 2>/dev/null || echo "")"
+    assert_true "simplifier.md starts with ---" "$([ "$first_line" = "---" ] && echo "true" || echo "false")"
+    assert_file_contains "simplifier.md has name: simplifier" "$SIMPLIFIER_MD" "^name: simplifier$"
+    assert_file_contains "simplifier.md has model: sonnet" "$SIMPLIFIER_MD" "^model: sonnet$"
+    assert_file_contains "simplifier.md has tools: field" "$SIMPLIFIER_MD" "^tools:"
+    assert_file_contains "simplifier.md tools include Read" "$SIMPLIFIER_MD" "^tools:.*Read"
+    assert_file_contains "simplifier.md tools include Edit" "$SIMPLIFIER_MD" "^tools:.*Edit"
+    assert_file_contains "simplifier.md tools include Bash" "$SIMPLIFIER_MD" "^tools:.*Bash"
+    assert_file_contains "simplifier.md tools include Glob" "$SIMPLIFIER_MD" "^tools:.*Glob"
+    assert_file_contains "simplifier.md tools include Grep" "$SIMPLIFIER_MD" "^tools:.*Grep"
+    # Scope-awareness + verdict structure
+    assert_file_contains "simplifier.md mentions Scope Guard" "$SIMPLIFIER_MD" "Scope Guard"
+    assert_file_contains "simplifier.md defines APPLIED verdict" "$SIMPLIFIER_MD" "APPLIED"
+    assert_file_contains "simplifier.md defines SKIPPED verdict" "$SIMPLIFIER_MD" "SKIPPED"
+    assert_file_contains "simplifier.md defines REVERTED verdict" "$SIMPLIFIER_MD" "REVERTED"
+fi
+
+# --- Test 12: doer.md step numbering is unique (each step 1..16 appears once) ---
+echo "=== Test 12: doer.md step numbers are unique ==="
+DOER_MD="$AGENTS_DIR/doer.md"
+if [ -f "$DOER_MD" ]; then
+    dup_count=$(grep -oE '^[0-9]+\.' "$DOER_MD" | sort | uniq -d | wc -l)
+    dup_count=$(echo "$dup_count" | tr -d '[:space:]')
+    assert_true "doer.md has no duplicate step numbers (duplicates=$dup_count)" \
+        "$([ "$dup_count" = "0" ] && echo "true" || echo "false")"
+fi
+
+# --- Test 13: doer.md references looper:simplifier (not general-purpose simplifier) ---
+echo "=== Test 13: doer.md uses looper:simplifier subagent ==="
+if [ -f "$DOER_MD" ]; then
+    assert_file_contains "doer.md spawns looper:simplifier" "$DOER_MD" 'looper:simplifier'
+    assert_file_not_contains "doer.md does not inline 'You are a code simplifier' prompt" \
+        "$DOER_MD" "You are a code simplifier"
+fi
+
+# --- Test 14: doer.md mentions check-scope helper ---
+echo "=== Test 14: doer.md invokes check-scope after GREEN ==="
+if [ -f "$DOER_MD" ]; then
+    assert_file_contains "doer.md references check-scope helper" "$DOER_MD" "check-scope"
+fi
+
+# --- Test 15: doer.md replaces '2 fix attempts' with delta-aware rule ---
+echo "=== Test 15: doer.md smarter retry policy ==="
+if [ -f "$DOER_MD" ]; then
+    assert_file_contains "doer.md mentions error delta" "$DOER_MD" "Error delta\|error delta\|error prefix\|ERROR_DELTA"
+    assert_file_contains "doer.md references per-iteration last-error scratch file" \
+        "$DOER_MD" 'last-error-\${ITERATION}'
+    assert_file_not_contains "doer.md no longer uses 'after 2 fix attempts' language" \
+        "$DOER_MD" "after 2 fix attempts"
+fi
+
 # --- Summary ---
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

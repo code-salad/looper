@@ -191,15 +191,55 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    4. Only modify tests if they have a genuine bug (wrong assertion, typo),
       NOT because the implementation took a different approach
 
-   **If the same test is still failing after 2 fix attempts in this phase,
-   STOP guessing and spawn the systematic debugger** before attempting a third
-   fix. Random patches mask root causes and waste loop iterations.
+   **Smarter fix-attempt policy (error-delta aware).** Instead of a flat "2
+   attempts then debugger" rule, decide escalation by comparing the *current*
+   error against the *previous* attempt. This distinguishes "Doer is learning"
+   from "Doer is stuck guessing" and escalates exactly when it helps.
+
+   After each failed test run, record the error prefix to a scratch file so
+   the comparison is robust across shell-turn boundaries:
+   ```bash
+   TMPDIR="/tmp/looper-${TASK_NAME}"
+   mkdir -p "$TMPDIR"
+   ATTEMPT_N=<1 for the first failure, +1 for each subsequent failed run>
+   CUR_ERR_FILE="$TMPDIR/last-error-${ITERATION}-${ATTEMPT_N}.txt"
+   PREV_ERR_FILE="$TMPDIR/last-error-${ITERATION}-$((ATTEMPT_N-1)).txt"
+   # Capture "failing test name + first ~10 error lines" as the comparable prefix
+   $SCRIPTS_DIR/run-tests 2>&1 | head -40 > "$CUR_ERR_FILE" || true
+   ```
+
+   Decide what to do next based on the delta:
+   - **Attempt 1 failed:** Try one more fix. Do not escalate yet.
+   - **Attempt 2+ failed AND current error prefix matches previous** (same
+     failing test and same error string prefix within the scratch file):
+     the Doer is not learning. Spawn the debugger immediately — do NOT
+     consume another blind fix attempt.
+   - **Attempt 2+ failed AND error prefix changed:** the Doer IS making
+     progress. Allow up to 2 more attempts (total cap: 4 attempts per test),
+     then escalate.
+   - **4 attempts on the same test regardless of delta:** hard cap — spawn
+     the debugger.
+
+   A simple delta check in shell:
+   ```bash
+   if [ -f "$PREV_ERR_FILE" ] && diff -q "$CUR_ERR_FILE" "$PREV_ERR_FILE" >/dev/null 2>&1; then
+       ERROR_DELTA="unchanged"   # stuck — escalate now
+   else
+       ERROR_DELTA="changed"     # learning — one more attempt allowed (up to cap)
+   fi
+   ```
+
+   When escalating, pass both the current error and the delta observation to
+   the debugger so it can pick its strategy:
    ```bash
    claude-spawn-agent "looper:debugger" "Iteration: $ITERATION
    Task: $TASK_NAME
    Failing test(s): <test name + full error output>
    GREEN commit files: <list>
    Fix attempts so far: <brief summary of what you tried>
+   Error delta: ${ERROR_DELTA}  # unchanged | changed
+   Previous error prefix: $(cat "$PREV_ERR_FILE" 2>/dev/null || echo '(none)')
+   Current error prefix:  $(cat "$CUR_ERR_FILE" 2>/dev/null || echo '(none)')
    Plan acceptance criteria: <relevant excerpt>"
    ```
    Read the debugger's report. Apply ONLY its recommended fix (one change),
@@ -221,6 +261,61 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
        --iteration $ITERATION
    ```
 
+10. **Scope-creep check after GREEN** — Verify the GREEN commit only touches
+    files the Planner listed under "Files to create or modify" (plus their
+    tests and common companion edits like `Cargo.lock`, `package-lock.json`,
+    and snapshot files). Catching drift here is cheaper than letting the
+    Checker spawn review subagents to flag a bloated diff.
+
+    ```bash
+    green_hash=$(git log --grep="Loop-Phase: do-green" --grep="Loop-Iteration: $ITERATION" \
+        --all-match --format="%H" -1)
+
+    # Extract the "Files to create or modify" list from the plan commit.
+    TMPDIR="/tmp/looper-${TASK_NAME}"
+    mkdir -p "$TMPDIR"
+    EXPECTED_FILE="$TMPDIR/expected-files-${ITERATION}.txt"
+    git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: $ITERATION" \
+        --all-match --format="%B" -1 \
+        | awk '
+            /^##[[:space:]]*Files to (create|modify)/ { p=1; next }
+            /^## / && p { p=0 }
+            p { print }
+        ' \
+        | grep -oE '`[^`]+`|\*\*[^*]+\*\*|[[:space:]][-\*[:space:]]+[A-Za-z0-9_./-]+' \
+        | sed -E 's/^[[:space:]]*[-\*][[:space:]]+//; s/[`*]//g' \
+        | awk 'NF' \
+        > "$EXPECTED_FILE"
+
+    if [ ! -s "$EXPECTED_FILE" ]; then
+        echo "WARNING: could not parse expected-files list from plan — skipping scope check" >&2
+    else
+        set +e
+        DRIFT=$("$SCRIPTS_DIR/check-scope" \
+            --expected-files-file "$EXPECTED_FILE" \
+            --commit "$green_hash" 2>/dev/null)
+        DRIFT_EC=$?
+        set -e
+        if [ "$DRIFT_EC" -ne 0 ]; then
+            echo "Scope drift detected in GREEN commit:"
+            echo "$DRIFT"
+            # Either revert the extraneous changes OR amend the GREEN commit
+            # body documenting why they were necessary. Undocumented drift
+            # will be treated as scope creep by the Checker.
+        fi
+    fi
+    ```
+
+    On drift, you have two options:
+    - **Revert.** `git checkout <green_hash>^ -- <drift-file>` then amend the
+      GREEN commit (`git commit --amend --no-edit`) or follow up with a fix
+      commit that removes the drift.
+    - **Justify.** Amend the GREEN commit body to explain why each drift
+      file was necessary (e.g. "Cargo.lock regenerated — Cargo.toml dep
+      bump", "src/util.rs shared helper required by new module"). Use
+      `git commit --amend` to edit the body. Checker treats undocumented
+      drift as scope creep; justified drift is acceptable.
+
 ---
 
 ### Phase 2.5: SIMPLIFY — Refine the implementation
@@ -233,41 +328,45 @@ git log --grep="Loop-Phase: do-simplify" --grep="Loop-Iteration: $ITERATION" \
 ```
 If it exists, skip this phase entirely.
 
-10. **Run the code-simplifier** — Spawn a `code-simplifier` subagent to review
-   and simplify the implementation files changed in the GREEN phase. The
-   subagent should:
-   - Read only the files modified in the GREEN commit (not test files)
-   - Simplify: reduce redundancy, flatten nesting, improve naming, remove
-     dead code, consolidate duplicated logic
-   - Preserve all behavior — no feature changes
-   - Skip if changes are trivial (1-2 small files with clean code)
+11. **Run the simplifier subagent** — Spawn the dedicated `looper:simplifier`
+    subagent (defined in `agents/simplifier.md`) to review and simplify the
+    implementation files changed in the GREEN phase. The subagent is
+    scope-aware: it refuses edits outside the file list you pass in its
+    prompt, and it runs the test suite itself — if tests fail after its
+    edits, it reverts its own changes and reports "no simplification
+    applied". You do NOT need to re-run tests or revert on its behalf.
 
-   Get the list of files changed in GREEN:
-   ```bash
-   green_hash=$(git log --grep="Loop-Phase: do-green" --grep="Loop-Iteration: $ITERATION" \
-       --all-match --format="%H" -1)
-   git diff-tree --no-commit-id --name-only -r "$green_hash"
-   ```
-
-   Then spawn the simplifier:
-   ```bash
-   claude-spawn-agent "general-purpose" "You are a code simplifier. Review and simplify these files: <files>. Reduce redundancy, flatten nesting, improve naming, remove dead code. Preserve all behavior."
-   ```
-
-   If the subagent made no changes (code was already clean), skip the commit
-   and proceed to Phase 3.
-
-11. **Verify tests still pass** after simplification:
+    Get the list of files changed in GREEN, then spawn the simplifier:
     ```bash
-    $SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"
+    green_hash=$(git log --grep="Loop-Phase: do-green" --grep="Loop-Iteration: $ITERATION" \
+        --all-match --format="%H" -1)
+    GREEN_FILES=$(git diff-tree --no-commit-id --name-only -r "$green_hash" \
+        | grep -vE '(^|/)(tests?|__tests__|spec)/' || true)
+
+    if [ -z "$GREEN_FILES" ]; then
+        echo "No non-test files in GREEN commit — skipping simplify phase"
+    else
+        claude-spawn-agent "looper:simplifier" "Task: $TASK_NAME
+    Iteration: $ITERATION
+    SCRIPTS_DIR: $SCRIPTS_DIR
+    Files to review (GREEN-phase non-test files — do NOT edit anything outside this list):
+    $GREEN_FILES
+
+    Reduce redundancy, flatten nesting, improve naming, and remove dead code.
+    Preserve all behavior. Verify tests pass before returning control; revert
+    your own edits if they fail. Do NOT commit — the Doer owns the SIMPLIFY
+    commit."
+    fi
     ```
 
-    If tests fail, revert the simplification changes and skip this phase:
-    ```bash
-    git checkout -- .
-    ```
+    The simplifier returns one of three verdicts:
+    - **APPLIED** — edits are in the working tree, tests pass. Proceed to commit.
+    - **SKIPPED** — code was already clean, no edits made. Skip the commit,
+      proceed to Phase 3.
+    - **REVERTED** — edits broke tests and were rolled back. Skip the commit,
+      proceed to Phase 3.
 
-12. **Commit SIMPLIFY** (only if changes were made):
+12. **Commit SIMPLIFY** (only if the simplifier returned APPLIED):
     ```bash
     $SCRIPTS_DIR/git-commit-loop \
         --type "refactor" \
@@ -305,7 +404,8 @@ If it exists, skip Phase 3 entirely.
    - `dev_command` is not "none" (project has a runnable dev server)
    - The plan mentions API endpoints, routes, or CLI commands
 
-   If none apply, skip to step 9 commit above (no integration tests needed).
+   If none apply, skip Phase 3 entirely — the GREEN commit (step 9) is
+   already sufficient; no integration tests needed.
 
 14. **Write integration test scripts** — Create scripts in `tests/integration/`
     that exercise the running application with real HTTP requests or CLI invocations.
@@ -390,6 +490,10 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `git-loop-context` — Read prior loop iterations from git log
 - `git-commit-loop` — Create commits with loop trailers
 - `resolve-plan-pointers` — Expand delta-mode pointers in a plan body (reads stdin)
+- `check-scope` — Detect files changed outside an expected-files list
+  (`--expected-files <list>` or `--expected-files-file <path>`, `--commit <hash>`).
+  Tolerates lockfile companions (`Cargo.lock`, `package-lock.json`, etc.),
+  matching test files, and snapshot updates. Exit 1 + drift filenames on stdout.
 - `run-integration-tests` — Start app and run tests/integration/ scripts (`--port <PORT>`)
 - `scaffold-integration-ci` — Generate .github/workflows/integration.yml
 - `compose-lifecycle` — Start/stop docker-compose services (`up --task`, `down`, `status`)
