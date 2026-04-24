@@ -145,6 +145,51 @@ Notes:
 
 ---
 
+## Phase 3c: Pre-Worktree Blocked Check
+
+Before creating a worktree, verify the issue is not blocked. Skip the check
+when the issue was already upstream-claimed (the watcher runs the same
+check pre-claim, so re-running here is wasted work).
+
+`$UPSTREAM_OWNED` set in Phase 3b does NOT survive across Bash tool calls
+(each invocation is a fresh shell), so we re-derive it here.
+
+```bash
+SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/skills/looper/scripts"
+
+# Re-derive upstream ownership (fresh shell — cannot reuse Phase 3b's var).
+STATE=$(gh issue view "$ISSUE_NUMBER" --repo "$FULL_REPO" \
+    --json assignees,labels 2>/dev/null || echo '{}')
+ME=$(gh api user --jq .login 2>/dev/null)
+UPSTREAM_OWNED=$(echo "$STATE" | jq -r --arg me "$ME" '
+    ((.assignees // []) | map(.login) | any(. == $me))
+    and ((.labels // []) | map(.name) | any(. == "looper-claimed"))')
+
+if [ "$UPSTREAM_OWNED" = "true" ]; then
+    echo "Skipping blocked check (upstream-claimed by watcher)."
+else
+    if ! BLOCK_REASON=$($SCRIPTS_DIR/check-blocked --issue "$ISSUE_NUMBER" --repo "$FULL_REPO" 2>&1); then
+        echo "Issue #$ISSUE_NUMBER is blocked: $BLOCK_REASON"
+        echo "Aborting before worktree creation. Resolve the blocker, then retry."
+        # Best-effort: release the claim we just took.
+        gh issue edit "$ISSUE_NUMBER" --repo "$FULL_REPO" \
+            --remove-assignee @me --remove-label looper-claimed 2>/dev/null || true
+        exit 0
+    fi
+fi
+```
+
+Notes:
+- The upstream-owned re-derivation matches Phase 3b exactly: `assignee == @me
+  AND label looper-claimed`. When `looper-watch` feeds this session, both are
+  true; otherwise both are false.
+- On block, we release the claim so a future run (after the blocker closes)
+  can pick the issue back up cleanly. Best-effort; we do not fail if
+  release fails.
+- The exit is `0`, not non-zero — being blocked is a normal short-circuit.
+
+---
+
 ## Phase 4: Create Worktree
 
 **CRITICAL:** You MUST create a worktree before delegating to the looper skill.

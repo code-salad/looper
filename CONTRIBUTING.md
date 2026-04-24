@@ -81,6 +81,30 @@ looper/
         └── ci.yml           # CI pipeline
 ```
 
+### Issue dependency markers
+
+Issues filed by humans or by the `gh-issue-creator` agent must use canonical
+`## Dependencies` / `## Blockers` markers when they reference other open
+issues. These markers are load-bearing — they're parsed by:
+
+- `plugins/looper/skills/looper/scripts/check-blocked` (single-issue primitive)
+- `plugins/looper/skills/looper/scripts/list-ready-issues` (multi-issue
+  primitive — wraps `check-blocked`)
+- `crates/looper-watch/src/github.rs::is_blocked` (Rust source-of-truth)
+
+**DRY rule:** entry-point skills (`looper-issue`, `looper-ee`) MUST call
+`check-blocked` or `list-ready-issues` — never inline the filtering logic.
+
+To validate an issue body manually:
+
+```bash
+cat issue.md | plugins/looper/skills/looper/scripts/validate-issue-body
+```
+
+Note: the `tests/` corner-case suite (`tests/test-issue-tooling.sh`) covers
+`validate-issue-body` and `list-ready-issues` in detail but is not wired into
+CI — run it manually with `bash tests/run-corner-case-tests.sh`.
+
 ---
 
 ## Code Style and Conventions

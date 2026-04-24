@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# validate-issue-body — Validate an issue body has canonical ## Dependencies /
+# ## Blockers markers when cross-issue #<N> references are present outside
+# the allowed sections (## References, ## Context).
+#
+# Usage: validate-issue-body [--file PATH] [--quiet]
+#   --file PATH   Read body from PATH instead of stdin.
+#   --quiet       Suppress warnings; rely on exit code only.
+#
+# Exit 0: body OK (no offending refs, or refs inside allowed sections,
+#         or canonical dep/blocker section present alongside refs).
+# Exit 1: body has #<N> refs outside allowed sections AND no
+#         ## Dependencies / ## Blockers section present.
+# Exit 2: usage / IO error.
+
+FILE=""
+QUIET=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --file)
+            if [ $# -lt 2 ]; then
+                echo "Error: --file requires a value" >&2
+                echo "Usage: validate-issue-body [--file PATH] [--quiet]" >&2
+                exit 2
+            fi
+            FILE="$2"
+            shift 2
+            ;;
+        --quiet)
+            QUIET=1
+            shift
+            ;;
+        *)
+            echo "Usage: validate-issue-body [--file PATH] [--quiet]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# Read body
+if [ -n "$FILE" ]; then
+    BODY=$(cat "$FILE" 2>/dev/null) || {
+        echo "Error: cannot read file '$FILE'" >&2
+        exit 2
+    }
+else
+    BODY=$(cat 2>/dev/null) || {
+        echo "Error: cannot read stdin" >&2
+        exit 2
+    }
+fi
+
+# Empty body is always OK
+if [ -z "$BODY" ]; then
+    exit 0
+fi
+
+# Check if the original body has a canonical h2 dep/blocker section
+# (exact ^## prefix — h3 and below do not count)
+has_canonical_section() {
+    echo "$BODY" | grep -qE '^## (Dependencies|Blockers)$'
+}
+
+# Build a stripped body that removes:
+# 1. The contents of allowed sections: ## References and ## Context
+# 2. Fenced code blocks (``` or ~~~ lines — simple toggle-based detection)
+# ## Subtasks is NOT a safe zone.
+STRIPPED=$(echo "$BODY" | awk '
+BEGIN { in_allowed = 0; in_code = 0 }
+# Toggle code-fence state on lines that start a fence marker (``` or ~~~
+# optionally followed by a language tag).
+/^```/ || /^~~~/ {
+    in_code = !in_code
+    next
+}
+in_code { next }
+/^## (References|Context)[[:space:]]*$/ { in_allowed = 1; next }
+/^## / { in_allowed = 0 }
+!in_allowed { print }
+')
+
+# In the stripped body, extract bare #<N> refs with a boundary-aware regex:
+# require that the character after the digits is NOT alphanumeric/underscore/hyphen
+# (or is end-of-line). This avoids false positives like #123abc (identifier-like
+# suffixes) while still catching #42, #42., #42) etc.
+RAW_REFS=$(echo "$STRIPPED" | grep -oE '#[0-9]+([^0-9A-Za-z_-]|$)' | grep -oE '#[0-9]+' || true)
+
+# Post-filter: drop hex-color-like refs whose source line contains the
+# case-insensitive word "color" (e.g. "hex color #123456").
+# Heuristic — imperfect; users can sidestep ambiguous cases by moving refs
+# to ## References or ## Context, or by adding a ## Dependencies / ## Blockers
+# section. Never blocks builds — this is a warning-only validator.
+REFS=""
+while IFS= read -r ref; do
+    [ -z "$ref" ] && continue
+    # Check if the source line containing this ref also contains 'color'
+    if echo "$STRIPPED" | grep -F -- "$ref" | grep -qi "color"; then
+        continue  # Likely a hex color, skip
+    fi
+    REFS="${REFS}${ref}"$'\n'
+done <<< "$RAW_REFS"
+# Trim trailing newline
+REFS="${REFS%$'\n'}"
+
+if [ -z "$REFS" ]; then
+    exit 0
+fi
+
+# Refs exist outside allowed sections — check for canonical section
+if has_canonical_section; then
+    exit 0
+fi
+
+# Violation found
+if [ "$QUIET" -eq 0 ]; then
+    REFS_SUMMARY=$(echo "$REFS" | tr '\n' ' ')
+    echo "Warning: issue body references ${REFS_SUMMARY% } outside ## References / ## Context" >&2
+    echo "  but has no ## Dependencies or ## Blockers section." >&2
+    echo "  Add one of:" >&2
+    echo "    ## Dependencies" >&2
+    echo "    - [ ] Depends on #<N> — <reason>" >&2
+    echo "  or:" >&2
+    echo "    ## Blockers" >&2
+    echo "    - [ ] Blocked by #<N> — <reason>" >&2
+fi
+exit 1

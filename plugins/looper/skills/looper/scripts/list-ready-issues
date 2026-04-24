@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# list-ready-issues — List open, unassigned, non-blocked GitHub issues
+#
+# Usage: list-ready-issues [--repo owner/repo] [--label LABEL] [--limit N] [--json]
+#   --repo owner/repo  Target repo (default: current repo via gh context).
+#   --label LABEL      Filter to issues carrying this label (default: no filter).
+#   --limit N          Max candidates to fetch from gh (default: 30).
+#   --json             Output JSON array instead of TSV.
+#
+# Default output (TSV, sorted oldest-first by createdAt asc):
+#   #<N>  <title>
+#
+# JSON output (--json), sorted oldest-first by createdAt asc:
+#   [{"number": N, "title": "...", "labels": ["str",...], "createdAt": "..."}]
+#
+# Exit 0 always when gh fetch succeeds (even if zero ready issues).
+# Exit 2: gh fetch failure or invalid args.
+#
+# Stderr summary line (always emitted):
+#   "Found <READY> ready issues (<BLOCKED> blocked skipped)"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+REPO_ARG=""
+LABEL_ARG=""
+LIMIT=30
+JSON_MODE=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --repo)
+            if [ $# -lt 2 ]; then
+                echo "Error: --repo requires a value" >&2
+                echo "Usage: list-ready-issues [--repo owner/repo] [--label LABEL] [--limit N] [--json]" >&2
+                exit 2
+            fi
+            REPO_ARG="$2"
+            shift 2
+            ;;
+        --label)
+            if [ $# -lt 2 ]; then
+                echo "Error: --label requires a value" >&2
+                echo "Usage: list-ready-issues [--repo owner/repo] [--label LABEL] [--limit N] [--json]" >&2
+                exit 2
+            fi
+            LABEL_ARG="$2"
+            shift 2
+            ;;
+        --limit)
+            if [ $# -lt 2 ]; then
+                echo "Error: --limit requires a value" >&2
+                echo "Usage: list-ready-issues [--repo owner/repo] [--label LABEL] [--limit N] [--json]" >&2
+                exit 2
+            fi
+            LIMIT="$2"
+            shift 2
+            ;;
+        --json)
+            JSON_MODE=1
+            shift
+            ;;
+        *)
+            echo "Usage: list-ready-issues [--repo owner/repo] [--label LABEL] [--limit N] [--json]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# Build gh issue list args
+GH_ARGS=("issue" "list"
+    "--state" "open"
+    "--search" "no:assignee"
+    "--limit" "$LIMIT"
+    "--json" "number,title,labels,createdAt"
+)
+
+if [ -n "$REPO_ARG" ]; then
+    GH_ARGS+=("--repo" "$REPO_ARG")
+fi
+
+if [ -n "$LABEL_ARG" ]; then
+    GH_ARGS+=("--label" "$LABEL_ARG")
+fi
+
+# Build check-blocked repo args
+REPO_ARGS=()
+if [ -n "$REPO_ARG" ]; then
+    REPO_ARGS=("--repo" "$REPO_ARG")
+fi
+
+# Fetch candidates — keep stderr OUT of the JSON capture so advisory lines
+# from gh (rate-limit warnings, token expiry notices, etc.) do not corrupt
+# the JSON string.
+GH_STDERR=$(mktemp)
+trap 'rm -f "$GH_STDERR"' EXIT
+ALL_JSON=$(gh "${GH_ARGS[@]}" 2>"$GH_STDERR") || {
+    echo "Error: gh issue list failed: $(cat "$GH_STDERR")" >&2
+    rm -f "$GH_STDERR"
+    exit 2
+}
+# Forward any advisory stderr from gh to our own stderr (visible to caller,
+# not captured into the JSON variable).
+if [ -s "$GH_STDERR" ]; then
+    cat "$GH_STDERR" >&2
+fi
+
+# Collect ready issue numbers
+READY_NUMBERS=()
+BLOCKED_COUNT=0
+
+for n in $(echo "$ALL_JSON" | jq -r '.[].number'); do
+    # check-blocked exit codes:
+    #   0 = not blocked (ready)
+    #   1 = blocked (label or open dep)
+    #   2 = internal error (bad args) — should never occur here since $n is
+    #       always a numeric id from jq. If it ever does, we conservatively
+    #       count it as blocked (safer to skip than to claim a possibly-blocked
+    #       issue).
+    if "$SCRIPT_DIR/check-blocked" --issue "$n" "${REPO_ARGS[@]}" >/dev/null 2>&1; then
+        READY_NUMBERS+=("$n")
+    else
+        BLOCKED_COUNT=$((BLOCKED_COUNT + 1))
+    fi
+done
+
+READY_COUNT=${#READY_NUMBERS[@]}
+
+# Re-filter original JSON to ready issues only, sort oldest-first,
+# normalise label objects to label-name strings
+if [ "$READY_COUNT" -eq 0 ]; then
+    READY_JSON='[]'
+else
+    NUMS_JSON=$(printf '%s\n' "${READY_NUMBERS[@]}" | jq -Rn '[inputs | tonumber]')
+    READY_JSON=$(echo "$ALL_JSON" | jq --argjson nums "$NUMS_JSON" '
+        [.[] | select(.number as $n | $nums | index($n))]
+        | sort_by(.createdAt)
+        | map({number, title, labels: [.labels[].name], createdAt})
+    ')
+fi
+
+# Output
+if [ "$JSON_MODE" -eq 1 ]; then
+    echo "$READY_JSON"
+else
+    # Replace any embedded tab/newline/CR in titles so each line is exactly
+    # two tab-separated fields: #N<TAB><sanitised-title>
+    echo "$READY_JSON" | jq -r '.[] | "#\(.number)\t\(.title | gsub("[\t\n\r]"; " "))"'
+fi
+
+# Stderr summary
+echo "Found $READY_COUNT ready issues ($BLOCKED_COUNT blocked skipped)" >&2

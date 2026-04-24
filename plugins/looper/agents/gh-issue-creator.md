@@ -113,6 +113,45 @@ section only when it has no entries. The markers in `## Dependencies`,
   prefix a subtask with `#<N>` or "Depends on" / "Blocked by".
 - Issue numbers are bare (`#42`), never linkified (`[#42](...)`).
 
+### Dep/blocker detection rule (mandatory)
+
+Before invoking `gh issue create`, scan the **caller's prompt** for either:
+- explicit `dependencies: #<N>` / `blockers: #<N>` keys, OR
+- prose like "depends on #N", "requires #N", "builds on #N", "blocked by #N",
+  or "needs #N before this can land".
+
+For every `#<N>` reference detected in the caller's prompt, you MUST classify
+it as a dependency or a blocker:
+
+1. If the caller passed `dependencies: #N` or `blockers: #N`, use that
+   classification verbatim — emit `## Dependencies` / `## Blockers` sections.
+2. If the caller used prose ("depends on #N", "requires #N", "builds on #N")
+   → classify as a dependency.
+3. If the caller used "blocked by #N", "blocks on #N", "must wait for #N"
+   → classify as a blocker.
+4. If the reference is ambiguous (e.g. prose only says "see #N" or
+   "related to #N"), do NOT silently emit a marker. Skip the section and
+   put the reference under `## References` instead.
+5. After drafting the body, run a self-check: if the body contains any
+   `#<N>` reference outside `## References` / `## Context` AND no
+   `## Dependencies` / `## Blockers` section is present, refuse to create
+   the issue. Report back:
+   "Refused — caller mentioned #N but did not classify it as a
+    dependency or blocker. Re-invoke with `dependencies: #N` or `blockers: #N`."
+
+After creating the issue, pipe the final body through the validator as a
+guard against drift:
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    echo "$BODY" | "$CLAUDE_PLUGIN_ROOT/skills/looper/scripts/validate-issue-body" || \
+        echo "Warning: validate-issue-body flagged the body" >&2
+fi
+```
+
+If `CLAUDE_PLUGIN_ROOT` is unset or the validator exits non-zero, log to
+stderr but do not retry — the create has already succeeded.
+
 ### Creating the issue
 
 ```bash

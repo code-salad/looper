@@ -318,8 +318,15 @@ The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.
   Description: <what the issue is>
   Observed behavior: <what happens>
   Expected behavior: <what should happen>
-  Found by: Planner agent during task \"<TASK_NAME>\"" &
+  Found by: Planner agent during task \"<TASK_NAME>\"
+  Dependencies: <#N if this work depends on an open issue, else omit>
+  Blockers: <#N if this work is hard-blocked by an open issue, else omit>" &
   ```
+  If you reference another issue number anywhere in the description above
+  but do NOT classify it as a `Dependencies:` or `Blockers:` line, the
+  `gh-issue-creator` agent will refuse to create the issue. Always classify
+  cross-issue references explicitly.
+
   Continue with your planning — do not wait for the subagent to finish.
 
 ## Rules — Querying GitHub on demand
