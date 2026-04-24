@@ -28,6 +28,12 @@ with `& ... wait`. `claude-spawn-agent` is on `PATH` in every Claude
 Code context and self-locates its plugin root — no env-var setup is
 required.
 
+**Never improvise PDC work inline.** If `claude-spawn-agent` is not on
+`PATH` (verified by the parent skill's step-0 gate), ABORT and surface
+the error — do NOT attempt to do planner/doer/checker work yourself in
+this session. Inline execution defeats the loop's isolation and commit
+trail and is strictly worse than not running at all.
+
 1. **Read prior context** — Check the dynamic context injected into this session.
    If this is not iteration 1, study the loop context carefully. Understand what
    was attempted, what worked, what failed, and what the Checker's feedback was.

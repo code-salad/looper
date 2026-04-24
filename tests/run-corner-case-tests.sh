@@ -6,7 +6,8 @@ set -euo pipefail
 #           test-git-commit-loop-validation.sh, test-git-loop-context.sh,
 #           test-sync-with-remote.sh, test-check-blocked.sh,
 #           test-check-scope.sh,
-#           test-fetch-issue-context.sh, test-build-agent-context.sh
+#           test-fetch-issue-context.sh, test-build-agent-context.sh,
+#           test-fail-fast-gate.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -40,6 +41,7 @@ run_suite "test-resolve-plan-pointers.sh"
 run_suite "test-delta-mode-prompts.sh"
 run_suite "test-issue-tooling.sh"
 run_suite "test-agent-spawn-migration.sh"
+run_suite "test-fail-fast-gate.sh"
 
 echo "=============================="
 echo "Corner-case suite: $PASS suites passed, $FAIL suites failed"

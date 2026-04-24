@@ -27,6 +27,12 @@ with `& ... wait`. `claude-spawn-agent` is on `PATH` in every Claude
 Code context and self-locates its plugin root — no env-var setup is
 required.
 
+**Never improvise PDC work inline.** If `claude-spawn-agent` is not on
+`PATH` (verified by the parent skill's step-0 gate), ABORT and surface
+the error — do NOT attempt to do planner/doer/checker work yourself in
+this session. Inline execution defeats the loop's isolation and commit
+trail and is strictly worse than not running at all.
+
 1. **Verify Doer committed work and run TDD sequence checks** — The Doer must
    produce two or three commits per iteration: `do-red` (tests), `do-green`
    (implementation), and optionally `do-integration` (integration tests for
