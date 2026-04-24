@@ -59,11 +59,16 @@ Report the full list to the user before proceeding.
 
 ## Phase 2: Spawn a subagent
 
-Use the `spawn-agent` script to call a subagent. It handles nested-session detection bypass, JSON output, and permission skipping.
+Use the `claude-spawn-agent` command to call a subagent. It handles nested-session detection bypass, JSON output, and permission skipping.
 
-```
-Scripts: ${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/
-```
+Claude Code puts every plugin's `bin/` directory on `PATH` in all contexts —
+main session, Agent-tool subagents, and fresh `claude -p` subprocesses alike —
+so `claude-spawn-agent` resolves without any caller-side configuration. The
+underlying script self-locates its `CLAUDE_PLUGIN_ROOT` from its own path
+(the plugin root is derived from `BASH_SOURCE`), so plugin-scoped agents like
+`looper:checker` continue to resolve even when `CLAUDE_PLUGIN_ROOT` is unset
+in the caller's environment. Callers never need to know the plugin's install
+layout or export any env vars.
 
 ### Sync mode (default)
 
@@ -73,15 +78,13 @@ Blocks until the subagent completes. Prints the path to the result file.
 foreground mode).
 
 ```bash
-SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
-
 # Run in background, then read result
-$SPAWN "looper:checker" "Review the doer's work" # prints /tmp/subagent-response-<ts>-<pid>.txt
+claude-spawn-agent "looper:checker" "Review the doer's work" # prints /tmp/subagent-response-<ts>-<pid>.txt
 ```
 
 ```bash
 # Full pattern: launch in background Bash, read result file after
-RESULT=$($SPAWN "Explore" "What language is this repo?")
+RESULT=$(claude-spawn-agent "Explore" "What language is this repo?")
 cat "$RESULT"
 ```
 
@@ -91,10 +94,8 @@ Returns the result file path immediately, runs the subagent in background.
 Ideal for parallel spawning — fire multiple agents, do other work, read later.
 
 ```bash
-SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
-
 # Fire and get path back instantly
-RESULT=$($SPAWN --async "Explore" "Find all API endpoints")
+RESULT=$(claude-spawn-agent --async "Explore" "Find all API endpoints")
 # ... do other work ...
 # Poll until file is non-empty
 cat "$RESULT"
@@ -103,10 +104,8 @@ cat "$RESULT"
 ### Run multiple subagents in parallel (async)
 
 ```bash
-SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
-
-R1=$($SPAWN --async "looper:planner" "Plan how to add rate limiting")
-R2=$($SPAWN --async "Explore" "Find all API endpoint definitions")
+R1=$(claude-spawn-agent --async "looper:planner" "Plan how to add rate limiting")
+R2=$(claude-spawn-agent --async "Explore" "Find all API endpoint definitions")
 
 # Wait for both to finish (poll until files are non-empty)
 while [ ! -s "$R1" ] || [ ! -s "$R2" ]; do sleep 2; done
@@ -119,13 +118,13 @@ echo "=== Explore ===" && cat "$R2"
 
 ```bash
 # Limit turns and budget
-$SPAWN "looper:planner" "Plan the auth refactor" --max-turns 10 --max-budget-usd 0.50
+claude-spawn-agent "looper:planner" "Plan the auth refactor" --max-turns 10 --max-budget-usd 0.50
 
 # Pass file contents in the prompt
-$SPAWN "Explore" "What does this code do: $(cat src/main.ts)"
+claude-spawn-agent "Explore" "What does this code do: $(cat src/main.ts)"
 
 # Pass a system prompt
-$SPAWN "general-purpose" "Your prompt" \
+claude-spawn-agent "general-purpose" "Your prompt" \
   --append-system-prompt "You are working on a Node.js backend."
 ```
 

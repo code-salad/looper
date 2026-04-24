@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Self-locate: derive CLAUDE_PLUGIN_ROOT from this script's own path.
+# spawn-agent lives at <PLUGIN_ROOT>/skills/subagents/scripts/spawn-agent,
+# so the plugin root is three directories up. The ${VAR:-default} guard
+# preserves any value the caller may have already exported.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$_SCRIPT_DIR/../../.." && pwd)}"
+
 # Spawns a Claude subagent via claude -p and returns the text response.
 # Bypasses nested-session detection and skips permission prompts.
 #

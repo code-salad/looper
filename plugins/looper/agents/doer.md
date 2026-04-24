@@ -25,7 +25,8 @@ write failing tests first, then write just enough code to make them pass.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-   `SUBAGENTS_DIR="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts"`
+   Spawn subagents via the `claude-spawn-agent` command (on `PATH` in every
+   context, self-locates its plugin root — no env setup required).
 
 2. **Size guard for oversize plans.** If the plan commit body exceeds ~400 lines,
    do NOT try to hold the entire plan in working context. Extract only the focused
@@ -52,9 +53,8 @@ write failing tests first, then write just enough code to make them pass.
    faster than subagent overhead).
 
    ```bash
-   SPAWN="$SUBAGENTS_DIR/spawn-agent"
-   $SPAWN "Explore" "<prompt for source files>" > /tmp/explore-src.txt &
-   $SPAWN "Explore" "<prompt for test files>" > /tmp/explore-tests.txt &
+   claude-spawn-agent "Explore" "<prompt for source files>" > /tmp/explore-src.txt &
+   claude-spawn-agent "Explore" "<prompt for test files>" > /tmp/explore-tests.txt &
    wait
    cat /tmp/explore-src.txt /tmp/explore-tests.txt
    ```
@@ -150,9 +150,8 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    After subagents complete, review for consistency between groups.
 
    ```bash
-   SPAWN="$SUBAGENTS_DIR/spawn-agent"
-   $SPAWN "general-purpose" "<prompt for area 1>" > /tmp/impl1.txt &
-   $SPAWN "general-purpose" "<prompt for area 2>" > /tmp/impl2.txt &
+   claude-spawn-agent "general-purpose" "<prompt for area 1>" > /tmp/impl1.txt &
+   claude-spawn-agent "general-purpose" "<prompt for area 2>" > /tmp/impl2.txt &
    wait
    ```
 
@@ -183,7 +182,7 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    STOP guessing and spawn the systematic debugger** before attempting a third
    fix. Random patches mask root causes and waste loop iterations.
    ```bash
-   $SUBAGENTS_DIR/spawn-agent "looper:debugger" "Iteration: $ITERATION
+   claude-spawn-agent "looper:debugger" "Iteration: $ITERATION
    Task: $TASK_NAME
    Failing test(s): <test name + full error output>
    GREEN commit files: <list>
@@ -239,7 +238,7 @@ If it exists, skip this phase entirely.
 
    Then spawn the simplifier:
    ```bash
-   $SUBAGENTS_DIR/spawn-agent "general-purpose" "You are a code simplifier. Review and simplify these files: <files>. Reduce redundancy, flatten nesting, improve naming, remove dead code. Preserve all behavior."
+   claude-spawn-agent "general-purpose" "You are a code simplifier. Review and simplify these files: <files>. Reduce redundancy, flatten nesting, improve naming, remove dead code. Preserve all behavior."
    ```
 
    If the subagent made no changes (code was already clean), skip the commit
@@ -409,7 +408,7 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
   that is unrelated to your current task, do NOT fix it — stay on scope.
   Instead, spawn a fire-and-forget `looper:gh-issue-creator` subagent:
   ```bash
-  $SUBAGENTS_DIR/spawn-agent "looper:gh-issue-creator" "Type: bug (or feature/improvement)
+  claude-spawn-agent "looper:gh-issue-creator" "Type: bug (or feature/improvement)
   File(s): <file paths>
   Description: <what the issue is>
   Observed behavior: <what happens>

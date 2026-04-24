@@ -17,7 +17,9 @@ modify any project files — only commit a plan as a git commit message.
 
 ## Instructions
 
-`SUBAGENTS_DIR="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts"`
+Spawn subagents via the `claude-spawn-agent` command, which Claude Code
+exposes on `PATH` in every context (main session and subagents alike) and
+which self-locates its plugin root. No env-var setup is required from you.
 
 1. **Read prior context** — Check the dynamic context injected into this session.
    If this is not iteration 1, study the loop context carefully. Understand what
@@ -46,18 +48,18 @@ modify any project files — only commit a plan as a git commit message.
      source directory, test directory
    - **Track C:** If iteration > 1, spawn an Explore subagent to
      investigate files referenced in the Checker's prior feedback:
-     `$SUBAGENTS_DIR/spawn-agent "Explore" "<prompt>"`
+     `claude-spawn-agent "Explore" "<prompt>"`
      **In addition**, if the prior iteration FAILed on the same symptom that
      a still-earlier iteration also failed on (i.e. the loop is stuck on the
      same problem), spawn the systematic debugger in parallel to root-cause
      it before you write the new plan:
-     `$SUBAGENTS_DIR/spawn-agent "looper:debugger" "<prior FAIL feedback +
+     `claude-spawn-agent "looper:debugger" "<prior FAIL feedback +
      failing test names + error output + files touched so far>"`
      Use the debugger's Root Cause and Recommended Fix sections as the
      foundation for the new plan instead of guessing a different approach.
    - **Track D:** If iteration 1 AND the
      task is a bug fix or involves changing runtime behavior of a web app/API/CLI,
-     use `$SUBAGENTS_DIR/spawn-agent "Explore" "<prompt>"` to spawn a subagent to **observe the current behavior before planning**:
+     use `claude-spawn-agent "Explore" "<prompt>"` to spawn a subagent to **observe the current behavior before planning**:
      1. Run `$SCRIPTS_DIR/detect-stack` to identify the project type
      2. If `HAS_COMPOSE` is `true`: start backing services first:
         `$SCRIPTS_DIR/compose-lifecycle up --task $TASK_NAME` and
@@ -79,7 +81,7 @@ modify any project files — only commit a plan as a git commit message.
      Pass it the reproduction steps, observed vs expected behavior, the exact
      error output, and the issue description:
      ```bash
-     $SUBAGENTS_DIR/spawn-agent "looper:debugger" "Task: $TASK_NAME (iteration 1, bug fix)
+     claude-spawn-agent "looper:debugger" "Task: $TASK_NAME (iteration 1, bug fix)
      Issue: <issue title + body>
      Reproduction: <steps from Track D>
      Observed: <what Track D actually saw>
@@ -179,7 +181,7 @@ modify any project files — only commit a plan as a git commit message.
    details ("function Z should call W").
 
 4.5. **Review the draft plan (parallel subagents)** — Spawn 3 review subagents
-   in parallel via spawn-agent calls in a single Bash block. Each receives
+   in parallel via claude-spawn-agent calls in a single Bash block. Each receives
    the draft plan text and the task context. They are read-only reporters — they
    do NOT modify anything.
 
@@ -187,10 +189,9 @@ modify any project files — only commit a plan as a git commit message.
    ```bash
    TMPDIR="/tmp/looper-${TASK_NAME}"
    mkdir -p "$TMPDIR"
-   SPAWN="$SUBAGENTS_DIR/spawn-agent"
-   $SPAWN "looper:plan-feasibility" "<context>" > "$TMPDIR/plan-feasibility.txt" &
-   $SPAWN "looper:plan-completeness" "<context>" > "$TMPDIR/plan-completeness.txt" &
-   $SPAWN "looper:plan-scope" "<context>" > "$TMPDIR/plan-scope.txt" &
+   claude-spawn-agent "looper:plan-feasibility" "<context>" > "$TMPDIR/plan-feasibility.txt" &
+   claude-spawn-agent "looper:plan-completeness" "<context>" > "$TMPDIR/plan-completeness.txt" &
+   claude-spawn-agent "looper:plan-scope" "<context>" > "$TMPDIR/plan-scope.txt" &
    wait
    cat "$TMPDIR"/plan-*.txt
    ```
@@ -211,7 +212,7 @@ modify any project files — only commit a plan as a git commit message.
    Reviews plan scope for unnecessary changes and over-engineering.
    See `agents/plan-scope.md` for full instructions.
 
-   All three MUST be launched as parallel spawn-agent calls in one message.
+   All three MUST be launched as parallel claude-spawn-agent calls in one message.
 
 4.6. **Revise the plan** — After all 3 subagents return:
    1. Collect all BLOCKER findings — these must be addressed
@@ -278,13 +279,13 @@ The `$SCRIPTS_DIR` path is injected as a task variable in your dynamic context.
 - **Unrelated bugs or improvements:** If you discover a bug, missing feature,
   or improvement that is unrelated to your current task, do NOT include it in
   your plan. Instead, spawn a fire-and-forget `looper:gh-issue-creator` subagent:
-  ```
-  Type: bug (or feature/improvement)
+  ```bash
+  claude-spawn-agent "looper:gh-issue-creator" "Type: bug (or feature/improvement)
   File(s): <file paths>
   Description: <what the issue is>
   Observed behavior: <what happens>
   Expected behavior: <what should happen>
-  Found by: Planner agent during task "<TASK_NAME>"
+  Found by: Planner agent during task \"<TASK_NAME>\"" &
   ```
   Continue with your planning — do not wait for the subagent to finish.
 

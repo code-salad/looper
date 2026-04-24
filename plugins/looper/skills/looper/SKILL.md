@@ -18,23 +18,24 @@ the loop, determine which mechanism to use:
 
 - **If the `Agent` tool is NOT in your toolset** (you are running inside a
   subagent, a `claude -p` session, or any non-interactive context where looper
-  was invoked by another agent): you MUST fall back to the `subagents` skill's
-  `spawn-agent` script. Do not attempt to call `Agent(...)` — it will fail.
-  Invoke the skill once (`Skill("subagents")`) to load its guidance, then use
-  the `--async` pattern below.
+  was invoked by another agent): you MUST fall back to the `claude-spawn-agent`
+  command. Do not attempt to call `Agent(...)` — it will fail.
+
+  `claude-spawn-agent` is on `PATH` in every Claude Code context (including
+  subagents) and self-locates its plugin root, so no env-var or path setup is
+  needed — just call it by name.
 
   **CRITICAL — stream watchdog:** Nested agents (planner/doer/checker) regularly
   run for several minutes. Parent agents have a stream watchdog that kills the
-  child after ~600s of no tool-call activity. Do NOT run `spawn-agent` in
-  synchronous mode (`RESULT=$($SPAWN ...)`) — that single blocking Bash call
-  will trip the watchdog on any non-trivial subagent. Instead, launch `--async`
-  and poll with short bounded Bash calls so each poll emits a tool event that
-  keeps the watchdog alive.
+  child after ~600s of no tool-call activity. Do NOT run `claude-spawn-agent`
+  in synchronous mode (`RESULT=$(claude-spawn-agent ...)`) — that single
+  blocking Bash call will trip the watchdog on any non-trivial subagent.
+  Instead, launch `--async` and poll with short bounded Bash calls so each
+  poll emits a tool event that keeps the watchdog alive.
 
   ```bash
-  SPAWN="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts/spawn-agent"
   # 1. Fire async — returns result path instantly, subagent runs in background.
-  RESULT_PATH=$($SPAWN --async "looper:planner" "$PLANNER_CONTEXT")
+  RESULT_PATH=$(claude-spawn-agent --async "looper:planner" "$PLANNER_CONTEXT")
   ```
 
   Then poll in a loop. Each Bash call is short (≤60s), so the watchdog resets
@@ -54,8 +55,8 @@ the loop, determine which mechanism to use:
   ```
 
   Every `Agent(subagent_type="X", prompt="Y")` call below has an equivalent
-  `$SPAWN --async "X" "Y"` + poll form. Use whichever is appropriate for your
-  context.
+  `claude-spawn-agent --async "X" "Y"` + poll form. Use whichever is
+  appropriate for your context.
 
 ## Steps
 
@@ -246,11 +247,11 @@ to complete before proceeding to the next.
 
 1. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
    `Agent(subagent_type="looper:planner", prompt=<Planner context from 7c>)`
-   (Fallback when Agent tool is unavailable: `$SPAWN --async "looper:planner" "$PLANNER_CONTEXT"` + poll, per "Agent spawning mode")
+   (Fallback when Agent tool is unavailable: `claude-spawn-agent --async "looper:planner" "$PLANNER_CONTEXT"` + poll, per "Agent spawning mode")
 
 2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase (TDD: red→green) ===`
    `Agent(subagent_type="looper:doer", prompt=<Doer context from 7c>)`
-   (Fallback when Agent tool is unavailable: `$SPAWN --async "looper:doer" "$DOER_CONTEXT"` + poll, per "Agent spawning mode")
+   (Fallback when Agent tool is unavailable: `claude-spawn-agent --async "looper:doer" "$DOER_CONTEXT"` + poll, per "Agent spawning mode")
 
    Before spawning the Checker, run mechanical pre-checks:
    ```bash
@@ -269,7 +270,7 @@ to complete before proceeding to the next.
 
 3. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`
    `Agent(subagent_type="looper:checker", prompt=<Checker context from 7c>)`
-   (Fallback when Agent tool is unavailable: `$SPAWN --async "looper:checker" "$CHECKER_CONTEXT"` + poll, per "Agent spawning mode")
+   (Fallback when Agent tool is unavailable: `claude-spawn-agent --async "looper:checker" "$CHECKER_CONTEXT"` + poll, per "Agent spawning mode")
 
 #### 7e. Read verdict
 
