@@ -19,7 +19,7 @@ the subprocess exits — read the result-file path printed on stdout then.
 No polling is required.
 
 - Sync: `Bash(command="claude-spawn-agent X Y", run_in_background=true)` → completion notification → read result file.
-- Parallel fan-out: several `Bash(run_in_background=true, ...)` calls in one message, or `claude-spawn-agent --async` with `& ... wait`.
+- Parallel fan-out: several `Bash(run_in_background=true, ...)` calls in one message, or `claude-spawn-agent X Y > /tmp/file.txt &` + `wait`.
 
 `claude-spawn-agent` is on `PATH` in every context and self-locates its
 plugin root — no env-var setup is required.
@@ -238,11 +238,9 @@ to complete before proceeding to the next.
 
 1. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
    `Agent(subagent_type="looper:planner", prompt=<Planner context from 7c>)`
-   (If the Agent tool is unavailable, spawn via `claude-spawn-agent` per "Agent spawning mode".)
 
 2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase (TDD: red→green) ===`
    `Agent(subagent_type="looper:doer", prompt=<Doer context from 7c>)`
-   (If the Agent tool is unavailable, spawn via `claude-spawn-agent` per "Agent spawning mode".)
 
    Before spawning the Checker, run mechanical pre-checks:
    ```bash
@@ -261,7 +259,6 @@ to complete before proceeding to the next.
 
 3. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`
    `Agent(subagent_type="looper:checker", prompt=<Checker context from 7c>)`
-   (If the Agent tool is unavailable, spawn via `claude-spawn-agent` per "Agent spawning mode".)
 
 #### 7e. Read verdict
 

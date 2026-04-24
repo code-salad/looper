@@ -40,10 +40,10 @@ trail and is strictly worse than not running at all.
    handle and the parent receives an automatic completion notification when
    the subprocess exits; read the result-file path it printed on stdout
    then, no polling required. For parallel fan-out (multiple subagents at
-   once), use `claude-spawn-agent --async X Y` inside a single shell block
-   with `& ... wait`. `claude-spawn-agent` is on `PATH` in every Claude
-   Code context and self-locates its plugin root — no env-var setup is
-   required.
+   once), redirect each subagent's stdout to a temp file and `&`/`wait`:
+   `claude-spawn-agent X Y > /tmp/a.txt & claude-spawn-agent X Z > /tmp/b.txt & wait`.
+   `claude-spawn-agent` is on `PATH` in every Claude Code context and
+   self-locates its plugin root — no env-var setup is required.
 
    **Delta-mode pointer resolution.** On iter > 1 the Planner may emit
    sections or list items as `(unchanged from iteration N-1 — see <hash>)`.

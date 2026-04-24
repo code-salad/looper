@@ -72,7 +72,7 @@ assert_file_not_contains "subagents/SKILL.md: old poll-loop removed from paralle
 assert_file_not_contains "spawn-agent: --async mode removed" \
     "$SPAWN_AGENT" 'MODE="async"'
 assert_file_not_contains "spawn-agent: --async flag branch removed" \
-    "$SPAWN_AGENT" '"${1:-}" == "--async"'
+    "$SPAWN_AGENT" '== "--async"'
 
 # AC3 extended — no /tmp/subagent-response-* artefacts anywhere
 assert_file_not_contains "subagents/SKILL.md: no subagent-response- path" \

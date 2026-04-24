@@ -22,10 +22,10 @@ single subagent, invoke it through the Bash tool with
 handle and the parent receives an automatic completion notification when
 the subprocess exits; read the result-file path it printed on stdout
 then, no polling required. For parallel fan-out (multiple subagents at
-once), use `claude-spawn-agent --async X Y` inside a single shell block
-with `& ... wait`. `claude-spawn-agent` is on `PATH` in every Claude
-Code context and self-locates its plugin root — no env-var setup is
-required.
+once), redirect each subagent's stdout to a temp file and `&`/`wait`:
+`claude-spawn-agent X Y > /tmp/a.txt & claude-spawn-agent X Z > /tmp/b.txt & wait`.
+`claude-spawn-agent` is on `PATH` in every Claude Code context and
+self-locates its plugin root — no env-var setup is required.
 
 **Never improvise PDC work inline.** If `claude-spawn-agent` is not on
 `PATH` (verified by the parent skill's step-0 gate), ABORT and surface

@@ -6,15 +6,16 @@ tools: Bash, Read, Glob
 
 # Subagents Skill
 
-Spawn subagents using `claude -p` when the **Agent tool is not available** — e.g. from within an Agent tool subagent, a `claude -p` session, or any context that lacks the Agent tool.
+Spawn subagents using `claude-spawn-agent`. This is the canonical spawn
+mechanism in any context that runs outside the main Claude Code session —
+subagents, `claude -p` sessions, or scripts. It is a drop-in for the
+built-in `Agent` tool: the subagent's text response is printed directly to
+stdout.
 
 **When to use this skill:**
-- You need to delegate work to a specialized agent but the Agent tool is not in your tool set
+- You need to delegate work to a specialized agent
 - You are running inside a subagent and need to spawn further subagents
 - You want to run multiple agents in parallel from a non-interactive context
-
-**When NOT to use this skill:**
-- The Agent tool is available — use it directly instead (it's faster and cheaper)
 
 ---
 
@@ -70,55 +71,35 @@ underlying script self-locates its `CLAUDE_PLUGIN_ROOT` from its own path
 in the caller's environment. Callers never need to know the plugin's install
 layout or export any env vars.
 
-### Sync mode (default) — canonical pattern
-
-This is the primary pattern for spawning a single subagent and waiting for
-its result. Invoke `claude-spawn-agent` via the Bash tool with
-`run_in_background: true`. The Bash tool returns immediately with a task
-handle; when the subprocess exits, the parent receives an automatic
-completion notification. At that point, read the result-file path that
-`claude-spawn-agent` printed on stdout.
+### Via the Bash tool with `run_in_background: true` (canonical single-spawn)
 
 ```bash
-# In the Bash tool with run_in_background: true
 claude-spawn-agent "looper:checker" "Review the doer's work"
-# stdout: /tmp/subagent-response-<ts>.txt
-# (completion notification arrives when the subagent exits)
 ```
 
-After the completion notification arrives, read the file:
+The Bash tool returns immediately with a task handle and the parent
+receives an automatic completion notification when the subprocess exits.
+At that point the completion notification's output contains the subagent's
+text response directly — no file to read.
+
+### Foreground capture
 
 ```bash
-cat /tmp/subagent-response-<ts>.txt
+RESPONSE=$(claude-spawn-agent "Explore" "Find all API endpoints")
+echo "$RESPONSE"
 ```
 
-Do NOT capture the `claude-spawn-agent` call with a foreground
-`RESULT=$(...)` — Claude Code's Bash tool suppresses stdout from nested
-`claude` processes in foreground mode, so you'll get an empty string.
+### Parallel fan-out
 
-### Async mode — for parallel fan-out
-
-Use `--async` when you want to fire multiple subagents concurrently and
-wait for all of them in a single shell block. `--async` prints the
-result-file path immediately and runs the subagent in the background, so
-you can launch N in a row, then `wait` for them to finish together.
+For parallel fan-out, redirect each subagent's stdout to a temp file, run
+them in the background, then `wait`:
 
 ```bash
-# Fire two subagents in parallel, collect both results
-R1=$(claude-spawn-agent --async "looper:planner" "Plan how to add rate limiting")
-R2=$(claude-spawn-agent --async "Explore" "Find all API endpoint definitions")
-
-# Block on both background subprocesses
+claude-spawn-agent "looper:planner" "Plan rate limiting" > /tmp/p1.txt &
+claude-spawn-agent "Explore"        "Find API endpoints"  > /tmp/p2.txt &
 wait
-
-echo "=== Plan ==="    && cat "$R1"
-echo "=== Explore ===" && cat "$R2"
+cat /tmp/p1.txt /tmp/p2.txt
 ```
-
-For single-spawn, prefer the sync pattern above — it's simpler and the
-Bash tool delivers an automatic completion notification. Reserve `--async`
-for the genuine fan-out case where you want N concurrent subagents and
-only one downstream `wait`.
 
 ### Extra flags
 
@@ -167,6 +148,6 @@ Key fields:
 |----------|--------|
 | Agent not found | Check agent name with `claude agents` or the fallback scan |
 | Permission denied on `claude agents` | Use the filesystem fallback in Phase 1 |
-| Empty result | Check stderr: redirect `2>` to a file and inspect |
+| Empty result | stdout is empty; check stderr for error messages |
 | Subagent hangs | Use `--max-turns` and `--max-budget-usd` to cap execution |
 | Auth errors | Ensure Claude CLI is authenticated (`claude auth`) |
