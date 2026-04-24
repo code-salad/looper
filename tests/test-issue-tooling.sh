@@ -528,6 +528,133 @@ else
 fi
 
 # ============================================================
+# Section H: Iteration 2 regression tests (H1–H12)
+# ============================================================
+
+echo ""
+echo "=== Section H: Iteration 2 regression tests ==="
+
+# H1: gh stderr noise must not poison JSON capture
+echo "=== H1: gh stderr noise + valid JSON -> issue still surfaced ==="
+TMPDIR_TEST=$(mktemp -d)
+cat > "$TMPDIR_TEST/gh" << 'GHEOF'
+#!/usr/bin/env bash
+if [ "$1" = "issue" ] && [ "$2" = "list" ]; then
+    echo "gh: warning: token will expire in 7 days" >&2
+    echo "gh: notice: rate limit at 50%" >&2
+    echo '[{"number":42,"title":"Real Issue","labels":[],"createdAt":"2024-01-01T00:00:00Z"}]'
+    exit 0
+fi
+if [ "$1" = "issue" ] && [ "$2" = "view" ]; then
+    echo '{"labels":[],"body":""}'
+    exit 0
+fi
+exit 1
+GHEOF
+chmod +x "$TMPDIR_TEST/gh"
+STDOUT=$(PATH="$TMPDIR_TEST:$PATH" "$LIST_READY" 2>/tmp/lri_stderr_h1.txt) && EXIT_CODE=0 || EXIT_CODE=$?
+STDERR=$(cat /tmp/lri_stderr_h1.txt)
+assert_exit_zero "H1: exit 0 despite gh stderr noise" "$EXIT_CODE"
+assert_output_contains "H1: real issue surfaced in TSV" "$STDOUT" "#42"
+assert_output_contains "H1: summary reports 1 ready" "$STDERR" "Found 1"
+cleanup
+
+# H2: --repo missing value -> exit 2
+echo "=== H2: --repo missing value -> exit 2 ==="
+STDERR_OUT=$("$LIST_READY" --repo 2>&1 1>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_two "H2: --repo missing value exit 2" "$EXIT_CODE"
+assert_output_contains "H2: stderr mentions --repo or usage" "$STDERR_OUT" "repo"
+
+# H3: --label missing value -> exit 2
+echo "=== H3: --label missing value -> exit 2 ==="
+STDERR_OUT=$("$LIST_READY" --label 2>&1 1>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_two "H3: --label missing value exit 2" "$EXIT_CODE"
+assert_output_contains "H3: stderr mentions --label or usage" "$STDERR_OUT" "label"
+
+# H4: --limit missing value -> exit 2
+echo "=== H4: --limit missing value -> exit 2 ==="
+STDERR_OUT=$("$LIST_READY" --limit 2>&1 1>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_two "H4: --limit missing value exit 2" "$EXIT_CODE"
+assert_output_contains "H4: stderr mentions --limit or usage" "$STDERR_OUT" "limit"
+
+# H5: validate-issue-body --file missing value -> exit 2
+echo "=== H5: validate-issue-body --file missing value -> exit 2 ==="
+STDERR_OUT=$("$VALIDATE" --file 2>&1 1>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_two "H5: --file missing value exit 2" "$EXIT_CODE"
+assert_output_contains "H5: stderr mentions --file or usage" "$STDERR_OUT" "file"
+
+# H6: TSV title with embedded tab -> sanitised (exactly 2 fields)
+echo "=== H6: TSV title with embedded tab -> sanitised ==="
+TMPDIR_TEST=$(mktemp -d)
+ALL_JSON='[{"number":10,"title":"Title	with	tabs","labels":[],"createdAt":"2024-01-01T00:00:00Z"}]'
+echo '{"labels":[],"body":""}' > "$TMPDIR_TEST/issue_json_10.txt"
+write_mock_gh_for_lri "$TMPDIR_TEST" "$ALL_JSON" ""
+STDOUT=$(PATH="$TMPDIR_TEST:$PATH" "$LIST_READY" 2>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_zero "H6: exit 0" "$EXIT_CODE"
+assert_line_count "H6: exactly 1 line of output" "$STDOUT" 1
+FIELD_COUNT=$(echo "$STDOUT" | awk -F'	' '{print NF}')
+if [ "$FIELD_COUNT" = "2" ]; then
+    echo "PASS: H6: exactly 2 tab-separated fields"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL: H6: expected 2 tab-separated fields, got $FIELD_COUNT"
+    FAIL=$((FAIL + 1))
+fi
+cleanup
+
+# H7: TSV title with embedded newline -> single line
+echo "=== H7: TSV title with embedded newline -> single line ==="
+TMPDIR_TEST=$(mktemp -d)
+# Title contains a real newline in the JSON string
+ALL_JSON='[{"number":11,"title":"Line one\nLine two","labels":[],"createdAt":"2024-01-01T00:00:00Z"}]'
+echo '{"labels":[],"body":""}' > "$TMPDIR_TEST/issue_json_11.txt"
+write_mock_gh_for_lri "$TMPDIR_TEST" "$ALL_JSON" ""
+STDOUT=$(PATH="$TMPDIR_TEST:$PATH" "$LIST_READY" 2>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_zero "H7: exit 0" "$EXIT_CODE"
+assert_line_count "H7: exactly 1 line of output" "$STDOUT" 1
+cleanup
+
+# H8: hex color #123456 should NOT trigger validator warning (exit 0)
+echo "=== H8: hex color #123456 -> exit 0 ==="
+TMPDIR_TEST=$(mktemp -d)
+printf '## Description\nUse hex color #123456 for the badge.\n' > "$TMPDIR_TEST/body.md"
+"$VALIDATE" --file "$TMPDIR_TEST/body.md" && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_zero "H8: hex color #123456: exit 0" "$EXIT_CODE"
+cleanup
+
+# H9: ref inside ``` fenced code block -> exit 0
+echo "=== H9: ref inside fenced code block -> exit 0 ==="
+TMPDIR_TEST=$(mktemp -d)
+printf '## Description\nWorking on it.\n\n```\ngit show #123\n```\n' > "$TMPDIR_TEST/body.md"
+"$VALIDATE" --file "$TMPDIR_TEST/body.md" && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_zero "H9: fenced code-block ref: exit 0" "$EXIT_CODE"
+cleanup
+
+# H10: #123abc (digits-then-alpha) should NOT trigger warning (exit 0)
+echo "=== H10: #123abc -> exit 0 ==="
+TMPDIR_TEST=$(mktemp -d)
+printf '## Description\nThe identifier is #123abc not an issue.\n' > "$TMPDIR_TEST/body.md"
+"$VALIDATE" --file "$TMPDIR_TEST/body.md" && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_zero "H10: #123abc identifier: exit 0" "$EXIT_CODE"
+cleanup
+
+# H11: ref inside ~~~ fenced code block -> exit 0
+echo "=== H11: ref inside ~~~ fenced block -> exit 0 ==="
+TMPDIR_TEST=$(mktemp -d)
+printf '## Description\nLook at this snippet.\n\n~~~\nrelates to #456\n~~~\n' > "$TMPDIR_TEST/body.md"
+"$VALIDATE" --file "$TMPDIR_TEST/body.md" && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_zero "H11: ~~~ fenced block ref: exit 0" "$EXIT_CODE"
+cleanup
+
+# H12: real ref with period suffix '#42.' still triggers warning (exit 1)
+echo "=== H12: regression — '#42.' still triggers warning ==="
+TMPDIR_TEST=$(mktemp -d)
+printf '## Description\nThis builds on #42. It is needed.\n' > "$TMPDIR_TEST/body.md"
+"$VALIDATE" --file "$TMPDIR_TEST/body.md" --quiet && EXIT_CODE=0 || EXIT_CODE=$?
+assert_exit_one "H12: '#42.' still flagged: exit 1" "$EXIT_CODE"
+cleanup
+
+# ============================================================
 # Summary
 # ============================================================
 
