@@ -34,16 +34,16 @@ trail and is strictly worse than not running at all.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-   Spawn subagents with `claude-spawn-agent <agent-name> <prompt>`. For a
-   single subagent, invoke it through the Bash tool with
-   `run_in_background: true` — the Bash tool returns immediately with a task
-   handle and the parent receives an automatic completion notification when
-   the subprocess exits; read the result-file path it printed on stdout
-   then, no polling required. For parallel fan-out (multiple subagents at
-   once), redirect each subagent's stdout to a temp file and `&`/`wait`:
-   `claude-spawn-agent X Y > /tmp/a.txt & claude-spawn-agent X Z > /tmp/b.txt & wait`.
-   `claude-spawn-agent` is on `PATH` in every Claude Code context and
-   self-locates its plugin root — no env-var setup is required.
+   Spawn subagents with `claude-spawn-agent <agent-name> <prompt>` invoked
+   via the Bash tool. It is the drop-in for the built-in `Agent` tool
+   inside subagent contexts: the subagent's text response is printed
+   directly to stdout (foreground) or delivered inline in the completion
+   notification (background). For a single subagent:
+   `Bash(command="claude-spawn-agent X Y", run_in_background=true)` — the
+   Bash tool returns immediately; the completion notification fires on
+   subprocess exit and its output contains the response text inline. For
+   parallel fan-out, redirect each subagent's stdout to a temp file and
+   `&`/`wait` — no polling, the response arrives directly.
 
    **Delta-mode pointer resolution.** On iter > 1 the Planner may emit
    sections or list items as `(unchanged from iteration N-1 — see <hash>)`.

@@ -12,14 +12,14 @@ Three subagents (Planner, Doer, Checker) iterate until the Checker issues a PASS
 
 **Never run the PDC loop inline.** If `claude-spawn-agent` is unavailable and step 0 did not abort, ABORT — inline execution defeats the loop's isolation, commit trail, and worktree guarantees.
 
-Spawn subagents with `claude-spawn-agent <agent-name> <prompt>` invoked via
-the Bash tool with `run_in_background: true`. The Bash tool returns
-immediately; the parent receives an automatic completion notification when
-the subprocess exits — read the result-file path printed on stdout then.
-No polling is required.
+Spawn subagents with `claude-spawn-agent <agent-name> <prompt>` invoked
+via the Bash tool. It is the drop-in for the built-in `Agent` tool inside
+subagent contexts: the subagent's text response is printed directly to
+stdout (foreground) or delivered inline in the completion notification
+(background).
 
-- Sync: `Bash(command="claude-spawn-agent X Y", run_in_background=true)` → completion notification → read result file.
-- Parallel fan-out: several `Bash(run_in_background=true, ...)` calls in one message, or `claude-spawn-agent X Y > /tmp/file.txt &` + `wait`.
+- Sync: `Bash(command="claude-spawn-agent X Y", run_in_background=true)` → completion notification fires on finish; its output contains the subagent's response text inline.
+- Parallel fan-out: several `claude-spawn-agent X Y > /tmp/file.txt &` calls in one Bash block, followed by `wait`.
 
 `claude-spawn-agent` is on `PATH` in every context and self-locates its
 plugin root — no env-var setup is required.
