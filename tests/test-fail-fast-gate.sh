@@ -7,6 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+THIS_BASH="${BASH:-/usr/bin/bash}"  # full path to bash (for PATH-isolation tests)
 SKILL_MD="$REPO_ROOT/plugins/looper/skills/looper/SKILL.md"
 PLANNER_MD="$REPO_ROOT/plugins/looper/agents/planner.md"
 DOER_MD="$REPO_ROOT/plugins/looper/agents/doer.md"
@@ -109,27 +110,28 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# 1c. The ### 0. heading's line number is less than all other ### headings
+# 1c. The ### 0. heading's line number is less than all other numbered step headings (### N.)
+# This confirms it is the first step — non-step subsections (### Never run...) are excluded.
 HEADING_0_LINE=$(grep -n '^### 0\.' "$SKILL_MD" | head -1 | cut -d: -f1 || true)
 if [ -z "$HEADING_0_LINE" ]; then
     echo "FAIL: Could not find '### 0.' heading in SKILL.md"
     FAIL=$((FAIL + 1))
 else
-    # Get all other ### headings (excluding ### 0.)
-    OTHER_HEADINGS=$(grep -n '^### ' "$SKILL_MD" | grep -v '^'"$HEADING_0_LINE"':' || true)
+    # Get all other numbered step headings (### N. ...) excluding ### 0. itself
+    OTHER_STEP_HEADINGS=$(grep -n '^### [0-9]' "$SKILL_MD" | grep -v '^'"$HEADING_0_LINE"':' || true)
     ALL_BEFORE=true
     while IFS= read -r line; do
         if [ -z "$line" ]; then continue; fi
         OTHER_LINE=$(echo "$line" | cut -d: -f1)
         if [ -n "$OTHER_LINE" ] && [ "$OTHER_LINE" -le "$HEADING_0_LINE" ]; then
             ALL_BEFORE=false
-            echo "FAIL: Found '### ' heading at line $OTHER_LINE which is not after '### 0.' at line $HEADING_0_LINE"
+            echo "FAIL: Found numbered step heading at line $OTHER_LINE which is not after '### 0.' at line $HEADING_0_LINE"
             echo "  Heading: $line"
             break
         fi
-    done <<< "$OTHER_HEADINGS"
+    done <<< "$OTHER_STEP_HEADINGS"
     if [ "$ALL_BEFORE" = "true" ]; then
-        echo "PASS: '### 0.' heading (line $HEADING_0_LINE) appears before all other '### ' headings"
+        echo "PASS: '### 0.' heading (line $HEADING_0_LINE) appears before all other numbered step headings"
         PASS=$((PASS + 1))
     else
         FAIL=$((FAIL + 1))
@@ -149,7 +151,7 @@ else
 
     TMP_EMPTY_PATH=$(mktemp -d)
     set +e
-    OUTPUT=$(PATH="$TMP_EMPTY_PATH" bash -c "$GATE_SNIPPET" 2>&1)
+    OUTPUT=$(PATH="$TMP_EMPTY_PATH" "$THIS_BASH" -c "$GATE_SNIPPET" 2>&1)
     EXIT=$?
     set -e
     rmdir "$TMP_EMPTY_PATH"
@@ -175,7 +177,7 @@ SHIM
     chmod +x "$TMP_SHIM_DIR/claude-spawn-agent"
 
     set +e
-    OUTPUT=$(PATH="$TMP_SHIM_DIR:$PATH" bash -c "$GATE_SNIPPET" 2>&1)
+    OUTPUT=$(PATH="$TMP_SHIM_DIR:$PATH" "$THIS_BASH" -c "$GATE_SNIPPET" 2>&1)
     EXIT=$?
     set -e
     rm -rf "$TMP_SHIM_DIR"

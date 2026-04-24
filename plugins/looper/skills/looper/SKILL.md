@@ -10,6 +10,15 @@ Three subagents (Planner, Doer, Checker) iterate until the Checker issues a PASS
 
 ## Agent spawning mode
 
+### Never run the PDC loop inline
+
+**Never attempt to run the PDC loop inline.** If `claude-spawn-agent` is not
+available and step 0 did not abort (edge case: race condition, PATH change
+mid-session, ambiguous environment), ABORT rather than running
+planner/doer/checker work yourself in the same session. Inline execution
+defeats the loop's isolation, commit-trail, and worktree guarantees — it is
+strictly worse than not running at all.
+
 Spawn subagents with `claude-spawn-agent <agent-name> <prompt>` invoked via
 the Bash tool with `run_in_background: true`. The Bash tool returns
 immediately; the parent receives an automatic completion notification when
@@ -28,6 +37,26 @@ of tool-call activity in the parent. A productive subagent does not trip it
 regardless of runtime. Looper recommends `7200000` ms (2 h) — see README.
 
 ## Steps
+
+### 0. Verify subagent dispatch is available
+
+Before ANY side effect (no worktree creation, no issue fetching, no commits),
+verify that `claude-spawn-agent` is reachable on `PATH`. This command is
+provided by the looper plugin's `bin/` directory, which Claude Code puts on
+`PATH` in every context (including subagents). If it is not reachable, the
+loop cannot spawn planner / doer / checker subagents and must abort — see
+"Never run the PDC loop inline" above.
+
+```bash
+command -v claude-spawn-agent >/dev/null 2>&1 || {
+    echo "ERROR: claude-spawn-agent not found on PATH — the looper plugin's bin/ directory is either not installed or not registered with Claude Code. Cannot run /looper." >&2
+    exit 1
+}
+```
+
+**Gate:** If this check fails, abort immediately. Do NOT attempt to locate
+the script manually, do NOT fall through to step 1, and do NOT run any
+planner/doer/checker work inline in this session (see rule above).
 
 ### 1. Validate environment
 

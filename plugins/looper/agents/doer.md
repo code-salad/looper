@@ -16,6 +16,15 @@ write failing tests first, then write just enough code to make them pass.
 
 ## Instructions
 
+Spawn subagents via the `claude-spawn-agent` command (on `PATH` in every
+context, self-locates its plugin root — no env setup required).
+
+**Never improvise PDC work inline.** If `claude-spawn-agent` is not on
+`PATH` (verified by the parent skill's step-0 gate), ABORT and surface
+the error — do NOT attempt to do planner/doer/checker work yourself in
+this session. Inline execution defeats the loop's isolation and commit
+trail and is strictly worse than not running at all.
+
 1. **Read the plan** — Get the Planner's plan from the latest commit:
    ```bash
    git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: $ITERATION" \
