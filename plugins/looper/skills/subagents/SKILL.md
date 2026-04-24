@@ -1,6 +1,6 @@
 ---
 name: subagents
-description: Discover and spawn subagents via claude -p when the Agent tool is not available. Use this skill as a fallback to delegate work to specialized agents from subagent contexts or non-interactive sessions where the Agent tool is absent.
+description: Discover and spawn subagents via claude -p. The canonical spawn pattern is `Bash(command="claude-spawn-agent <agent> <prompt>", run_in_background=true)` which returns an automatic completion notification on subprocess exit.
 tools: Bash, Read, Glob
 ---
 
@@ -70,49 +70,55 @@ underlying script self-locates its `CLAUDE_PLUGIN_ROOT` from its own path
 in the caller's environment. Callers never need to know the plugin's install
 layout or export any env vars.
 
-### Sync mode (default)
+### Sync mode (default) — canonical pattern
 
-Blocks until the subagent completes. Prints the path to the result file.
-**Important:** Must be run via `run_in_background: true` in the Bash tool
-(Claude Code's Bash tool suppresses stdout from nested Claude processes in
-foreground mode).
+This is the primary pattern for spawning a single subagent and waiting for
+its result. Invoke `claude-spawn-agent` via the Bash tool with
+`run_in_background: true`. The Bash tool returns immediately with a task
+handle; when the subprocess exits, the parent receives an automatic
+completion notification. At that point, read the result-file path that
+`claude-spawn-agent` printed on stdout.
 
 ```bash
-# Run in background, then read result
-claude-spawn-agent "looper:checker" "Review the doer's work" # prints /tmp/subagent-response-<ts>-<pid>.txt
+# In the Bash tool with run_in_background: true
+claude-spawn-agent "looper:checker" "Review the doer's work"
+# stdout: /tmp/subagent-response-<ts>.txt
+# (completion notification arrives when the subagent exits)
 ```
 
+After the completion notification arrives, read the file:
+
 ```bash
-# Full pattern: launch in background Bash, read result file after
-RESULT=$(claude-spawn-agent "Explore" "What language is this repo?")
-cat "$RESULT"
+cat /tmp/subagent-response-<ts>.txt
 ```
 
-### Async mode
+Do NOT capture the `claude-spawn-agent` call with a foreground
+`RESULT=$(...)` — Claude Code's Bash tool suppresses stdout from nested
+`claude` processes in foreground mode, so you'll get an empty string.
 
-Returns the result file path immediately, runs the subagent in background.
-Ideal for parallel spawning — fire multiple agents, do other work, read later.
+### Async mode — for parallel fan-out
 
-```bash
-# Fire and get path back instantly
-RESULT=$(claude-spawn-agent --async "Explore" "Find all API endpoints")
-# ... do other work ...
-# Poll until file is non-empty
-cat "$RESULT"
-```
-
-### Run multiple subagents in parallel (async)
+Use `--async` when you want to fire multiple subagents concurrently and
+wait for all of them in a single shell block. `--async` prints the
+result-file path immediately and runs the subagent in the background, so
+you can launch N in a row, then `wait` for them to finish together.
 
 ```bash
+# Fire two subagents in parallel, collect both results
 R1=$(claude-spawn-agent --async "looper:planner" "Plan how to add rate limiting")
 R2=$(claude-spawn-agent --async "Explore" "Find all API endpoint definitions")
 
-# Wait for both to finish (poll until files are non-empty)
-while [ ! -s "$R1" ] || [ ! -s "$R2" ]; do sleep 2; done
+# Block on both background subprocesses
+wait
 
-echo "=== Plan ===" && cat "$R1"
+echo "=== Plan ==="    && cat "$R1"
 echo "=== Explore ===" && cat "$R2"
 ```
+
+For single-spawn, prefer the sync pattern above — it's simpler and the
+Bash tool delivers an automatic completion notification. Reserve `--async`
+for the genuine fan-out case where you want N concurrent subagents and
+only one downstream `wait`.
 
 ### Extra flags
 
