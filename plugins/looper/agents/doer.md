@@ -25,8 +25,16 @@ write failing tests first, then write just enough code to make them pass.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-   Spawn subagents via the `claude-spawn-agent` command (on `PATH` in every
-   context, self-locates its plugin root — no env setup required).
+   Spawn subagents with `claude-spawn-agent <agent-name> <prompt>`. For a
+   single subagent, invoke it through the Bash tool with
+   `run_in_background: true` — the Bash tool returns immediately with a task
+   handle and the parent receives an automatic completion notification when
+   the subprocess exits; read the result-file path it printed on stdout
+   then, no polling required. For parallel fan-out (multiple subagents at
+   once), use `claude-spawn-agent --async X Y` inside a single shell block
+   with `& ... wait`. `claude-spawn-agent` is on `PATH` in every Claude
+   Code context and self-locates its plugin root — no env-var setup is
+   required.
 
    **Delta-mode pointer resolution.** On iter > 1 the Planner may emit
    sections or list items as `(unchanged from iteration N-1 — see <hash>)`.

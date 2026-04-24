@@ -329,9 +329,11 @@ All scripts live in `plugins/looper/skills/looper/scripts/` and auto-detect your
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `LOOPER_MAX_ITERATIONS` | `10` | Maximum PDC loop iterations |
+| `CLAUDE_STREAM_IDLE_TIMEOUT_MS` | `300000` (Claude Code default, 5 min) | Stream idle timer that fires on stalled model streams (no tokens flowing from the API). Set to `7200000` (2 h) for longer loops — productive subagents actively generating tokens do not trip it, but this provides belt-and-suspenders headroom for rare model stalls. |
 
 ```bash
 LOOPER_MAX_ITERATIONS=5 claude
+CLAUDE_STREAM_IDLE_TIMEOUT_MS=7200000 claude   # recommended for longer loops
 ```
 
 ---
