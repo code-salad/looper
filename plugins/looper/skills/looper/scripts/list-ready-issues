@@ -31,14 +31,29 @@ JSON_MODE=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --repo)
+            if [ $# -lt 2 ]; then
+                echo "Error: --repo requires a value" >&2
+                echo "Usage: list-ready-issues [--repo owner/repo] [--label LABEL] [--limit N] [--json]" >&2
+                exit 2
+            fi
             REPO_ARG="$2"
             shift 2
             ;;
         --label)
+            if [ $# -lt 2 ]; then
+                echo "Error: --label requires a value" >&2
+                echo "Usage: list-ready-issues [--repo owner/repo] [--label LABEL] [--limit N] [--json]" >&2
+                exit 2
+            fi
             LABEL_ARG="$2"
             shift 2
             ;;
         --limit)
+            if [ $# -lt 2 ]; then
+                echo "Error: --limit requires a value" >&2
+                echo "Usage: list-ready-issues [--repo owner/repo] [--label LABEL] [--limit N] [--json]" >&2
+                exit 2
+            fi
             LIMIT="$2"
             shift 2
             ;;
@@ -75,17 +90,34 @@ if [ -n "$REPO_ARG" ]; then
     REPO_ARGS=("--repo" "$REPO_ARG")
 fi
 
-# Fetch candidates
-ALL_JSON=$(gh "${GH_ARGS[@]}" 2>&1) || {
-    echo "Error: gh issue list failed: $ALL_JSON" >&2
+# Fetch candidates — keep stderr OUT of the JSON capture so advisory lines
+# from gh (rate-limit warnings, token expiry notices, etc.) do not corrupt
+# the JSON string.
+GH_STDERR=$(mktemp)
+trap 'rm -f "$GH_STDERR"' EXIT
+ALL_JSON=$(gh "${GH_ARGS[@]}" 2>"$GH_STDERR") || {
+    echo "Error: gh issue list failed: $(cat "$GH_STDERR")" >&2
+    rm -f "$GH_STDERR"
     exit 2
 }
+# Forward any advisory stderr from gh to our own stderr (visible to caller,
+# not captured into the JSON variable).
+if [ -s "$GH_STDERR" ]; then
+    cat "$GH_STDERR" >&2
+fi
 
 # Collect ready issue numbers
 READY_NUMBERS=()
 BLOCKED_COUNT=0
 
 for n in $(echo "$ALL_JSON" | jq -r '.[].number'); do
+    # check-blocked exit codes:
+    #   0 = not blocked (ready)
+    #   1 = blocked (label or open dep)
+    #   2 = internal error (bad args) — should never occur here since $n is
+    #       always a numeric id from jq. If it ever does, we conservatively
+    #       count it as blocked (safer to skip than to claim a possibly-blocked
+    #       issue).
     if "$SCRIPT_DIR/check-blocked" --issue "$n" "${REPO_ARGS[@]}" >/dev/null 2>&1; then
         READY_NUMBERS+=("$n")
     else
@@ -112,7 +144,9 @@ fi
 if [ "$JSON_MODE" -eq 1 ]; then
     echo "$READY_JSON"
 else
-    echo "$READY_JSON" | jq -r '.[] | "#\(.number)\t\(.title)"'
+    # Replace any embedded tab/newline/CR in titles so each line is exactly
+    # two tab-separated fields: #N<TAB><sanitised-title>
+    echo "$READY_JSON" | jq -r '.[] | "#\(.number)\t\(.title | gsub("[\t\n\r]"; " "))"'
 fi
 
 # Stderr summary
