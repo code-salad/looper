@@ -28,7 +28,9 @@ set -euo pipefail
 #       composer.json   -> composer.lock
 #   - Test files that match an expected source file via common conventions
 #     (e.g. tests/test_<name>.sh, __tests__/<name>.test.*, <name>_test.*,
-#     tests/<name>_test.rs, tests/integration/<any>.sh).
+#     tests/<name>_test.rs). Test files that do NOT derive from an expected
+#     source stem are treated as drift — unrelated tests dropped under
+#     tests/ are precisely the kind of scope creep this guard should catch.
 #   - Snapshot files under __snapshots__/, snapshots/, or *.snap alongside
 #     expected files.
 
@@ -234,16 +236,7 @@ match_path() {
         esac
     done
 
-    # 4. Generic test directories are always acceptable as companion test
-    #    output when at least one expected file is a source file — tests for
-    #    new behavior live there even if the planner did not list them.
-    case "$path" in
-        tests/*|test/*|__tests__/*|spec/*)
-            return 0
-            ;;
-    esac
-
-    # 5. Snapshot updates alongside expected files.
+    # 4. Snapshot updates alongside expected files.
     dir="$(dirname "$path")"
     case "$path" in
         *__snapshots__/*|*/snapshots/*|*.snap)

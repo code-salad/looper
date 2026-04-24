@@ -288,6 +288,48 @@ OUTPUT=$("$CHECK_SCOPE" --expected-files "anything" --commit "$HASH" 2>/dev/null
 assert_exit_zero "empty commit: exit 0" "$EC"
 teardown_repo
 
+# --- Test 16: Unrelated test under tests/ is flagged as drift ---
+echo "=== Test 16: Unrelated test file is drift ==="
+setup_repo
+mkdir -p src tests
+echo "fn main() {}" > src/main.rs
+echo "// unrelated" > tests/test_unrelated.sh
+git add -A
+git commit -q -m "drift"
+HASH=$(git rev-parse HEAD)
+OUTPUT=$("$CHECK_SCOPE" --expected-files "src/main.rs" --commit "$HASH" 2>/dev/null) && EC=0 || EC=$?
+assert_exit_one "unrelated test: exit 1" "$EC"
+assert_stdout_contains "unrelated test: lists tests/test_unrelated.sh" "$OUTPUT" "tests/test_unrelated.sh"
+teardown_repo
+
+# --- Test 17: Test with a non-matching stem is flagged as drift ---
+echo "=== Test 17: Misleading-stem test is drift ==="
+setup_repo
+mkdir -p src tests
+echo "fn baz() {}" > src/baz.rs
+echo "// unrelated name" > tests/test_misleading.sh
+git add -A
+git commit -q -m "drift"
+HASH=$(git rev-parse HEAD)
+OUTPUT=$("$CHECK_SCOPE" --expected-files "src/baz.rs" --commit "$HASH" 2>/dev/null) && EC=0 || EC=$?
+assert_exit_one "misleading stem: exit 1" "$EC"
+assert_stdout_contains "misleading stem: lists tests/test_misleading.sh" "$OUTPUT" "tests/test_misleading.sh"
+teardown_repo
+
+# --- Test 18: Unrelated spec/ file is flagged as drift ---
+echo "=== Test 18: Unrelated spec file is drift ==="
+setup_repo
+mkdir -p src spec
+echo "fn x() {}" > src/x.rs
+echo "// random spec" > spec/unrelated_spec.rb
+git add -A
+git commit -q -m "drift"
+HASH=$(git rev-parse HEAD)
+OUTPUT=$("$CHECK_SCOPE" --expected-files "src/x.rs" --commit "$HASH" 2>/dev/null) && EC=0 || EC=$?
+assert_exit_one "unrelated spec: exit 1" "$EC"
+assert_stdout_contains "unrelated spec: lists spec/unrelated_spec.rb" "$OUTPUT" "spec/unrelated_spec.rb"
+teardown_repo
+
 # --- Summary ---
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
