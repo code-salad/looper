@@ -213,18 +213,23 @@ assert_output_contains "loop ctx: has Prior Loop Context section" "$OUTPUT" "Pri
 assert_output_contains "loop ctx: content present" "$OUTPUT" "fixed typo"
 cleanup
 
-# --- Test 11: --role planner with --iteration > 1: has pruning note ---
+# --- Test 11: --role planner with --iteration > 1: project-context pruned to pointer ---
+# Since PR #87, the iteration>1 pruning signal lives in planner.md (Delta-mode).
+# build-agent-context's iter>1 behavior is to replace the full <project-context>
+# bundle with a pointer to iteration 1's plan commit. Assert that pointer is
+# emitted. Pass --loop-context explicitly so the script does not try to shell out
+# to a non-existent git-loop-context under --scripts-dir.
 echo "=== Test 11: Planner with iteration > 1 has pruning note ==="
 setup_fixture_dir
-OUTPUT=$(eval "$BUILD_CTX --role planner --task my-task --iteration 2 --task-prompt 'Fix the bug' --scripts-dir /tmp/scripts --worktree-dir $TMPDIR_TEST --dev-port 9876 --compose false --compose-services none" 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
-assert_output_contains "planner iter>1: has pruning note" "$OUTPUT" "Spawn Explore subagents ONLY\|re-explore\|action items"
+OUTPUT=$(eval "$BUILD_CTX --role planner --task my-task --iteration 2 --task-prompt 'Fix the bug' --scripts-dir /tmp/scripts --worktree-dir $TMPDIR_TEST --dev-port 9876 --compose false --compose-services none --loop-context 'prior iter notes'" 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
+assert_output_contains "planner iter>1: has pruning note" "$OUTPUT" "project context unchanged"
 cleanup
 
 # --- Test 12: --role planner with --iteration 1: NO pruning note ---
 echo "=== Test 12: Planner with iteration 1 has no pruning note ==="
 setup_fixture_dir
 OUTPUT=$(eval "$BUILD_CTX --role planner $COMMON_FLAGS --worktree-dir $TMPDIR_TEST" 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
-assert_output_not_contains "planner iter=1: no pruning note" "$OUTPUT" "re-explore the entire codebase"
+assert_output_not_contains "planner iter=1: no pruning note" "$OUTPUT" "project context unchanged"
 cleanup
 
 # --- Test 13: Missing required flags -> exit nonzero ---
