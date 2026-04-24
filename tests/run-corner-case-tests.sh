@@ -41,6 +41,7 @@ run_suite "test-resolve-plan-pointers.sh"
 run_suite "test-delta-mode-prompts.sh"
 run_suite "test-issue-tooling.sh"
 run_suite "test-agent-spawn-migration.sh"
+run_suite "test-spawn-agent-canonical.sh"
 run_suite "test-fail-fast-gate.sh"
 
 echo "=============================="

@@ -2,71 +2,60 @@
 set -euo pipefail
 
 # Self-locate: derive CLAUDE_PLUGIN_ROOT from this script's own path.
-# spawn-agent lives at <PLUGIN_ROOT>/skills/subagents/scripts/spawn-agent,
-# so the plugin root is three directories up. The ${VAR:-default} guard
-# preserves any value the caller may have already exported.
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$_SCRIPT_DIR/../../.." && pwd)}"
 
-# Spawns a Claude subagent via claude -p and returns the text response.
+# Spawns a Claude subagent via `claude -p` and prints the subagent's text
+# response directly to stdout — a true drop-in for the built-in Agent tool.
 # Bypasses nested-session detection and skips permission prompts.
 #
-# Modes:
-#   sync  (default) — blocks until done, writes result to file, prints path
-#   async           — returns immediately, prints output path to poll
-#
 # Usage:
-#   spawn-agent [--async] <agent-name> <prompt> [extra-flags...]
+#   claude-spawn-agent <agent-name> <prompt> [extra-flags...]
 #
-# Sync examples (run in background Bash, read result file after):
-#   spawn-agent looper:checker "Review the doer's work"
-#   cat /tmp/subagent-response-<ts>-<pid>.txt
+# Examples (main-session Agent-tool equivalents shown inline):
+#   # Foreground call, capture the response:
+#   RESPONSE=$(claude-spawn-agent Explore "Find all API endpoints")
 #
-# Async examples (fire and poll):
-#   RESULT=$(spawn-agent --async Explore "Find all API endpoints")
-#   # ... do other work ...
-#   cat "$RESULT"
+#   # Background / parallel fan-out:
+#   claude-spawn-agent Explore "Area A" > /tmp/a.txt &
+#   claude-spawn-agent Explore "Area B" > /tmp/b.txt &
+#   wait
+#
+#   # Via the Bash tool with run_in_background=true (completion notification):
+#   claude-spawn-agent looper:checker "Review the doer's work"
 
-MODE="sync"
-if [[ "${1:-}" == "--async" ]]; then
-  MODE="async"
-  shift
-fi
-
-AGENT="${1:?Usage: spawn-agent [--async] <agent-name> <prompt> [extra-flags...]}"
-PROMPT="${2:?Usage: spawn-agent [--async] <agent-name> <prompt> [extra-flags...]}"
+AGENT="${1:?Usage: claude-spawn-agent <agent-name> <prompt> [extra-flags...]}"
+PROMPT="${2:?Usage: claude-spawn-agent <agent-name> <prompt> [extra-flags...]}"
 shift 2
 
-TIMESTAMP=$(date +%s%N)
-OUTFILE="/tmp/subagent-result-${TIMESTAMP}.json"
-RESULTFILE="/tmp/subagent-response-${TIMESTAMP}.txt"
+# Defensive: catch callers still passing the removed --async flag.
+case "$AGENT" in
+  --async)
+    echo "claude-spawn-agent: --async is no longer supported (issue #104). Use '&' + 'wait' for parallel fan-out, or Bash(run_in_background=true) for single-spawn." >&2
+    exit 2
+    ;;
+esac
 
-run_agent() {
-  local rc=0
-  env -u CLAUDECODE -u CLAUDE_CODE claude -p \
-    --agent "$AGENT" \
-    --output-format json \
-    --dangerously-skip-permissions \
-    "$PROMPT" \
-    "$@" \
-    >"$OUTFILE" 2>/dev/null || rc=$?
+OUTFILE="$(mktemp -t subagent-result-XXXXXX.json)"
+# Ensure the temp JSON is always cleaned up, even on error.
+trap 'rm -f "$OUTFILE"' EXIT
 
-  if [ -s "$OUTFILE" ]; then
-    jq -r '.result // empty' "$OUTFILE" > "$RESULTFILE" 2>/dev/null || cp "$OUTFILE" "$RESULTFILE"
-  else
-    echo "spawn-agent error: claude exited with code $rc" > "$RESULTFILE"
-  fi
-  rm -f "$OUTFILE"
-  return $rc
-}
+rc=0
+env -u CLAUDECODE -u CLAUDE_CODE claude -p \
+  --agent "$AGENT" \
+  --output-format json \
+  --dangerously-skip-permissions \
+  "$PROMPT" \
+  "$@" \
+  >"$OUTFILE" 2>/dev/null || rc=$?
 
-if [[ "$MODE" == "async" ]]; then
-  # Return the result path immediately, run in background
-  echo "$RESULTFILE"
-  run_agent "$@" &
-  disown
+if [ -s "$OUTFILE" ]; then
+  # Print .result directly to stdout. If .result is missing/empty, emit the
+  # raw JSON so the caller has something to inspect.
+  jq -r '.result // empty' "$OUTFILE" 2>/dev/null || cat "$OUTFILE"
 else
-  # Block until complete, print the result path
-  run_agent "$@"
-  echo "$RESULTFILE"
+  # claude exited without writing JSON — surface that instead of empty output.
+  echo "claude-spawn-agent error: claude exited with code $rc (no output)" >&2
 fi
+
+exit $rc
