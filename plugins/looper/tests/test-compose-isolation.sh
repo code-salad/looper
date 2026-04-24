@@ -212,7 +212,7 @@ check_file_contains "checker.md references compose-lifecycle" \
 
 # --- SKILL.md references compose isolation ---
 
-check_file_contains "SKILL.md has step 7b2 for compose isolation" \
+check_file_contains "SKILL.md has step 6b2 for compose isolation" \
     "$SKILL_FILE" \
     "compose-isolate"
 

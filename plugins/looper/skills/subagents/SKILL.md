@@ -1,21 +1,30 @@
 ---
 name: subagents
-description: Discover and spawn subagents via claude -p. The canonical spawn pattern is `Bash(command="claude-spawn-agent <agent> <prompt>", run_in_background=true)` which returns an automatic completion notification on subprocess exit.
+description: Fallback for spawning subagents — use ONLY when the built-in `Agent` tool is not in your tools list (e.g. inside a nested subagent whose frontmatter omits `Agent`, a `claude -p` session, or a shell script). Prefer `Agent` when available. Wraps `claude -p` via the `claude-spawn-agent` script.
 tools: Bash, Read, Glob
 ---
 
 # Subagents Skill
 
-Spawn subagents using `claude-spawn-agent`. This is the canonical spawn
-mechanism in any context that runs outside the main Claude Code session —
-subagents, `claude -p` sessions, or scripts. It is a drop-in for the
-built-in `Agent` tool: the subagent's text response is printed directly to
-stdout.
+`claude-spawn-agent` is the **fallback** spawn mechanism for contexts
+where the built-in `Agent` tool isn't in your tools list — nested
+subagents, fresh `claude -p` sessions, or shell scripts. It spawns a
+fresh `claude -p` subprocess and is a drop-in for `Agent`: the
+subagent's text response is printed directly to stdout.
+
+Prefer the built-in `Agent` tool whenever it's available in your tools
+list. `Agent` is in-process, faster, and cheaper than a `claude -p`
+subprocess.
 
 **When to use this skill:**
-- You need to delegate work to a specialized agent
-- You are running inside a subagent and need to spawn further subagents
-- You want to run multiple agents in parallel from a non-interactive context
+- `Agent` is not in your tools list (e.g. you are a subagent whose
+  frontmatter only lists `Bash, Read, Grep, Glob` etc.)
+- You are running in a `claude -p` session or shell script
+- You need to fan out several subagents in parallel from a non-interactive
+  context
+
+**When NOT to use this skill:**
+- The built-in `Agent` tool is available — use that instead.
 
 ---
 
