@@ -8,37 +8,41 @@ tools: Bash, Read, Edit, Write, Grep, Glob, Agent, Skill
 
 Three subagents (Planner, Doer, Checker) iterate until the Checker issues a PASS verdict.
 
-## Agent spawning mode
+## Spawning planner / doer / checker
 
-**Never run the PDC loop inline.** If `claude-spawn-agent` is unavailable and step 0 did not abort, ABORT — inline execution defeats the loop's isolation, commit trail, and worktree guarantees.
+Spawn the three subagents in sequence: planner → doer → checker. Wait for
+each to complete before spawning the next.
 
-Spawn subagents with `claude-spawn-agent <agent-name> <prompt>` invoked
-via the Bash tool. It is the drop-in for the built-in `Agent` tool inside
-subagent contexts: the subagent's text response is printed directly to
-stdout (foreground) or delivered inline in the completion notification
-(background).
+Prefer the built-in `Agent` tool:
+```
+Agent(subagent_type="looper:planner", prompt=<Planner context>)
+```
+If `Agent` is not in your tools list, use the `subagents` skill instead
+(it wraps `claude-spawn-agent`). Same agent names, same three-phase
+sequence — see `skills/subagents/SKILL.md`.
 
-- Sync: `Bash(command="claude-spawn-agent X Y", run_in_background=true)` → completion notification fires on finish; its output contains the subagent's response text inline.
-- Parallel fan-out: several `claude-spawn-agent X Y > /tmp/file.txt &` calls in one Bash block, followed by `wait`.
+**Never run the PDC loop inline.** Do not skip the subagent boundary and
+do planner/doer/checker work directly in this session — it defeats the
+loop's isolation, commit trail, and worktree guarantees.
 
-`claude-spawn-agent` is on `PATH` in every context and self-locates its
-plugin root — no env-var setup is required.
-
-Stream-idle watchdog (`CLAUDE_STREAM_IDLE_TIMEOUT_MS`, v2.1.84+) fires only
-on **stalled model streams** (no tokens flowing from the API), NOT from lack
-of tool-call activity in the parent. A productive subagent does not trip it
-regardless of runtime. Looper recommends `7200000` ms (2 h) — see README.
+**Why step 0 always gates on `claude-spawn-agent`.** The planner, doer,
+and checker don't have the `Agent` tool in their own frontmatter, so they
+always spawn *their* sub-subagents (Explore, `looper:debugger`,
+`looper:simplifier`, `check-*`, etc.) via `claude-spawn-agent` on `PATH`.
+Without that binary those inner spawns fail mid-iteration — the loop
+gates on it up front to fail fast before any side effects.
 
 ## Steps
 
 ### 0. Verify subagent dispatch is available
 
 Before ANY side effect (no worktree creation, no issue fetching, no commits),
-verify that `claude-spawn-agent` is reachable on `PATH`. This command is
-provided by the looper plugin's `bin/` directory, which Claude Code puts on
-`PATH` in every context (including subagents). If it is not reachable, the
-loop cannot spawn planner / doer / checker subagents and must abort — see
-"Never run the PDC loop inline" above.
+verify that `claude-spawn-agent` is reachable on `PATH`. Even when this skill
+spawns planner/doer/checker via the `Agent` tool, those three agents
+internally spawn Explore, `looper:debugger`, `looper:simplifier`, and
+`check-*` via `claude-spawn-agent` (they don't have `Agent` in their own
+frontmatter). Without the binary those inner spawns fail partway through an
+iteration — abort up front instead.
 
 ```bash
 command -v claude-spawn-agent >/dev/null 2>&1 || {
@@ -49,7 +53,8 @@ command -v claude-spawn-agent >/dev/null 2>&1 || {
 
 **Gate:** If this check fails, abort immediately. Do NOT attempt to locate
 the script manually, do NOT fall through to step 1, and do NOT run any
-planner/doer/checker work inline in this session (see rule above).
+planner/doer/checker work inline in this session (see "Never run the PDC
+loop inline" above).
 
 ### 1. Validate environment
 
@@ -137,18 +142,13 @@ if [ -n "$ISSUE_NUMBER" ]; then
 fi
 ```
 
-### 5. Project context assembly
-
-Role-specific project context is assembled by `build-agent-context` in step 7c.
-No manual file reading is needed here.
-
-### 6. Detect resume iteration
+### 5. Detect resume iteration
 
 ```bash
 START_ITERATION=$($SCRIPTS_DIR/detect-resume)
 ```
 
-### 7. Run the PDC loop
+### 6. Run the PDC loop
 
 ```bash
 MAX_ITERATIONS="${LOOPER_MAX_ITERATIONS:-10}"
@@ -156,12 +156,7 @@ MAX_ITERATIONS="${LOOPER_MAX_ITERATIONS:-10}"
 
 For each iteration from `START_ITERATION` to `MAX_ITERATIONS`:
 
-#### 7a. Get loop context (per-role, inside `build-agent-context`)
-
-Loop context is fetched per-role inside `build-agent-context` in step 7c.
-No upstream shared fetch is needed.
-
-#### 7b. Generate isolated dev port
+#### 6b. Generate isolated dev port
 
 To avoid port conflicts with the user's main development server (since the loop
 runs in a worktree), generate an isolated port for this loop's dev server:
@@ -174,7 +169,7 @@ LOOPER_DEV_PORT=$(( ( $(echo "$TASK_NAME" | cksum | cut -d' ' -f1) % 50000 ) + 1
 This port is passed to agents so the Checker's integration tests don't collide
 with the user's running dev server.
 
-#### 7b2. Isolate docker-compose services (if applicable)
+#### 6b2. Isolate docker-compose services (if applicable)
 
 If the project uses docker-compose, generate a port isolation override so
 backing services (databases, caches, queues) don't collide between worktrees
@@ -195,7 +190,7 @@ The override file (`docker-compose.looper.yml`) and connection string file
 (`.env.looper`) are generated in the worktree root. Scripts like
 `run-integration-tests` and `compose-lifecycle` use these automatically.
 
-#### 7c. Build the agent context prompts (role-specific)
+#### 6c. Build the agent context prompts (role-specific)
 
 First, compute the diff context for the Checker:
 
@@ -231,16 +226,17 @@ CHECKER_CONTEXT=$($SCRIPTS_DIR/build-agent-context --role checker "${CTX_COMMON[
     --diff-context "$DIFF_CONTEXT")
 ```
 
-#### 7d. Spawn agents
+#### 6d. Spawn agents
 
-For each phase, print a progress header and spawn the agent. Wait for each
-to complete before proceeding to the next.
+For each phase, print a progress header and spawn the agent (see "Spawning
+planner / doer / checker" above for which mechanism). Wait for each to
+complete before proceeding to the next.
 
 1. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
-   `Agent(subagent_type="looper:planner", prompt=<Planner context from 7c>)`
+   Spawn `looper:planner` with the Planner context from 6c.
 
 2. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: DO phase (TDD: red→green) ===`
-   `Agent(subagent_type="looper:doer", prompt=<Doer context from 7c>)`
+   Spawn `looper:doer` with the Doer context from 6c.
 
    Before spawning the Checker, run mechanical pre-checks:
    ```bash
@@ -258,19 +254,19 @@ to complete before proceeding to the next.
    Then continue to the next iteration without spawning the Checker.
 
 3. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: CHECK phase ===`
-   `Agent(subagent_type="looper:checker", prompt=<Checker context from 7c>)`
+   Spawn `looper:checker` with the Checker context from 6c.
 
-#### 7e. Read verdict
+#### 6e. Read verdict
 
 ```bash
 VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \
     | grep -oE 'Loop-Verdict: (PASS|FAIL)' | sed 's/Loop-Verdict: //' || echo "")
 ```
 
-- **PASS:** Break out of the loop, proceed to step 8.
+- **PASS:** Break out of the loop, proceed to step 7.
 - **FAIL** (or no verdict): Report and continue to next iteration.
 
-### 7f. Sync with remote before PR
+### 6f. Sync with remote before PR
 
 After the loop completes with PASS, sync one more time to ensure the PR will have
 no merge conflicts with the default remote branch.
@@ -280,7 +276,7 @@ SYNC_OUTPUT=$($SCRIPTS_DIR/sync-with-remote) && SYNC_EXIT=0 || SYNC_EXIT=$?
 eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
 ```
 
-- **`STATUS=up-to-date` or `STATUS=rebased` (exit 0):** Proceed to step 8.
+- **`STATUS=up-to-date` or `STATUS=rebased` (exit 0):** Proceed to step 7.
 - **`STATUS=conflicts` (exit 1):** The rebase is paused with conflicts. Resolve them:
   1. List conflicted files: `git diff --name-only --diff-filter=U`
   2. Read each conflicted file, understand both sides of the conflict.
@@ -295,7 +291,7 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
   8. If tests fail after conflict resolution, fix the issues and commit before proceeding.
 - **Exit 2 (error):** Warn but still attempt PR creation.
 
-### 8. Report results
+### 7. Report results
 
 - **PASS:** Report success with iteration count, then **you MUST invoke
   `/create-github-pr`** to push the branch and open a pull request against
@@ -313,4 +309,4 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
   the last checker verdict: `git log --grep="Loop-Verdict: FAIL" -1 --format="%B"`
   The worktree at `$WORKTREE_DIR` is **preserved** for debugging.
 - **Resumable:** Running `/looper` again with the same task resumes automatically
-  via step 6.
+  via step 5.

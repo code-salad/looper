@@ -198,14 +198,16 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# The rule must appear AFTER "## Agent spawning mode" and BEFORE the "## Steps" section
-# (i.e. prominently at the top of the spawning-mode section, not buried below the steps).
-AGENT_SPAWN_LINE=$(grep -n '^## Agent spawning mode' "$SKILL_MD" | head -1 | cut -d: -f1 || true)
+# The rule must appear AFTER the top-level spawning section heading and BEFORE
+# the "## Steps" section (i.e. prominently at the top of the spawning section,
+# not buried below the steps). The section was renamed from "Agent spawning
+# mode" to "Spawning planner / doer / checker" after the Agent-first migration.
+AGENT_SPAWN_LINE=$(grep -n '^## Spawning planner' "$SKILL_MD" | head -1 | cut -d: -f1 || true)
 NEVER_INLINE_LINE=$(grep -n 'Never run the PDC loop inline' "$SKILL_MD" | head -1 | cut -d: -f1 || true)
 STEPS_LINE=$(grep -n '^## Steps' "$SKILL_MD" | head -1 | cut -d: -f1 || true)
 
 if [ -z "$AGENT_SPAWN_LINE" ]; then
-    echo "FAIL: Could not find '## Agent spawning mode' heading in SKILL.md"
+    echo "FAIL: Could not find '## Spawning planner' heading in SKILL.md"
     FAIL=$((FAIL + 1))
 elif [ -z "$NEVER_INLINE_LINE" ]; then
     echo "FAIL: Could not find 'Never run the PDC loop inline' in SKILL.md"
@@ -215,10 +217,10 @@ elif [ -z "$STEPS_LINE" ]; then
     FAIL=$((FAIL + 1))
 else
     if [ "$NEVER_INLINE_LINE" -gt "$AGENT_SPAWN_LINE" ]; then
-        echo "PASS: 'Never run the PDC loop inline' (line $NEVER_INLINE_LINE) is after '## Agent spawning mode' (line $AGENT_SPAWN_LINE)"
+        echo "PASS: 'Never run the PDC loop inline' (line $NEVER_INLINE_LINE) is after '## Spawning planner' (line $AGENT_SPAWN_LINE)"
         PASS=$((PASS + 1))
     else
-        echo "FAIL: 'Never run the PDC loop inline' (line $NEVER_INLINE_LINE) is NOT after '## Agent spawning mode' (line $AGENT_SPAWN_LINE)"
+        echo "FAIL: 'Never run the PDC loop inline' (line $NEVER_INLINE_LINE) is NOT after '## Spawning planner' (line $AGENT_SPAWN_LINE)"
         FAIL=$((FAIL + 1))
     fi
     if [ "$NEVER_INLINE_LINE" -lt "$STEPS_LINE" ]; then

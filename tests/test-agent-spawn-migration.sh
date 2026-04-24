@@ -35,28 +35,28 @@ assert_file_not_contains() {
     fi
 }
 
-# AC1 — SKILL.md shrink: misdiagnosed watchdog phrase removed; section ≤20 lines.
+# AC1 — SKILL.md shrink: misdiagnosed watchdog phrase removed; section ≤30 lines.
 assert_file_not_contains "SKILL.md: old watchdog phrase removed" \
     "$LOOPER_SKILL" "600s of no tool-call activity"
 assert_file_not_contains "SKILL.md: poll-loop fallback prose removed" \
     "$LOOPER_SKILL" "Then poll in a loop"
 assert_file_not_contains "SKILL.md: step-7d fallback annotation removed" \
     "$LOOPER_SKILL" "+ poll, per"
-# Section length ≤ 20 lines
-section_lines=$(awk '/^## Agent spawning mode/{flag=1;next} /^## /{if(flag){flag=0;exit}} flag{print}' "$LOOPER_SKILL" | wc -l)
-if [ "$section_lines" -le 20 ]; then
-    echo "PASS: SKILL.md: Agent spawning mode section is ≤20 lines ($section_lines)"
+# Section length ≤ 30 lines (renamed from "Agent spawning mode" to
+# "Spawning planner / doer / checker" after the Agent-first migration).
+section_lines=$(awk '/^## Spawning planner/{flag=1;next} /^## /{if(flag){flag=0;exit}} flag{print}' "$LOOPER_SKILL" | wc -l)
+if [ "$section_lines" -gt 0 ] && [ "$section_lines" -le 30 ]; then
+    echo "PASS: SKILL.md: spawning section is 1..30 lines ($section_lines)"
     PASS=$((PASS + 1))
 else
-    echo "FAIL: SKILL.md: Agent spawning mode section is $section_lines lines (expected ≤20)"
+    echo "FAIL: SKILL.md: spawning section is $section_lines lines (expected 1..30)"
     FAIL=$((FAIL + 1))
 fi
 
-# AC2 — Primary pattern: run_in_background + completion notification documented.
-assert_file_contains "SKILL.md: mentions run_in_background" \
-    "$LOOPER_SKILL" "run_in_background"
-assert_file_contains "SKILL.md: mentions completion notification" \
-    "$LOOPER_SKILL" "completion notification"
+# AC2 — Primary pattern for the fallback path (subagents skill) still documents
+# run_in_background + completion notification. The looper skill itself no
+# longer has to, since Agent-first is the documented default and those details
+# are owned by the subagents (fallback) skill.
 assert_file_contains "subagents/SKILL.md: mentions run_in_background" \
     "$SUBAGENTS_SKILL" "run_in_background"
 assert_file_contains "subagents/SKILL.md: mentions completion notification" \
