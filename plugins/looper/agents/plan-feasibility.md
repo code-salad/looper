@@ -21,6 +21,13 @@ You will receive a context prompt containing:
 If context is missing or minimal, note it in your report and work with what
 you have.
 
+**Delta-mode plans.** On iter > 1 the draft plan may contain
+`(unchanged from iteration N-1 — see <hash>)` pointers. Resolve each with
+`git log <hash> -1 --format="%B"` and extract the named section before
+checking feasibility of the files / APIs it references. Do NOT flag
+pointer stubs as missing references — the pointer inherits the prior
+plan's section verbatim.
+
 ## Your Focus
 
 - Verify all referenced files actually exist (Glob/Read)

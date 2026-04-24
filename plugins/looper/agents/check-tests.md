@@ -23,6 +23,13 @@ You will receive a context prompt containing:
 If context is missing or minimal, note it in your report and work with what
 you have — read the recent commits and changed files directly.
 
+**Delta-mode pointers.** The Checker expands `(unchanged from iteration N-1
+— see <hash>)` pointers before handing you the plan summary. If you still
+see a pointer in the provided context, resolve it yourself with
+`git log <hash> -1 --format="%B"` and extract the named section. Run
+acceptance-criteria / corner-case coverage against the EXPANDED plan, not
+against pointer stubs.
+
 ## Your Focus
 
 - Run `$SCRIPTS_DIR/run-tests 2>&1; echo "EXIT_CODE=$?"`

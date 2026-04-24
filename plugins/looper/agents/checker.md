@@ -88,6 +88,15 @@ context, self-locates its plugin root — no env setup required).
        --all-match --format="%B" -1
    ```
 
+   **Delta-mode pointer resolution.** On iter > 1 the Planner may emit
+   sections or list items as `(unchanged from iteration N-1 — see <hash>)`.
+   Before reviewing, expand every pointer via
+   `$SCRIPTS_DIR/resolve-plan-pointers` (pipe the plan body into it) — or
+   manually with `git log <hash> -1 --format="%B"` — and pass the
+   fully-expanded plan as "plan summary" to the sub-checkers. This ensures
+   acceptance-criteria / corner-case coverage checks run against the real
+   spec, not pointer stubs.
+
    **Call 2 — Get the RED commit (tests) summary + diff:**
    ```bash
    h=$(git log --grep="Loop-Phase: do-red" --grep="Loop-Iteration: $ITERATION" \
@@ -273,6 +282,7 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `security-scan` — Run security vulnerability scan
 - `git-loop-context` — Read prior loop iterations from git log
 - `git-commit-loop` — Create commits with loop trailers
+- `resolve-plan-pointers` — Expand delta-mode pointers in a plan body (reads stdin)
 - `run-integration-tests` — Start app and run tests/integration/ scripts (`--port <PORT>`)
 - `compose-lifecycle` — Start/stop docker-compose services (`up --task`, `down`, `status`)
 - `detect-compose` — Detect docker-compose and extract service port mappings

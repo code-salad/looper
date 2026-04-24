@@ -158,10 +158,43 @@ which self-locates its plugin root. No env-var setup is required from you.
      The Doer can skip reading these files, saving context window usage. For
      files >50 lines, describe the relevant section and line numbers instead.
 
-   **On iteration > 1:** Project context is pruned — spawn Explore subagents
-   only for areas the Checker flagged, not for a full re-exploration of the
-   codebase. The Checker's FAIL verdict + action items contain the specific
-   areas that need attention.
+   **On iteration > 1 — Delta-mode planning (MANDATORY).** Project context
+   is pruned; spawn Explore subagents only for areas the Checker flagged,
+   not a full re-exploration. Your baseline is the prior plan (in
+   `## Prior Loop Context`). For each section ask: "did the Checker's FAIL
+   feedback materially affect this section?"
+   - **No:** emit `(unchanged from iteration N-1 — see <commit-hash>)` as
+     the section body. Resolve `<commit-hash>` via
+     `git log --grep="Loop-Phase: plan" --grep="Loop-Iteration: $((ITERATION-1))" --all-match --format="%H" -1`.
+   - **Yes:** emit the revised section in full. You MAY mark individual list
+     items as `(unchanged)` inside a partially-changed section (e.g., keep
+     5 prior Corner Cases verbatim and add the newly-missed one).
+
+   **No-drift rule:** you are BANNED from "improving" sections the Checker
+   did not flag — re-drafting correct sections risks regressions. If the
+   Checker did not name a section in its action items, emit the pointer.
+   **Tech Stack Constraints is almost always `(unchanged)`** — it is derived
+   from the issue body, which does not change iteration-to-iteration.
+   **Fallback:** if the prior plan commit cannot be located, full re-draft
+   AND include in the commit body:
+   `NOTE: delta-mode fallback — prior plan commit not found; full re-draft.`
+
+   **Partial-revision example** (iter 3, Checker flagged corner cases + one
+   acceptance criterion):
+   ```markdown
+   ## Goal
+   (unchanged from iteration 2 — see a1b2c3d)
+   ## Tech Stack Constraints
+   (unchanged from iteration 2 — see a1b2c3d)
+   ## Corner cases
+   - (5 prior cases unchanged — see a1b2c3d)
+   - **NEW:** empty-string input → should return 400, not 500
+   ## Acceptance criteria
+   - (criteria 1-3 unchanged — see a1b2c3d)
+   - **REVISED:** criterion 4 now requires `{code,message}` body shape
+   ```
+   Consumers resolve pointers via `git log <hash> -1 --format="%B"` or
+   `$SCRIPTS_DIR/resolve-plan-pointers` (expands every pointer inline).
 
    **Scope discipline — complete the task, slice only when necessary:** Plan to
    accomplish the ENTIRE task in this iteration. Most tasks can be completed in

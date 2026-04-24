@@ -28,6 +28,19 @@ write failing tests first, then write just enough code to make them pass.
    Spawn subagents via the `claude-spawn-agent` command (on `PATH` in every
    context, self-locates its plugin root — no env setup required).
 
+   **Delta-mode pointer resolution.** On iter > 1 the Planner may emit
+   sections or list items as `(unchanged from iteration N-1 — see <hash>)`.
+   Resolve every pointer before acting on the plan — easiest path is:
+   ```bash
+   $SCRIPTS_DIR/resolve-plan-pointers <<< "$PLAN_BODY"
+   ```
+   which expands each pointer in place by running
+   `git log <hash> -1 --format="%B"` on the referenced plan commit and
+   splicing in the matching section body (or list item). If the helper is
+   unavailable, resolve manually with `git log <hash> -1 --format="%B"` and
+   extract the referenced section. Treat the fully-expanded plan — not the
+   pointer form — as the authoritative spec for this iteration.
+
 2. **Size guard for oversize plans.** If the plan commit body exceeds ~400 lines,
    do NOT try to hold the entire plan in working context. Extract only the focused
    sections:
@@ -376,6 +389,7 @@ Run these via `$SCRIPTS_DIR/<name>` (path provided in dynamic context):
 - `install-deps` — Install project dependencies
 - `git-loop-context` — Read prior loop iterations from git log
 - `git-commit-loop` — Create commits with loop trailers
+- `resolve-plan-pointers` — Expand delta-mode pointers in a plan body (reads stdin)
 - `run-integration-tests` — Start app and run tests/integration/ scripts (`--port <PORT>`)
 - `scaffold-integration-ci` — Generate .github/workflows/integration.yml
 - `compose-lifecycle` — Start/stop docker-compose services (`up --task`, `down`, `status`)

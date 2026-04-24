@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# resolve-plan-pointers — expand delta-mode pointers in a plan body.
+#
+# Reads a plan body from stdin (or the --file argument) and writes the same
+# body to stdout with every `(unchanged from iteration N-1 — see <hash>)`
+# pointer replaced by the referenced section from that commit.
+#
+# Supported pointer forms (case-insensitive "iteration|iter"):
+#   (unchanged from iteration 2 — see a1b2c3d)
+#   (unchanged from iter 2 - see a1b2c3d)
+#   (N prior cases unchanged — see a1b2c3d)          # list-item form
+#
+# Semantics:
+#   - Section-body pointer (pointer is the ENTIRE body of a `## Heading`
+#     section): the matching `## Heading` block from the referenced commit
+#     replaces the pointer line. Section headings are preserved.
+#   - List-item pointer (pointer is a `- (...)` bullet): the matching list
+#     items from the referenced section in the referenced commit are
+#     spliced in place of the single placeholder bullet.
+#
+# Usage:
+#   resolve-plan-pointers < plan-body.md
+#   resolve-plan-pointers --file plan-body.md
+#   PLAN=$(git log <hash> -1 --format="%B")
+#   echo "$PLAN" | resolve-plan-pointers
+#
+# Exit 0 on success. Pointers that fail to resolve (missing commit, missing
+# section) are left in place and a warning is printed to stderr.
+
+FILE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --file) FILE="$2"; shift 2 ;;
+        -h|--help)
+            sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *) echo "resolve-plan-pointers: unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+if [ -n "$FILE" ]; then
+    PLAN_BODY=$(cat "$FILE")
+else
+    PLAN_BODY=$(cat)
+fi
+
+# Fetch the body of a plan commit, cached in memory via an associative array.
+declare -A PLAN_CACHE
+fetch_plan() {
+    local hash="$1"
+    if [ -z "${PLAN_CACHE[$hash]+x}" ]; then
+        local body
+        if body=$(git log "$hash" -1 --format="%B" 2>/dev/null); then
+            PLAN_CACHE[$hash]="$body"
+        else
+            PLAN_CACHE[$hash]="__MISSING__"
+        fi
+    fi
+    printf '%s' "${PLAN_CACHE[$hash]}"
+}
+
+# Extract a `## Heading` block (everything from the heading up to the next
+# `## ` at column 0, exclusive) from a plan body. Prints empty string if
+# missing.
+extract_section() {
+    local body="$1"
+    local heading="$2"
+    # awk: match exact heading line; print until the next `## ` heading.
+    printf '%s\n' "$body" | awk -v h="$heading" '
+        $0 == h { printing=1; print; next }
+        printing && /^## / { printing=0 }
+        printing { print }
+    '
+}
+
+# Extract only the list items from a section (lines beginning with `-` or
+# `*`), dropping the heading and any intro prose.
+extract_list_items() {
+    local body="$1"
+    local heading="$2"
+    extract_section "$body" "$heading" | awk '
+        /^## / { next }
+        /^[[:space:]]*[-*] / { print }
+    '
+}
+
+# Walk the plan body line-by-line, resolving pointers as we go. We track
+# the current `## Heading` so that section-body pointers know which section
+# to pull from the referenced commit.
+resolve() {
+    local current_heading=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ "$line" =~ ^##\ .+ ]]; then
+            current_heading="$line"
+            printf '%s\n' "$line"
+            continue
+        fi
+
+        # Section-body pointer: a standalone "(unchanged ... — see HASH)"
+        # line (optionally with the em-dash or an ASCII hyphen). Captures
+        # HASH in BASH_REMATCH[1].
+        if [[ "$line" =~ ^\(unchanged\ from\ (iter(ation)?\ [0-9]+)?[[:space:]]*[—-][[:space:]]*see\ ([0-9a-f]+)\)[[:space:]]*$ ]] \
+            || [[ "$line" =~ ^\(unchanged[[:space:]]+from[[:space:]]+iter(ation)?[[:space:]]+[0-9]+[[:space:]]*[—-][[:space:]]*see[[:space:]]+([0-9a-f]+)\)[[:space:]]*$ ]]; then
+            local hash="${BASH_REMATCH[3]:-${BASH_REMATCH[2]}}"
+            local prior
+            prior=$(fetch_plan "$hash")
+            if [ "$prior" = "__MISSING__" ] || [ -z "$current_heading" ]; then
+                echo "resolve-plan-pointers: WARN: could not resolve section pointer ($hash, heading='$current_heading')" >&2
+                printf '%s\n' "$line"
+                continue
+            fi
+            local extracted
+            extracted=$(extract_section "$prior" "$current_heading")
+            if [ -z "$extracted" ]; then
+                echo "resolve-plan-pointers: WARN: section '$current_heading' not found in $hash" >&2
+                printf '%s\n' "$line"
+                continue
+            fi
+            # Skip the heading line from the extracted section (already emitted).
+            printf '%s\n' "$extracted" | awk 'NR>1'
+            continue
+        fi
+
+        # List-item pointer: a single bullet like
+        #   - (5 prior cases unchanged — see a1b2c3d)
+        # Replace with the list items from the matching section in HASH.
+        if [[ "$line" =~ ^[[:space:]]*[-*][[:space:]]+\(.*unchanged.*see[[:space:]]+([0-9a-f]+)\)[[:space:]]*$ ]]; then
+            local hash="${BASH_REMATCH[1]}"
+            local prior
+            prior=$(fetch_plan "$hash")
+            if [ "$prior" = "__MISSING__" ] || [ -z "$current_heading" ]; then
+                echo "resolve-plan-pointers: WARN: could not resolve list-item pointer ($hash, heading='$current_heading')" >&2
+                printf '%s\n' "$line"
+                continue
+            fi
+            local items
+            items=$(extract_list_items "$prior" "$current_heading")
+            if [ -z "$items" ]; then
+                echo "resolve-plan-pointers: WARN: no list items in section '$current_heading' of $hash" >&2
+                printf '%s\n' "$line"
+                continue
+            fi
+            printf '%s\n' "$items"
+            continue
+        fi
+
+        printf '%s\n' "$line"
+    done <<< "$PLAN_BODY"
+}
+
+resolve

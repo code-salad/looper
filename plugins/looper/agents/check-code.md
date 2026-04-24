@@ -23,6 +23,12 @@ You will receive a context prompt containing:
 If context is missing or minimal, note it in your report and work with what
 you have — read the recent commits and changed files directly.
 
+**Delta-mode pointers.** The Checker expands `(unchanged from iteration N-1
+— see <hash>)` pointers before handing you the plan summary. If you still
+see a pointer (e.g., in "Tech Stack Constraints"), resolve it with
+`git log <hash> -1 --format="%B"` and extract the named section so your
+tech-stack compliance check runs against the real constraints.
+
 ## Your Focus
 
 - Run `$SCRIPTS_DIR/run-lint 2>&1; echo "EXIT_CODE=$?"`
