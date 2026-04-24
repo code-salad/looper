@@ -62,13 +62,37 @@ assert_file_contains "subagents/SKILL.md: mentions run_in_background" \
 assert_file_contains "subagents/SKILL.md: mentions completion notification" \
     "$SUBAGENTS_SKILL" "completion notification"
 
-# AC3 — --async reframed as parallel fan-out, spawn-agent unchanged.
-assert_file_contains "subagents/SKILL.md: frames --async as parallel fan-out" \
+# AC3 — parallel fan-out via stdout-redirect + &/wait; --async removed from spawn-agent.
+assert_file_contains "subagents/SKILL.md: frames parallel fan-out" \
     "$SUBAGENTS_SKILL" "parallel fan-out"
+assert_file_not_contains "subagents/SKILL.md: no --async references" \
+    "$SUBAGENTS_SKILL" '--async'
 assert_file_not_contains "subagents/SKILL.md: old poll-loop removed from parallel example" \
     "$SUBAGENTS_SKILL" 'while \[ ! -s '
-assert_file_contains "spawn-agent: --async mode preserved" \
+assert_file_not_contains "spawn-agent: --async mode removed" \
     "$SPAWN_AGENT" 'MODE="async"'
+assert_file_not_contains "spawn-agent: --async flag branch removed" \
+    "$SPAWN_AGENT" '"${1:-}" == "--async"'
+
+# AC3 extended — no /tmp/subagent-response-* artefacts anywhere
+assert_file_not_contains "subagents/SKILL.md: no subagent-response- path" \
+    "$SUBAGENTS_SKILL" 'subagent-response-'
+assert_file_not_contains "looper/SKILL.md: no subagent-response- path" \
+    "$LOOPER_SKILL" 'subagent-response-'
+assert_file_not_contains "spawn-agent: no subagent-response- path" \
+    "$SPAWN_AGENT" 'subagent-response-'
+
+# AC3 extended — agent preambles have no --async
+assert_file_not_contains "planner.md: preamble has no --async" \
+    "$PLANNER" '--async'
+assert_file_not_contains "doer.md: preamble has no --async" \
+    "$DOER" '--async'
+assert_file_not_contains "checker.md: preamble has no --async" \
+    "$CHECKER" '--async'
+
+# AC3 extended — spawn-agent prints .result directly
+assert_file_contains "spawn-agent: prints .result directly" \
+    "$SPAWN_AGENT" "jq -r '.result"
 
 # AC4 — Per-agent preambles migrated and lose dual-path fallback language.
 for f in "$PLANNER" "$DOER" "$CHECKER"; do
