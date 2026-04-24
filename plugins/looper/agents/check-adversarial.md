@@ -27,6 +27,11 @@ You will receive a context prompt containing:
 
 If context is thin, read the changed files and tests directly with Read/Glob.
 
+**Delta-mode pointers.** The Checker expands `(unchanged from iteration N-1
+— see <hash>)` pointers before handing you the plan summary. If you still
+see a pointer, resolve it with `git log <hash> -1 --format="%B"` and
+extract the named section.
+
 ## Your Job
 
 1. **Read the implementation.** For every file in the GREEN commit, read it

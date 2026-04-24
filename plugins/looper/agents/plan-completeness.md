@@ -21,6 +21,14 @@ You will receive a context prompt containing:
 If context is missing or minimal, note it in your report and work with what
 you have.
 
+**Delta-mode plans.** On iter > 1 the draft plan may contain
+`(unchanged from iteration N-1 — see <hash>)` pointers. Treat each pointer
+as "this section is inherited verbatim from the referenced plan commit."
+Do NOT flag pointers as missing content — the pointer IS the content. If
+you need to verify the inherited section (e.g., to check acceptance-criteria
+coverage), resolve it with `git log <hash> -1 --format="%B"` and extract
+the named section.
+
 ## Your Focus
 
 - Check plan covers all aspects of the task prompt

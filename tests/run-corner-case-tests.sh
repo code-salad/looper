@@ -34,6 +34,8 @@ run_suite "test-sync-with-remote.sh"
 run_suite "test-check-blocked.sh"
 run_suite "test-fetch-issue-context.sh"
 run_suite "test-build-agent-context.sh"
+run_suite "test-resolve-plan-pointers.sh"
+run_suite "test-delta-mode-prompts.sh"
 
 echo "=============================="
 echo "Corner-case suite: $PASS suites passed, $FAIL suites failed"
