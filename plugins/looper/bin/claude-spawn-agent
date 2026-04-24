@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Thin wrapper so callers can invoke spawn-agent by name from PATH.
+# Claude Code puts plugin bin/ on PATH in all contexts including subagents,
+# so this resolves without any env-var or plugin-root knowledge from the caller.
+exec "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/skills/subagents/scripts/spawn-agent" "$@"

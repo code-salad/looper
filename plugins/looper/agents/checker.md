@@ -16,7 +16,8 @@ reviewer — report all findings but do NOT fix code or modify any files.
 
 ## Instructions
 
-`SUBAGENTS_DIR="${CLAUDE_PLUGIN_ROOT}/skills/subagents/scripts"`
+Spawn subagents via the `claude-spawn-agent` command (on `PATH` in every
+context, self-locates its plugin root — no env setup required).
 
 1. **Verify Doer committed work and run TDD sequence checks** — The Doer must
    produce two or three commits per iteration: `do-red` (tests), `do-green`
@@ -122,19 +123,19 @@ reviewer — report all findings but do NOT fix code or modify any files.
    The values for `$TASK_NAME` and `$ITERATION` are provided in the dynamic
    context injected into this session.
 
-3. **Spawn 5 parallel review subagents** — Launch all five as parallel spawn-agent
-   calls in a single Bash command. Each subagent receives the plan summary,
-   doer summary, changed files list, and acceptance criteria from step 2.
+3. **Spawn 5 parallel review subagents** — Launch all five as parallel
+   claude-spawn-agent calls in a single Bash command. Each subagent receives
+   the plan summary, doer summary, changed files list, and acceptance criteria
+   from step 2.
 
    ```bash
    TMPDIR="/tmp/looper-${TASK_NAME}"
    mkdir -p "$TMPDIR"
-   SPAWN="$SUBAGENTS_DIR/spawn-agent"
-   $SPAWN "looper:check-build" "<context>" > "$TMPDIR/check-build.txt" &
-   $SPAWN "looper:check-tests" "<context>" > "$TMPDIR/check-tests.txt" &
-   $SPAWN "looper:check-code" "<context>" > "$TMPDIR/check-code.txt" &
-   $SPAWN "looper:check-runtime" "<context>" > "$TMPDIR/check-runtime.txt" &
-   $SPAWN "looper:check-adversarial" "<context>" > "$TMPDIR/check-adversarial.txt" &
+   claude-spawn-agent "looper:check-build" "<context>" > "$TMPDIR/check-build.txt" &
+   claude-spawn-agent "looper:check-tests" "<context>" > "$TMPDIR/check-tests.txt" &
+   claude-spawn-agent "looper:check-code" "<context>" > "$TMPDIR/check-code.txt" &
+   claude-spawn-agent "looper:check-runtime" "<context>" > "$TMPDIR/check-runtime.txt" &
+   claude-spawn-agent "looper:check-adversarial" "<context>" > "$TMPDIR/check-adversarial.txt" &
    wait
    cat "$TMPDIR"/check-*.txt
    ```
@@ -174,7 +175,7 @@ reviewer — report all findings but do NOT fix code or modify any files.
    error-path failures the happy-path tests miss. Proposes concrete failing
    test cases. See `agents/check-adversarial.md` for full instructions.
 
-   All five MUST be launched as parallel spawn-agent calls in a single Bash command.
+   All five MUST be launched as parallel claude-spawn-agent calls in a single Bash command.
 
 4. **Collect and consolidate results** — After all 5 subagents complete:
    - Gather all BLOCKER issues from TDD checks in step 1 and subagent reports
@@ -311,7 +312,7 @@ If any convention is violated, flag it in your verdict.
   NOT include them in the PASS/FAIL verdict — they are out of scope. Instead,
   spawn a fire-and-forget `looper:gh-issue-creator` subagent for each:
   ```bash
-  $SUBAGENTS_DIR/spawn-agent "looper:gh-issue-creator" "Type: bug (or feature/improvement)
+  claude-spawn-agent "looper:gh-issue-creator" "Type: bug (or feature/improvement)
   File(s): <file paths>
   Description: <what the issue is>
   Observed behavior: <what happens>
