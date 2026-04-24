@@ -10,14 +10,7 @@ Three subagents (Planner, Doer, Checker) iterate until the Checker issues a PASS
 
 ## Agent spawning mode
 
-### Never run the PDC loop inline
-
-**Never attempt to run the PDC loop inline.** If `claude-spawn-agent` is not
-available and step 0 did not abort (edge case: race condition, PATH change
-mid-session, ambiguous environment), ABORT rather than running
-planner/doer/checker work yourself in the same session. Inline execution
-defeats the loop's isolation, commit-trail, and worktree guarantees — it is
-strictly worse than not running at all.
+**Never run the PDC loop inline.** If `claude-spawn-agent` is unavailable and step 0 did not abort, ABORT — inline execution defeats the loop's isolation, commit trail, and worktree guarantees.
 
 Spawn subagents with `claude-spawn-agent <agent-name> <prompt>` invoked via
 the Bash tool with `run_in_background: true`. The Bash tool returns

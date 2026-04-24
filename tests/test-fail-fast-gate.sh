@@ -198,12 +198,11 @@ else
     FAIL=$((FAIL + 1))
 fi
 
-# The rule must appear AFTER "## Agent spawning mode" and BEFORE "If the \`Agent\` tool is in your toolset"
+# The rule must appear AFTER "## Agent spawning mode" and BEFORE the "## Steps" section
+# (i.e. prominently at the top of the spawning-mode section, not buried below the steps).
 AGENT_SPAWN_LINE=$(grep -n '^## Agent spawning mode' "$SKILL_MD" | head -1 | cut -d: -f1 || true)
 NEVER_INLINE_LINE=$(grep -n 'Never run the PDC loop inline' "$SKILL_MD" | head -1 | cut -d: -f1 || true)
-# shellcheck disable=SC2016  # backticks here are literal grep text, not command substitutions
-AGENT_TOOL_PATTERN='If the `Agent` tool is in your toolset'
-AGENT_TOOL_LINE=$(grep -n "$AGENT_TOOL_PATTERN" "$SKILL_MD" | head -1 | cut -d: -f1 || true)
+STEPS_LINE=$(grep -n '^## Steps' "$SKILL_MD" | head -1 | cut -d: -f1 || true)
 
 if [ -z "$AGENT_SPAWN_LINE" ]; then
     echo "FAIL: Could not find '## Agent spawning mode' heading in SKILL.md"
@@ -211,8 +210,8 @@ if [ -z "$AGENT_SPAWN_LINE" ]; then
 elif [ -z "$NEVER_INLINE_LINE" ]; then
     echo "FAIL: Could not find 'Never run the PDC loop inline' in SKILL.md"
     FAIL=$((FAIL + 1))
-elif [ -z "$AGENT_TOOL_LINE" ]; then
-    echo "FAIL: Could not find 'If the Agent tool is in your toolset' in SKILL.md"
+elif [ -z "$STEPS_LINE" ]; then
+    echo "FAIL: Could not find '## Steps' heading in SKILL.md"
     FAIL=$((FAIL + 1))
 else
     if [ "$NEVER_INLINE_LINE" -gt "$AGENT_SPAWN_LINE" ]; then
@@ -222,11 +221,11 @@ else
         echo "FAIL: 'Never run the PDC loop inline' (line $NEVER_INLINE_LINE) is NOT after '## Agent spawning mode' (line $AGENT_SPAWN_LINE)"
         FAIL=$((FAIL + 1))
     fi
-    if [ "$NEVER_INLINE_LINE" -lt "$AGENT_TOOL_LINE" ]; then
-        echo "PASS: 'Never run the PDC loop inline' (line $NEVER_INLINE_LINE) is before 'If the Agent tool...' (line $AGENT_TOOL_LINE)"
+    if [ "$NEVER_INLINE_LINE" -lt "$STEPS_LINE" ]; then
+        echo "PASS: 'Never run the PDC loop inline' (line $NEVER_INLINE_LINE) is before '## Steps' (line $STEPS_LINE)"
         PASS=$((PASS + 1))
     else
-        echo "FAIL: 'Never run the PDC loop inline' (line $NEVER_INLINE_LINE) is NOT before 'If the Agent tool...' (line $AGENT_TOOL_LINE)"
+        echo "FAIL: 'Never run the PDC loop inline' (line $NEVER_INLINE_LINE) is NOT before '## Steps' (line $STEPS_LINE)"
         FAIL=$((FAIL + 1))
     fi
 fi
