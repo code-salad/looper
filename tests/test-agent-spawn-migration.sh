@@ -118,6 +118,18 @@ for f in "$LOOPER_SKILL" "$PLANNER" "$DOER" "$CHECKER"; do
         "$f" 'CLAUDE_PLUGIN_ROOT/skills/subagents/scripts/spawn-agent'
 done
 
+# AC8 — Stale result-file framing removed from all four docs.
+for f in "$LOOPER_SKILL" "$PLANNER" "$DOER" "$CHECKER"; do
+    assert_file_not_contains "$(basename "$f"): no 'result-file path' framing" \
+        "$f" 'result-file path'
+done
+
+# AC9 — Stale 'read result file' synonym removed from all four docs.
+for f in "$LOOPER_SKILL" "$PLANNER" "$DOER" "$CHECKER"; do
+    assert_file_not_contains "$(basename "$f"): no 'read result file' synonym" \
+        "$f" 'read result file'
+done
+
 echo
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
