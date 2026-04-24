@@ -10,19 +10,19 @@ Three subagents (Planner, Doer, Checker) iterate until the Checker issues a PASS
 
 ## Agent spawning mode
 
-**Never run the PDC loop inline.** If `claude-spawn-agent` is unavailable and step 0 did not abort, ABORT — inline execution defeats the loop's isolation, commit trail, and worktree guarantees.
+**Never run the PDC loop inline.** Spawning must go through a subagent dispatch mechanism — inline execution defeats the loop's isolation, commit trail, and worktree guarantees.
 
-Spawn subagents with `claude-spawn-agent <agent-name> <prompt>` invoked
-via the Bash tool. It is the drop-in for the built-in `Agent` tool inside
-subagent contexts: the subagent's text response is printed directly to
-stdout (foreground) or delivered inline in the completion notification
-(background).
+**Prefer the built-in `Agent` tool.** When `Agent` is in your tools list (this skill declares it in its frontmatter), use it directly:
+
+- Single spawn: `Agent(subagent_type="looper:planner", prompt=<context>)`
+- Parallel fan-out: emit multiple `Agent` tool calls in one message — they run concurrently.
+
+**Fall back to `claude-spawn-agent` only if `Agent` is unavailable** (e.g. this skill is being invoked from a nested subagent context whose frontmatter omits `Agent`). It is the drop-in for the built-in tool: the subagent's text response is printed directly to stdout (foreground) or delivered inline in the completion notification (background).
 
 - Sync: `Bash(command="claude-spawn-agent X Y", run_in_background=true)` → completion notification fires on finish; its output contains the subagent's response text inline.
 - Parallel fan-out: several `claude-spawn-agent X Y > /tmp/file.txt &` calls in one Bash block, followed by `wait`.
 
-`claude-spawn-agent` is on `PATH` in every context and self-locates its
-plugin root — no env-var setup is required.
+`claude-spawn-agent` is on `PATH` in every context and self-locates its plugin root — no env-var setup is required.
 
 Stream-idle watchdog (`CLAUDE_STREAM_IDLE_TIMEOUT_MS`, v2.1.84+) fires only
 on **stalled model streams** (no tokens flowing from the API), NOT from lack
@@ -34,22 +34,30 @@ regardless of runtime. Looper recommends `7200000` ms (2 h) — see README.
 ### 0. Verify subagent dispatch is available
 
 Before ANY side effect (no worktree creation, no issue fetching, no commits),
-verify that `claude-spawn-agent` is reachable on `PATH`. This command is
-provided by the looper plugin's `bin/` directory, which Claude Code puts on
-`PATH` in every context (including subagents). If it is not reachable, the
+verify that a subagent dispatch path is available. Preferred path is the
+built-in `Agent` tool (declared in this skill's frontmatter). If `Agent` is
+not available in the current context (e.g. when this skill is invoked from a
+nested subagent whose frontmatter omits `Agent`), fall back to
+`claude-spawn-agent` on `PATH` — provided by the looper plugin's `bin/`
+directory, which Claude Code puts on `PATH` in every context.
+
+If `Agent` is unavailable AND `claude-spawn-agent` is not reachable, the
 loop cannot spawn planner / doer / checker subagents and must abort — see
 "Never run the PDC loop inline" above.
 
 ```bash
+# Only run this gate when the Agent tool is not in your tools list.
+# When Agent is available, skip this check and spawn via Agent directly.
 command -v claude-spawn-agent >/dev/null 2>&1 || {
-    echo "ERROR: claude-spawn-agent not found on PATH — the looper plugin's bin/ directory is either not installed or not registered with Claude Code. Cannot run /looper." >&2
+    echo "ERROR: Agent tool unavailable and claude-spawn-agent not found on PATH — no subagent dispatch path exists. Cannot run /looper." >&2
     exit 1
 }
 ```
 
-**Gate:** If this check fails, abort immediately. Do NOT attempt to locate
-the script manually, do NOT fall through to step 1, and do NOT run any
-planner/doer/checker work inline in this session (see rule above).
+**Gate:** If neither dispatch path is available, abort immediately. Do NOT
+attempt to locate the script manually, do NOT fall through to step 1, and
+do NOT run any planner/doer/checker work inline in this session (see rule
+above).
 
 ### 1. Validate environment
 
@@ -234,7 +242,9 @@ CHECKER_CONTEXT=$($SCRIPTS_DIR/build-agent-context --role checker "${CTX_COMMON[
 #### 7d. Spawn agents
 
 For each phase, print a progress header and spawn the agent. Wait for each
-to complete before proceeding to the next.
+to complete before proceeding to the next. Use the `Agent` tool when
+available; otherwise fall back to `claude-spawn-agent` via Bash (see "Agent
+spawning mode" above).
 
 1. `=== Iteration ${ITERATION}/${MAX_ITERATIONS}: PLAN phase ===`
    `Agent(subagent_type="looper:planner", prompt=<Planner context from 7c>)`
