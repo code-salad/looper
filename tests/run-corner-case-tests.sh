@@ -5,6 +5,7 @@ set -euo pipefail
 # Executes: test-detect-stack.sh, test-detect-resume.sh,
 #           test-git-commit-loop-validation.sh, test-git-loop-context.sh,
 #           test-sync-with-remote.sh, test-check-blocked.sh,
+#           test-check-scope.sh,
 #           test-fetch-issue-context.sh, test-build-agent-context.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,6 +33,7 @@ run_suite "test-git-commit-loop-validation.sh"
 run_suite "test-git-loop-context.sh"
 run_suite "test-sync-with-remote.sh"
 run_suite "test-check-blocked.sh"
+run_suite "test-check-scope.sh"
 run_suite "test-fetch-issue-context.sh"
 run_suite "test-build-agent-context.sh"
 run_suite "test-resolve-plan-pointers.sh"
