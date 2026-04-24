@@ -81,6 +81,22 @@ assert_line_count_lt() {
     fi
 }
 
+assert_line_count_le() {
+    local description="$1"
+    local file="$2"
+    local max_lines="$3"
+    local actual
+    actual=$(wc -l < "$file" 2>/dev/null || echo "0")
+    actual=$(echo "$actual" | tr -d '[:space:]')
+    if [ "$actual" -le "$max_lines" ]; then
+        echo "PASS: $description (lines=$actual, max=$max_lines)"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL: $description (lines=$actual, expected <= $max_lines)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
 # --- Test 1: All 7 new agent files exist ---
 echo "=== Test 1: All 7 new agent files exist ==="
 assert_file_exists "check-build.md exists" "$AGENTS_DIR/check-build.md"
@@ -190,7 +206,9 @@ assert_file_contains "planner.md uses TASK_NAME-namespaced tmpdir" \
 # --- Test 10: Line count reduction ---
 echo "=== Test 10: checker.md and planner.md are significantly shorter ==="
 assert_line_count_lt "checker.md is under 350 lines (was 482)" "$CHECKER_MD" 350
-assert_line_count_lt "planner.md is under 360 lines (was 311, +52 for on-demand gh rules + issue context sub-sections)" "$PLANNER_MD" 360
+# Use <= here: GitHub's squash-merge may add a trailing newline, bumping wc -l
+# by 1 post-merge (see #97). Keep the 360 ceiling but allow the boundary value.
+assert_line_count_le "planner.md is at or under 360 lines (was 311, +52 for on-demand gh rules + issue context sub-sections)" "$PLANNER_MD" 360
 
 # --- Test 11: simplifier.md agent exists with valid frontmatter ---
 echo "=== Test 11: simplifier.md exists with valid frontmatter ==="
