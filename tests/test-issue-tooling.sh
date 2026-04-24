@@ -584,9 +584,10 @@ assert_exit_two "H5: --file missing value exit 2" "$EXIT_CODE"
 assert_output_contains "H5: stderr mentions --file or usage" "$STDERR_OUT" "file"
 
 # H6: TSV title with embedded tab -> sanitised (exactly 2 fields)
+# Use \t JSON escape sequence so jq can parse it; jq will decode to a real tab.
 echo "=== H6: TSV title with embedded tab -> sanitised ==="
 TMPDIR_TEST=$(mktemp -d)
-ALL_JSON='[{"number":10,"title":"Title	with	tabs","labels":[],"createdAt":"2024-01-01T00:00:00Z"}]'
+ALL_JSON='[{"number":10,"title":"Title\twith\ttabs","labels":[],"createdAt":"2024-01-01T00:00:00Z"}]'
 echo '{"labels":[],"body":""}' > "$TMPDIR_TEST/issue_json_10.txt"
 write_mock_gh_for_lri "$TMPDIR_TEST" "$ALL_JSON" ""
 STDOUT=$(PATH="$TMPDIR_TEST:$PATH" "$LIST_READY" 2>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
