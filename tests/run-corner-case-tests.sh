@@ -38,6 +38,7 @@ run_suite "test-fetch-issue-context.sh"
 run_suite "test-build-agent-context.sh"
 run_suite "test-resolve-plan-pointers.sh"
 run_suite "test-delta-mode-prompts.sh"
+run_suite "test-issue-tooling.sh"
 
 echo "=============================="
 echo "Corner-case suite: $PASS suites passed, $FAIL suites failed"

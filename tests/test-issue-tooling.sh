@@ -8,7 +8,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VALIDATE="$REPO_ROOT/plugins/looper/skills/looper/scripts/validate-issue-body"
 LIST_READY="$REPO_ROOT/plugins/looper/skills/looper/scripts/list-ready-issues"
-CHECK_BLOCKED="$REPO_ROOT/plugins/looper/skills/looper/scripts/check-blocked"
 
 PASS=0
 FAIL=0
@@ -29,18 +28,6 @@ assert_exit_zero() {
         PASS=$((PASS + 1))
     else
         echo "FAIL: $description (expected exit 0, got $exit_code)"
-        FAIL=$((FAIL + 1))
-    fi
-}
-
-assert_exit_nonzero() {
-    local description="$1"
-    local exit_code="$2"
-    if [ "$exit_code" -ne 0 ]; then
-        echo "PASS: $description"
-        PASS=$((PASS + 1))
-    else
-        echo "FAIL: $description (expected non-zero exit, got 0)"
         FAIL=$((FAIL + 1))
     fi
 }
@@ -329,7 +316,7 @@ ALL_JSON='[
   {"number":30,"title":"Issue Thirty","labels":[],"createdAt":"2024-01-03T00:00:00Z"}
 ]'
 echo '{"labels":[],"body":""}' > "$TMPDIR_TEST/issue_json_10.txt"
-echo '{"labels":[],"body":"Blocked by #99\nNeeds auth first."}' > "$TMPDIR_TEST/issue_json_20.txt"
+printf '{"labels":[],"body":"Blocked by #99\\nNeeds auth first."}\n' > "$TMPDIR_TEST/issue_json_20.txt"
 echo '{"labels":[],"body":""}' > "$TMPDIR_TEST/issue_json_30.txt"
 write_mock_gh_for_lri "$TMPDIR_TEST" "$ALL_JSON" "99 OPEN"
 STDOUT=$(PATH="$TMPDIR_TEST:$PATH" "$LIST_READY" 2>/tmp/lri_stderr_b3.txt) && EXIT_CODE=0 || EXIT_CODE=$?
@@ -351,7 +338,7 @@ echo '{"labels":[],"body":""}' > "$TMPDIR_TEST/issue_json_20.txt"
 write_mock_gh_for_lri "$TMPDIR_TEST" "$ALL_JSON" ""
 JSON_OUT=$(PATH="$TMPDIR_TEST:$PATH" "$LIST_READY" --json 2>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
 assert_exit_zero "B4: --json exit 0" "$EXIT_CODE"
-VALID=$(echo "$JSON_OUT" | jq -e 'length == 2 and (.[0] | has("number") and has("title") and has("labels") and has("createdAt"))' 2>/dev/null) && JQ_EXIT=0 || JQ_EXIT=$?
+echo "$JSON_OUT" | jq -e 'length == 2 and (.[0] | has("number") and has("title") and has("labels") and has("createdAt"))' > /dev/null 2>/dev/null && JQ_EXIT=0 || JQ_EXIT=$?
 assert_exit_zero "B4: JSON has required fields (number,title,labels,createdAt)" "$JQ_EXIT"
 cleanup
 
@@ -365,7 +352,7 @@ echo '{"labels":[{"name":"enhancement"}],"body":""}' > "$TMPDIR_TEST/issue_json_
 write_mock_gh_for_lri "$TMPDIR_TEST" "$ALL_JSON" ""
 JSON_OUT=$(PATH="$TMPDIR_TEST:$PATH" "$LIST_READY" --json 2>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
 assert_exit_zero "B5: --json exit 0" "$EXIT_CODE"
-ALL_STRINGS=$(echo "$JSON_OUT" | jq -e '.[0].labels | all(. | type == "string")' 2>/dev/null) && JQ_EXIT=0 || JQ_EXIT=$?
+echo "$JSON_OUT" | jq -e '.[0].labels | all(. | type == "string")' > /dev/null 2>/dev/null && JQ_EXIT=0 || JQ_EXIT=$?
 assert_exit_zero "B5: labels are strings not objects" "$JQ_EXIT"
 cleanup
 

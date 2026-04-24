@@ -310,6 +310,8 @@ All scripts live in `plugins/looper/skills/looper/scripts/` and auto-detect your
 | `detect-resume` | Detect and resume interrupted loops |
 | `git-commit-loop` | Create commits with loop trailers |
 | `git-loop-context` | Read prior loop iterations from git log |
+| `list-ready-issues` | List open, unassigned, non-blocked issues (`--repo`, `--label`, `--limit`, `--json`) |
+| `validate-issue-body` | Validate issue body has canonical `## Dependencies` / `## Blockers` markers when cross-issue refs are present |
 | `run-tests` | Run test suite |
 | `run-lint` | Run linter (with `--fix`) |
 | `run-typecheck` | Run type checker |

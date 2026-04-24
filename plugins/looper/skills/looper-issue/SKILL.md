@@ -34,47 +34,36 @@ gh auth status
 Find, select, and assign an issue **immediately** to minimize the race window
 where two parallel invocations could claim the same issue.
 
-### 1a. Fetch open unassigned issues
-
-```bash
-gh issue list --state open --search "no:assignee" --limit 20 \
-  --json number,title,labels,body,createdAt
-```
-
-- If the result is an empty array, inform the user:
-  > "No open unassigned issues found."
-  and exit.
-
-Store the result as `ISSUES`.
-
-### 1b. Filter out blocked issues
-
-For each issue in `ISSUES`, check if it is blocked using `check-blocked`:
+### 1a. Fetch ready issues
 
 ```bash
 SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)/plugins/looper}/skills/looper/scripts"
-ELIGIBLE_ISSUES=()
-for issue_number in $(echo "$ISSUES" | jq -r '.[].number'); do
-    if $SCRIPTS_DIR/check-blocked --issue "$issue_number" >/dev/null 2>&1; then
-        ELIGIBLE_ISSUES+=("$issue_number")
-    fi
-done
+LRI_STATS=$(mktemp)
+READY_JSON=$($SCRIPTS_DIR/list-ready-issues --json --limit 20 2>"$LRI_STATS")
+SUMMARY=$(cat "$LRI_STATS")
+rm -f "$LRI_STATS"
+echo "$SUMMARY"   # e.g. "Found 3 ready issues (2 blocked skipped)"
 ```
 
-`check-blocked` applies three checks: label-based blocking ("blocked" or
-"dependencies" labels), task-list dependency references (`- [ ] Depends on #N`
-or `- [ ] #N`), and "Blocked by #N" references. Exit 0 means not blocked.
+`list-ready-issues` is the single source of truth for "what's pickable":
+it wraps `gh issue list` + per-issue `check-blocked` and emits a JSON array
+sorted oldest-first, plus the stderr summary line.
 
-### 1c. Select issue
+If `READY_JSON` is `[]`:
+> "No open unassigned ready issues found (none open, or all are blocked)."
+and exit.
 
-- If no eligible issues remain after filtering, inform the user:
-  > "All open unassigned issues are currently blocked."
-  and exit.
+### 1b. Select issue
 
-- Otherwise, sort the remaining issues by `createdAt` ascending and select the
-  first (oldest) issue.
+`list-ready-issues --json` already emits oldest-first. Pick the first entry:
 
-Store the selected issue's number as `NUMBER` and its title as `TITLE`.
+```bash
+NUMBER=$(echo "$READY_JSON" | jq -r '.[0].number')
+TITLE=$(echo "$READY_JSON" | jq -r '.[0].title')
+echo "Picking #$NUMBER: $TITLE"
+```
+
+Store as `NUMBER` and `TITLE` for the claim phase below.
 
 ### 1d. Claim the issue (local lock → remote claim → settle → verify)
 
@@ -156,6 +145,5 @@ This hands off entirely to the existing looper skill, which will:
 |----------|--------|
 | `gh` not authenticated | Abort: "Please run `gh auth login` first." |
 | `gh issue list` fails | Abort: report the error message from `gh` to the user |
-| No open unassigned issues | Inform: "No open unassigned issues found." and exit |
-| All issues blocked | Inform: "All open unassigned issues are currently blocked." and exit |
+| `READY_JSON == []` (none open OR all blocked) | Inform: "No open unassigned ready issues found (none open, or all are blocked)." and exit |
 | Assignment failure | Warn: "Could not assign issue #N. Continuing anyway." and continue |
