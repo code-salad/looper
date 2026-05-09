@@ -362,9 +362,9 @@ async fn run_claude(
         .output()
         .await;
 
-    // Guard against core.bare=true on the repo after worktree cleanup.
-    // Worktree removal (in create-github-pr) can leave core.bare=true,
-    // which blocks git pull on the main branch.
+    // Guard against core.bare=true on the repo after a session ends.
+    // External worktree management (Claude Desktop / looper-ee) can leave
+    // core.bare=true behind, which blocks git pull on the main branch.
     fix_bare_if_needed(repo, app).await;
 
     let outcome = Outcome::Completed {

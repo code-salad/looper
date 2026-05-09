@@ -79,28 +79,52 @@ Sanitize `$ARGUMENTS` into a kebab-case task name: lowercase, replace spaces/und
 with hyphens, remove non-alphanumeric characters (except hyphens), truncate to 50 characters,
 strip leading/trailing hyphens.
 
-### 4. Create worktree
+### 4. Resolve worktree paths
 
-Resolve `SCRIPTS_DIR` and `REPO_ROOT` before entering the worktree:
+Claude Desktop creates an isolated worktree before invoking this skill, so the
+current working directory is already a worktree on a feature branch. Resolve
+the paths the rest of the skill depends on:
 
 ```bash
-REPO_ROOT=$(git rev-parse --show-toplevel)
+WORKTREE_DIR=$(git rev-parse --show-toplevel)
+REPO_ROOT="$WORKTREE_DIR"
 SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:-${REPO_ROOT}}/skills/looper/scripts"
 ```
 
-Create an isolated worktree (handles gitignore, create-or-resume, and dirty-state warnings):
+**CRITICAL:** All work MUST happen inside the worktree. NEVER commit directly to
+the default branch. Refuse to run if we are on a detached HEAD, on the default
+branch, or cannot determine the default branch:
 
 ```bash
-WORKTREE_DIR=$($SCRIPTS_DIR/setup-worktree --task "$TASK_NAME")
-cd "$WORKTREE_DIR"
-```
+CURRENT_BRANCH=$(git branch --show-current)
+if [ -z "$CURRENT_BRANCH" ]; then
+    echo "ERROR: Detached HEAD — refusing to run." >&2
+    exit 1
+fi
 
-**Gate:** If `setup-worktree` exits non-zero or `WORKTREE_DIR` is empty, abort immediately.
-**CRITICAL:** All work MUST happen inside the worktree. NEVER commit directly to the default branch.
-Verify you are on a `loop/` branch:
-
-```bash
-git branch --show-current | grep -q '^loop/' || { echo "ERROR: not on a loop/ branch"; exit 1; }
+# Resolve default branch: prefer origin/HEAD symref, fall back to gh, then to main/master.
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
+    | sed 's|refs/remotes/origin/||' || true)
+if [ -z "$DEFAULT_BRANCH" ]; then
+    DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
+fi
+if [ -z "$DEFAULT_BRANCH" ]; then
+    for candidate in main master; do
+        if git rev-parse --verify "$candidate" >/dev/null 2>&1 \
+           || git rev-parse --verify "origin/$candidate" >/dev/null 2>&1; then
+            DEFAULT_BRANCH="$candidate"; break
+        fi
+    done
+fi
+if [ -z "$DEFAULT_BRANCH" ]; then
+    echo "ERROR: Could not determine default branch — refusing to run (cannot guarantee branch isolation)." >&2
+    exit 1
+fi
+if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ] \
+   || [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
+    echo "ERROR: Refusing to run on default/protected branch '$CURRENT_BRANCH'." >&2
+    exit 1
+fi
 ```
 
 ### 4b. Sync worktree with remote
@@ -298,8 +322,7 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
   the default branch. The PR skill will wait for CI, then squash-merge if
   no DB migrations are detected. If DB migration files are present in the
   changeset, the PR is left open for manual review (no auto-merge).
-  The worktree is cleaned up automatically after merge or PR creation.
-  If CI fails or merge fails, the worktree is preserved for manual inspection.
+  Worktree lifecycle is managed by Claude Desktop, not by this skill.
 
   **CRITICAL — never merge locally:** Do NOT run `git merge`, `git checkout
   <default-branch>`, or any command that merges the loop branch into the
@@ -307,6 +330,5 @@ eval "$SYNC_OUTPUT"   # sets DEFAULT_BRANCH, STATUS
 
 - **FAIL (max iterations):** Report that max iterations were reached. Show
   the last checker verdict: `git log --grep="Loop-Verdict: FAIL" -1 --format="%B"`
-  The worktree at `$WORKTREE_DIR` is **preserved** for debugging.
 - **Resumable:** Running `/looper` again with the same task resumes automatically
   via step 5.

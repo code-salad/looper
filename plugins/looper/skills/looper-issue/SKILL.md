@@ -134,7 +134,7 @@ Invoke the `looper` skill with the selected issue reference:
 
 This hands off entirely to the existing looper skill, which will:
 - Sanitize the task name from the argument
-- Create or resume an isolated worktree
+- Resolve the current worktree (Claude Desktop creates the worktree before invocation)
 - Run the Plan-Do-Check loop
 
 ---
