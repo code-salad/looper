@@ -465,20 +465,7 @@ fi
 
 If the squash merge fails (e.g., merge conflicts, branch protection rules), report the error to the user and do NOT retry. The user may need to resolve conflicts or adjust branch protection settings.
 
-### 6b. Clean up worktree
-
-If the `$WORKTREE_DIR` variable is set (indicating this PR was created from a looper worktree), remove the worktree after a successful merge or after the PR is left open:
-
-```bash
-SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel)}/skills/looper/scripts"
-"$SCRIPTS_DIR/cleanup-worktree" --dir "$WORKTREE_DIR"
-```
-
-The `cleanup-worktree` script handles returning to the main repo, removing the worktree, and guarding against `core.bare=true` in a single atomic operation.
-
-If worktree removal fails, warn but do not abort.
-
-### 6c. Report final status
+### 6b. Report final status
 
 **If squash-merged (no DB migrations):**
 ```
@@ -522,7 +509,6 @@ Merge manually: gh pr merge <number> --squash --delete-branch
 | Squash merge fails (conflicts) | Report error, print manual merge command `gh pr merge <number> --squash --delete-branch`, do NOT retry |
 | Squash merge fails (branch protection) | Report error, suggest user review branch protection settings |
 | DB migrations detected | Do NOT merge — leave PR open for manual review, report PR URL |
-| Worktree cleanup fails | Warn but do not abort — merge already succeeded |
 
 ---
 

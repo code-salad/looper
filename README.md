@@ -176,7 +176,7 @@ Looper supports two execution modes. Pick one per invocation.
 
 | Mode | Command | Isolation | Use when |
 |------|---------|-----------|----------|
-| **Worktree** (default) | `/looper:loop "<task>"` | Git worktree at `.worktrees/<name>/`. Host env, host network, host creds. | Single-developer, single-task, trusted environment. |
+| **Worktree** (default) | `/looper:loop "<task>"` | Runs inside the current git worktree (Claude Desktop creates the worktree before invocation; for non-Desktop flows, `looper-ee` and `initiate-worktree` create one under `.worktrees/<name>/`). Host env, host network, host creds. | Single-developer, single-task, trusted environment. |
 | **Sandboxed** (opt-in) | `/looper:looper-sandboxed "<task>"` | `docker` backend (default): `docker run` + bind-mount + `/var/run/docker.sock` for nested Docker. `sbx` backend (opt-in): microVM + host-side secret proxy. | Concurrent loops, defense-in-depth, or preparing for remote fleet execution. |
 
 Both modes run the same PDC loop — only the execution environment differs.

@@ -67,15 +67,34 @@ if [ -n "$VERDICT" ]; then
     COMMIT_MSG+=$'\n'"Loop-Verdict: ${VERDICT}"
 fi
 
-# Branch guard: refuse to commit on protected branches
+# Branch guard: refuse to commit on protected branches or detached HEAD
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
-# Detect the repo's default branch from the remote HEAD symref, fall back to main/master
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "")
+if [ -z "$CURRENT_BRANCH" ]; then
+    echo "ERROR: Detached HEAD — refusing to commit." >&2
+    echo "Looper must run inside a worktree on a feature branch." >&2
+    exit 1
+fi
+# Detect the repo's default branch: origin/HEAD symref → gh fallback → main/master probe.
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || true)
+if [ -z "$DEFAULT_BRANCH" ] && command -v gh >/dev/null 2>&1; then
+    DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || true)
+fi
+if [ -z "$DEFAULT_BRANCH" ]; then
+    for candidate in main master; do
+        if git rev-parse --verify "$candidate" >/dev/null 2>&1 \
+           || git rev-parse --verify "origin/$candidate" >/dev/null 2>&1; then
+            DEFAULT_BRANCH="$candidate"; break
+        fi
+    done
+fi
+if [ -z "$DEFAULT_BRANCH" ]; then
+    echo "ERROR: Could not determine default branch — refusing to commit (cannot guarantee branch isolation)." >&2
+    exit 1
+fi
 if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" || \
-      ( -n "$DEFAULT_BRANCH" && "$CURRENT_BRANCH" == "$DEFAULT_BRANCH" ) ]]; then
+      "$CURRENT_BRANCH" == "$DEFAULT_BRANCH" ]]; then
     echo "ERROR: Refusing to commit on protected branch '$CURRENT_BRANCH'." >&2
-    echo "Looper must run inside a worktree on a loop/* branch." >&2
-    echo "Use setup-worktree to create an isolated worktree first." >&2
+    echo "Looper must run inside a worktree on a feature branch." >&2
     exit 1
 fi
 
