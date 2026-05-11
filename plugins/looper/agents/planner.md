@@ -25,8 +25,14 @@ stdout (foreground) or delivered inline in the completion notification
 `Bash(command="claude-spawn-agent X Y", run_in_background=true)` —
 the Bash tool returns immediately; an automatic completion notification
 fires on subprocess exit and its output contains the subagent's response
-text inline. For parallel fan-out, redirect each subagent's stdout to a
-temp file and `&`/`wait` — no polling, the response arrives directly.
+text inline. For parallel fan-out, run the `&`/`wait` shell block via
+`Bash(run_in_background=true)` — each subagent's stdout goes to a temp
+file inside the block, end with `cat` to collect responses, and a single
+completion notification with the full output fires when the whole block
+exits. **Do NOT call the `&`/`wait` block in the foreground** — the Bash
+tool caps foreground commands at 10 min (default 2 min) while reviewer
+subagents routinely take 5–10+ min, so foreground `wait` is SIGKILLed
+before it returns.
 
 **Never improvise PDC work inline.** If `claude-spawn-agent` is not on
 `PATH` (verified by the parent skill's step-0 gate), ABORT and surface
@@ -231,7 +237,11 @@ trail and is strictly worse than not running at all.
    the draft plan text and the task context. They are read-only reporters — they
    do NOT modify anything.
 
-   Run all three in parallel:
+   Run all three in parallel. **This Bash call MUST use `run_in_background=true`**
+   — the reviewers individually take 3–8 min and `wait` will be SIGKILLed by
+   the foreground Bash timeout (max 10 min) before they all finish. A single
+   completion notification with the `cat` output fires when the whole block
+   exits.
    ```bash
    TMPDIR="/tmp/looper-${TASK_NAME}"
    mkdir -p "$TMPDIR"

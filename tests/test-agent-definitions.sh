@@ -205,10 +205,14 @@ assert_file_contains "planner.md uses TASK_NAME-namespaced tmpdir" \
 
 # --- Test 10: Line count reduction ---
 echo "=== Test 10: checker.md and planner.md are significantly shorter ==="
-assert_line_count_lt "checker.md is under 350 lines (was 482)" "$CHECKER_MD" 350
+# Bumped from 350 → 365 to accommodate the parallel-fanout run_in_background
+# warning added after foreground `wait` was found to be SIGKILLed by the Bash
+# 10-min timeout when reviewer subagents run 5–10+ min.
+assert_line_count_lt "checker.md is under 365 lines (was 482)" "$CHECKER_MD" 365
 # Use <= here: GitHub's squash-merge may add a trailing newline, bumping wc -l
-# by 1 post-merge (see #97). Keep the 360 ceiling but allow the boundary value.
-assert_line_count_le "planner.md is at or under 360 lines (was 311, +52 for on-demand gh rules + issue context sub-sections)" "$PLANNER_MD" 360
+# by 1 post-merge (see #97). Bumped 360 → 400 to accommodate the parallel-fanout
+# run_in_background warning (see above).
+assert_line_count_le "planner.md is at or under 400 lines (was 311, +89 for on-demand gh rules + issue context sub-sections + run_in_background warning)" "$PLANNER_MD" 400
 
 # --- Test 11: simplifier.md agent exists with valid frontmatter ---
 echo "=== Test 11: simplifier.md exists with valid frontmatter ==="
@@ -265,6 +269,45 @@ if [ -f "$DOER_MD" ]; then
     assert_file_not_contains "doer.md no longer uses 'after 2 fix attempts' language" \
         "$DOER_MD" "after 2 fix attempts"
 fi
+
+# --- Test 16: parallel fan-out instructions require run_in_background=true ---
+# Foreground `wait` for parallel claude-spawn-agent calls is SIGKILLed by the
+# Bash tool's 10-min timeout (default 2 min). Reviewer subagents routinely
+# take 5–10+ min, so the parallel-fanout pattern MUST be invoked with
+# run_in_background=true.
+#
+# Lexical regression: the docs must (a) include a fan-out-specific call-out
+# requiring run_in_background=true (NOT just the single-spawn preamble
+# example, which mentions it for a different reason), and (b) NOT preserve
+# the old "no polling, the response arrives directly" framing that described
+# the broken foreground pattern.
+echo "=== Test 16: parallel fan-out docs require run_in_background=true at the block ==="
+SUBAGENTS_SKILL_MD="$REPO_ROOT/plugins/looper/skills/subagents/SKILL.md"
+for doc in "$PLANNER_MD" "$CHECKER_MD" "$DOER_MD" "$SUBAGENTS_SKILL_MD"; do
+    basename_doc="$(basename "$doc")"
+    # Fan-out call-out must explicitly reference Bash(run_in_background=true).
+    assert_file_contains "$basename_doc fan-out call-out references Bash(run_in_background=true)" \
+        "$doc" 'Bash(run_in_background=true)'
+    # The old "no polling, the response arrives directly" framing must be gone.
+    assert_file_not_contains "$basename_doc no longer claims 'no polling, the response arrives directly'" \
+        "$doc" "no polling, the response arrives directly"
+done
+
+# --- Test 17: spawn-agent captures stderr instead of suppressing it ---
+# Suppressing claude's stderr with `2>/dev/null` hides why a child session
+# failed, making parallel fan-out failures impossible to diagnose. spawn-agent
+# must capture claude's stderr to a file and surface it when JSON output is
+# missing. Behavioral coverage lives in test-spawn-agent-canonical.sh Case 10;
+# this is the lexical/structural pin.
+echo "=== Test 17: spawn-agent captures stderr for diagnostics ==="
+SPAWN_AGENT="$REPO_ROOT/plugins/looper/skills/subagents/scripts/spawn-agent"
+assert_file_exists "spawn-agent script exists" "$SPAWN_AGENT"
+assert_file_contains "spawn-agent captures claude stderr to ERRFILE" \
+    "$SPAWN_AGENT" 'ERRFILE'
+assert_file_contains "spawn-agent redirects claude stderr to ERRFILE" \
+    "$SPAWN_AGENT" '2>"\$ERRFILE"'
+assert_file_contains "spawn-agent surfaces stderr on missing JSON output" \
+    "$SPAWN_AGENT" 'claude stderr'
 
 # --- Summary ---
 echo ""
