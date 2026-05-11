@@ -26,23 +26,24 @@ do planner/doer/checker work directly in this session — it defeats the
 loop's isolation, commit trail, and worktree guarantees.
 
 **Why step 0 always gates on `claude-spawn-agent`.** The planner, doer,
-and checker don't have the `Agent` tool in their own frontmatter, so they
-always spawn *their* sub-subagents (Explore, `looper:debugger`,
-`looper:simplifier`, `check-*`, etc.) via `claude-spawn-agent` on `PATH`.
-Without that binary those inner spawns fail mid-iteration — the loop
-gates on it up front to fail fast before any side effects.
+and checker don't have the `Agent` tool in their own frontmatter, so when
+they need to spawn their on-demand utility sub-agents (`Explore`,
+`looper:debugger`, `looper:gh-issue-creator`) they do so via
+`claude-spawn-agent` on `PATH`. Without that binary those inner spawns
+fail mid-iteration — the loop gates on it up front to fail fast before
+any side effects.
 
 ## Steps
 
 ### 0. Verify subagent dispatch is available
 
-Before ANY side effect (no worktree creation, no issue fetching, no commits),
-verify that `claude-spawn-agent` is reachable on `PATH`. Even when this skill
-spawns planner/doer/checker via the `Agent` tool, those three agents
-internally spawn Explore, `looper:debugger`, `looper:simplifier`, and
-`check-*` via `claude-spawn-agent` (they don't have `Agent` in their own
-frontmatter). Without the binary those inner spawns fail partway through an
-iteration — abort up front instead.
+Before ANY side effect (no issue fetching, no commits), verify that
+`claude-spawn-agent` is reachable on `PATH`. Even when this skill spawns
+planner/doer/checker via the `Agent` tool, those three agents internally
+spawn their utility sub-agents (`Explore`, `looper:debugger`,
+`looper:gh-issue-creator`) via `claude-spawn-agent` because they don't
+have `Agent` in their own frontmatter. Without the binary those inner
+spawns fail partway through an iteration — abort up front instead.
 
 ```bash
 command -v claude-spawn-agent >/dev/null 2>&1 || {

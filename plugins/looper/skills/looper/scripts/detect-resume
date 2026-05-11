@@ -31,9 +31,11 @@ elif [ "$LAST_ITERATION" -gt 0 ] 2>/dev/null; then
     case "$LAST_PHASE" in
         plan)     echo "[detect-resume] Resuming mid-iteration $START (PLAN committed, DO pending)" >&2 ;;
         do-red)   echo "[detect-resume] Resuming mid-iteration $START (RED committed, GREEN pending)" >&2 ;;
-        do-green) echo "[detect-resume] Resuming mid-iteration $START (RED+GREEN committed, SIMPLIFY/INTEGRATION/CHECK pending)" >&2 ;;
-        do-simplify) echo "[detect-resume] Resuming mid-iteration $START (RED+GREEN+SIMPLIFY committed, INTEGRATION/CHECK pending)" >&2 ;;
-        do-integration) echo "[detect-resume] Resuming mid-iteration $START (RED+GREEN+SIMPLIFY+INTEGRATION committed, CHECK pending)" >&2 ;;
+        do-green) echo "[detect-resume] Resuming mid-iteration $START (RED+GREEN committed, CHECK pending)" >&2 ;;
+        # Legacy phases retained for backward compatibility with worktrees
+        # produced by older looper versions; new iterations no longer emit them.
+        do-simplify) echo "[detect-resume] Resuming mid-iteration $START (legacy do-simplify committed, CHECK pending)" >&2 ;;
+        do-integration) echo "[detect-resume] Resuming mid-iteration $START (legacy do-integration committed, CHECK pending)" >&2 ;;
         *)        echo "[detect-resume] Resuming mid-iteration $START" >&2 ;;
     esac
 else

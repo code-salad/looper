@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test-agent-definitions.sh — Tests for extracted subagent agent definitions
-# Verifies that 7 new agent files exist with valid frontmatter, that
-# checker.md and planner.md no longer inline prompt templates, and that
-# output files are namespaced by TASK_NAME.
+# test-agent-definitions.sh — Tests for the collapsed agent architecture.
+# The three PDC agents (planner, doer, checker) now do their own work
+# inline — no more plan-review or check-* fan-out subagents.
+# Only the on-demand utility agents (debugger, gh-issue-creator) remain.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR/.."
 AGENTS_DIR="$REPO_ROOT/plugins/looper/agents"
-CHECKER_MD="$AGENTS_DIR/checker.md"
-PLANNER_MD="$AGENTS_DIR/planner.md"
 
 PASS=0
 FAIL=0
@@ -35,6 +33,18 @@ assert_file_exists() {
         PASS=$((PASS + 1))
     else
         echo "FAIL: $description (file not found: $file)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+assert_file_not_exists() {
+    local description="$1"
+    local file="$2"
+    if [ ! -f "$file" ]; then
+        echo "PASS: $description"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL: $description (file unexpectedly exists: $file)"
         FAIL=$((FAIL + 1))
     fi
 }
@@ -65,240 +75,160 @@ assert_file_not_contains() {
     fi
 }
 
-assert_line_count_lt() {
-    local description="$1"
-    local file="$2"
-    local max_lines="$3"
-    local actual
-    actual=$(wc -l < "$file" 2>/dev/null || echo "0")
-    actual=$(echo "$actual" | tr -d '[:space:]')
-    if [ "$actual" -lt "$max_lines" ]; then
-        echo "PASS: $description (lines=$actual, max=$max_lines)"
-        PASS=$((PASS + 1))
+# --- Test 1: Collapsed agent set — exactly 5 agent files ---
+echo "=== Test 1: Agent set is the collapsed 5: planner, doer, checker, debugger, gh-issue-creator ==="
+for keeper in planner doer checker debugger gh-issue-creator; do
+    assert_file_exists "$keeper.md exists" "$AGENTS_DIR/$keeper.md"
+done
+
+# --- Test 2: Obsolete fan-out agents are removed ---
+echo "=== Test 2: Obsolete fan-out agents have been removed ==="
+for gone in check-build check-tests check-code check-runtime check-adversarial \
+            plan-feasibility plan-completeness plan-scope simplifier summarizer; do
+    assert_file_not_exists "$gone.md is removed" "$AGENTS_DIR/$gone.md"
+done
+
+# --- Test 3: Each kept agent has valid frontmatter ---
+echo "=== Test 3: Each agent file has valid YAML frontmatter (name, description, tools, model) ==="
+for keeper in planner doer checker debugger gh-issue-creator; do
+    f="$AGENTS_DIR/$keeper.md"
+    first_line="$(head -1 "$f" 2>/dev/null || echo "")"
+    assert_true "$keeper.md starts with ---" "$([ "$first_line" = "---" ] && echo "true" || echo "false")"
+    assert_file_contains "$keeper.md has 'name:' field" "$f" "^name:"
+    assert_file_contains "$keeper.md has 'description:' field" "$f" "^description:"
+    assert_file_contains "$keeper.md has 'tools:' field" "$f" "^tools:"
+    assert_file_contains "$keeper.md has 'model:' field" "$f" "^model:"
+    assert_file_contains "$keeper.md name matches filename" "$f" "^name: ${keeper}$"
+done
+
+# --- Test 4: Model tiers are explicit and from the allowed set ---
+echo "=== Test 4: All agents declare an allowed model tier ==="
+for f in "$AGENTS_DIR"/*.md; do
+    stem="$(basename "$f" .md)"
+    if grep -Eq '^model: (haiku|sonnet|opus)$' "$f"; then
+        echo "PASS: $stem has explicit model tier"
+        PASS=$((PASS+1))
     else
-        echo "FAIL: $description (lines=$actual, expected < $max_lines)"
-        FAIL=$((FAIL + 1))
+        echo "FAIL: $stem missing explicit model tier"
+        FAIL=$((FAIL+1))
     fi
-}
-
-assert_line_count_le() {
-    local description="$1"
-    local file="$2"
-    local max_lines="$3"
-    local actual
-    actual=$(wc -l < "$file" 2>/dev/null || echo "0")
-    actual=$(echo "$actual" | tr -d '[:space:]')
-    if [ "$actual" -le "$max_lines" ]; then
-        echo "PASS: $description (lines=$actual, max=$max_lines)"
-        PASS=$((PASS + 1))
-    else
-        echo "FAIL: $description (lines=$actual, expected <= $max_lines)"
-        FAIL=$((FAIL + 1))
-    fi
-}
-
-# --- Test 1: All 7 new agent files exist ---
-echo "=== Test 1: All 7 new agent files exist ==="
-assert_file_exists "check-build.md exists" "$AGENTS_DIR/check-build.md"
-assert_file_exists "check-tests.md exists" "$AGENTS_DIR/check-tests.md"
-assert_file_exists "check-code.md exists" "$AGENTS_DIR/check-code.md"
-assert_file_exists "check-runtime.md exists" "$AGENTS_DIR/check-runtime.md"
-assert_file_exists "plan-feasibility.md exists" "$AGENTS_DIR/plan-feasibility.md"
-assert_file_exists "plan-completeness.md exists" "$AGENTS_DIR/plan-completeness.md"
-assert_file_exists "plan-scope.md exists" "$AGENTS_DIR/plan-scope.md"
-
-# --- Test 2: Each file has valid YAML frontmatter ---
-echo "=== Test 2: Each agent file has valid YAML frontmatter (name, description, tools, model) ==="
-for agent_file in \
-    "$AGENTS_DIR/check-build.md" \
-    "$AGENTS_DIR/check-tests.md" \
-    "$AGENTS_DIR/check-code.md" \
-    "$AGENTS_DIR/check-runtime.md" \
-    "$AGENTS_DIR/plan-feasibility.md" \
-    "$AGENTS_DIR/plan-completeness.md" \
-    "$AGENTS_DIR/plan-scope.md"; do
-    basename_file="$(basename "$agent_file")"
-    # Check frontmatter starts on line 1
-    first_line="$(head -1 "$agent_file" 2>/dev/null || echo "")"
-    assert_true "$basename_file starts with ---" "$([ "$first_line" = "---" ] && echo "true" || echo "false")"
-    assert_file_contains "$basename_file has 'name:' field" "$agent_file" "^name:"
-    assert_file_contains "$basename_file has 'description:' field" "$agent_file" "^description:"
-    assert_file_contains "$basename_file has 'tools:' field" "$agent_file" "^tools:"
-    assert_file_contains "$basename_file has 'model:' field" "$agent_file" "^model:"
 done
 
-# --- Test 3: Name field matches filename stem ---
-echo "=== Test 3: name field in frontmatter matches filename stem ==="
-for agent_file in \
-    "$AGENTS_DIR/check-build.md" \
-    "$AGENTS_DIR/check-tests.md" \
-    "$AGENTS_DIR/check-code.md" \
-    "$AGENTS_DIR/check-runtime.md" \
-    "$AGENTS_DIR/plan-feasibility.md" \
-    "$AGENTS_DIR/plan-completeness.md" \
-    "$AGENTS_DIR/plan-scope.md"; do
-    stem="${agent_file%.md}"
-    stem="$(basename "$stem")"
-    assert_file_contains "$stem: name field matches filename" "$agent_file" "^name: ${stem}$"
+# --- Test 5: Planner stays read-only (no Write/Edit tools) ---
+echo "=== Test 5: Planner has Read/Glob/Grep/Bash and disallows Write/Edit ==="
+assert_file_contains "planner declares disallowedTools" "$AGENTS_DIR/planner.md" "^disallowedTools:"
+assert_file_contains "planner disallows Write" "$AGENTS_DIR/planner.md" "^disallowedTools:.*Write"
+assert_file_contains "planner disallows Edit" "$AGENTS_DIR/planner.md" "^disallowedTools:.*Edit"
+
+# --- Test 6: Checker no longer spawns the 5 review subagents ---
+echo "=== Test 6: Checker does not spawn deleted check-* subagents ==="
+for gone in check-build check-tests check-code check-runtime check-adversarial; do
+    assert_file_not_contains "checker.md does not spawn $gone" \
+        "$AGENTS_DIR/checker.md" "looper:$gone"
 done
+# The two-pass language replaces the fan-out
+assert_file_contains "checker.md describes Pass 1 (attack)" "$AGENTS_DIR/checker.md" "Pass 1"
+assert_file_contains "checker.md describes Pass 2 (verify)" "$AGENTS_DIR/checker.md" "Pass 2"
 
-# --- Test 4: check-runtime has Skill in tools; others do not ---
-echo "=== Test 4: check-runtime has Skill tool; others do not ==="
-assert_file_contains "check-runtime.md has Skill in tools" "$AGENTS_DIR/check-runtime.md" "Skill"
-for agent_file in \
-    "$AGENTS_DIR/check-build.md" \
-    "$AGENTS_DIR/check-tests.md" \
-    "$AGENTS_DIR/check-code.md" \
-    "$AGENTS_DIR/plan-feasibility.md" \
-    "$AGENTS_DIR/plan-completeness.md" \
-    "$AGENTS_DIR/plan-scope.md"; do
-    basename_file="$(basename "$agent_file")"
-    assert_file_not_contains "$basename_file does not have Skill in tools line" "$agent_file" "^tools:.*Skill"
+# --- Test 7: Planner no longer spawns the 3 plan-review subagents ---
+echo "=== Test 7: Planner does not spawn deleted plan-* subagents ==="
+for gone in plan-feasibility plan-completeness plan-scope; do
+    assert_file_not_contains "planner.md does not spawn $gone" \
+        "$AGENTS_DIR/planner.md" "looper:$gone"
 done
+# Self-review replaces the fan-out
+assert_file_contains "planner.md mentions self-review" "$AGENTS_DIR/planner.md" "[Ss]elf-review"
 
-# --- Test 5: Severity format present in each agent file ---
-echo "=== Test 5: Each agent file contains severity format indicators ==="
-for agent_file in \
-    "$AGENTS_DIR/check-build.md" \
-    "$AGENTS_DIR/check-tests.md" \
-    "$AGENTS_DIR/check-code.md" \
-    "$AGENTS_DIR/check-runtime.md" \
-    "$AGENTS_DIR/plan-feasibility.md" \
-    "$AGENTS_DIR/plan-completeness.md" \
-    "$AGENTS_DIR/plan-scope.md"; do
-    basename_file="$(basename "$agent_file")"
-    assert_file_contains "$basename_file contains BLOCKER severity" "$agent_file" "BLOCKER"
-    assert_file_contains "$basename_file contains WARNING severity" "$agent_file" "WARNING"
-done
+# --- Test 8: Doer no longer spawns the simplifier subagent ---
+echo "=== Test 8: Doer does not spawn looper:simplifier; simplify is inline ==="
+# The doer prompt may mention "looper:simplifier" in a "Do NOT spawn" rule;
+# we only want to fail if it appears as an actual claude-spawn-agent call.
+assert_file_not_contains "doer.md does not invoke claude-spawn-agent looper:simplifier" \
+    "$AGENTS_DIR/doer.md" 'claude-spawn-agent "looper:simplifier\|claude-spawn-agent looper:simplifier'
+assert_file_contains "doer.md mentions inline simplify" "$AGENTS_DIR/doer.md" "[Ss]implify inline"
+# The simplifier subagent's iron law was "revert on test break". That guard
+# now lives inline in the Doer — pin it so a refactor can't silently drop
+# the self-revert behavior.
+assert_file_contains "doer.md describes simplify-revert on test failure" \
+    "$AGENTS_DIR/doer.md" "revert the simplify\|checkout -- <files-you-touched"
+assert_file_contains "doer.md preserves an iron-law-style invariant for simplify" \
+    "$AGENTS_DIR/doer.md" "[Ii]ron law"
 
-# --- Test 6: Report format (Issues Found + Summary) present in each agent file ---
-echo "=== Test 6: Each agent file contains 'Issues Found' and 'Summary' sections ==="
-for agent_file in \
-    "$AGENTS_DIR/check-build.md" \
-    "$AGENTS_DIR/check-tests.md" \
-    "$AGENTS_DIR/check-code.md" \
-    "$AGENTS_DIR/check-runtime.md" \
-    "$AGENTS_DIR/plan-feasibility.md" \
-    "$AGENTS_DIR/plan-completeness.md" \
-    "$AGENTS_DIR/plan-scope.md"; do
-    basename_file="$(basename "$agent_file")"
-    assert_file_contains "$basename_file contains 'Issues Found'" "$agent_file" "Issues Found"
-    assert_file_contains "$basename_file contains 'Summary'" "$agent_file" "Summary"
-done
+# --- Test 9: Plan embeds tests (TDD red phase is copy-paste, not write) ---
+echo "=== Test 9: Planner embeds tests in plan body; Doer copies them ==="
+assert_file_contains "planner.md instructs embedding test code blocks" \
+    "$AGENTS_DIR/planner.md" "[Tt]ests to write first\|embedded tests"
+assert_file_contains "doer.md describes pasting embedded tests" \
+    "$AGENTS_DIR/doer.md" "[Cc]opy embedded tests\|paste them"
+# The collapsed TDD contract: Doer copies, does NOT invent tests. Pin this
+# explicitly so the rule survives future trims.
+assert_file_contains "doer.md forbids inventing tests" \
+    "$AGENTS_DIR/doer.md" "Do NOT invent tests\|do not invent tests"
 
-# --- Test 7: Inline prompt template removed from checker.md ---
-echo "=== Test 7: checker.md does not contain old inline prompt template ==="
-assert_file_not_contains "checker.md no longer has inline subagent prompt template" \
-    "$CHECKER_MD" "You are a review subagent for the Checker"
+# --- Test 10: Doer keeps RED→GREEN sequence (TDD is preserved) ---
+echo "=== Test 10: Doer commits do-red and do-green; no do-simplify or do-integration ==="
+assert_file_contains "doer.md commits do-red phase" "$AGENTS_DIR/doer.md" 'phase "do-red"'
+assert_file_contains "doer.md commits do-green phase" "$AGENTS_DIR/doer.md" 'phase "do-green"'
+assert_file_not_contains "doer.md no longer commits do-simplify" \
+    "$AGENTS_DIR/doer.md" 'phase "do-simplify"'
+assert_file_not_contains "doer.md no longer commits do-integration" \
+    "$AGENTS_DIR/doer.md" 'phase "do-integration"'
 
-# --- Test 8: Inline prompt template removed from planner.md ---
-echo "=== Test 8: planner.md does not contain old inline prompt template ==="
-assert_file_not_contains "planner.md no longer has inline subagent prompt template" \
-    "$PLANNER_MD" "You are a plan review subagent for the Planner"
+# --- Test 11: Delta-mode pointer resolution still wired up ---
+echo "=== Test 11: Delta-mode pointer resolution survives the collapse ==="
+assert_file_contains "planner.md mentions delta-mode planning" \
+    "$AGENTS_DIR/planner.md" "[Dd]elta-mode planning"
+assert_file_contains "planner.md mentions resolve-plan-pointers helper" \
+    "$AGENTS_DIR/planner.md" "resolve-plan-pointers"
+assert_file_contains "doer.md resolves pointers before acting" \
+    "$AGENTS_DIR/doer.md" "resolve-plan-pointers"
+assert_file_contains "checker.md resolves pointers before reviewing" \
+    "$AGENTS_DIR/checker.md" "resolve-plan-pointers"
 
-# --- Test 9: TASK_NAME namespacing used in checker.md and planner.md ---
-echo "=== Test 9: checker.md and planner.md use /tmp/looper-\${TASK_NAME}/ namespacing ==="
-assert_file_contains "checker.md uses TASK_NAME-namespaced tmpdir" \
-    "$CHECKER_MD" '/tmp/looper-\${TASK_NAME}'
-assert_file_contains "planner.md uses TASK_NAME-namespaced tmpdir" \
-    "$PLANNER_MD" '/tmp/looper-\${TASK_NAME}'
+# --- Test 12: Checker is downgraded to sonnet; planner stays opus ---
+echo "=== Test 12: Model tiers were tuned (checker → sonnet, planner stays opus) ==="
+assert_file_contains "checker.md uses sonnet" "$AGENTS_DIR/checker.md" "^model: sonnet$"
+assert_file_contains "planner.md stays on opus" "$AGENTS_DIR/planner.md" "^model: opus$"
+assert_file_contains "doer.md uses sonnet" "$AGENTS_DIR/doer.md" "^model: sonnet$"
 
-# --- Test 10: Line count reduction ---
-echo "=== Test 10: checker.md and planner.md are significantly shorter ==="
-# Bumped from 350 → 365 to accommodate the parallel-fanout run_in_background
-# warning added after foreground `wait` was found to be SIGKILLed by the Bash
-# 10-min timeout when reviewer subagents run 5–10+ min.
-assert_line_count_lt "checker.md is under 365 lines (was 482)" "$CHECKER_MD" 365
-# Use <= here: GitHub's squash-merge may add a trailing newline, bumping wc -l
-# by 1 post-merge (see #97). Bumped 360 → 400 to accommodate the parallel-fanout
-# run_in_background warning (see above).
-assert_line_count_le "planner.md is at or under 400 lines (was 311, +89 for on-demand gh rules + issue context sub-sections + run_in_background warning)" "$PLANNER_MD" 400
+# --- Test 13: Doer's smarter retry policy is preserved ---
+echo "=== Test 13: Doer keeps error-delta-aware retry policy ==="
+assert_file_contains "doer.md mentions ERROR_DELTA" "$AGENTS_DIR/doer.md" "ERROR_DELTA\|error delta\|error prefix"
+assert_file_contains "doer.md references per-iteration scratch file" \
+    "$AGENTS_DIR/doer.md" 'last-error-\${ITERATION}'
+assert_file_not_contains "doer.md no longer uses 'after 2 fix attempts' language" \
+    "$AGENTS_DIR/doer.md" "after 2 fix attempts"
 
-# --- Test 11: simplifier.md agent exists with valid frontmatter ---
-echo "=== Test 11: simplifier.md exists with valid frontmatter ==="
-SIMPLIFIER_MD="$AGENTS_DIR/simplifier.md"
-assert_file_exists "simplifier.md exists" "$SIMPLIFIER_MD"
-if [ -f "$SIMPLIFIER_MD" ]; then
-    first_line="$(head -1 "$SIMPLIFIER_MD" 2>/dev/null || echo "")"
-    assert_true "simplifier.md starts with ---" "$([ "$first_line" = "---" ] && echo "true" || echo "false")"
-    assert_file_contains "simplifier.md has name: simplifier" "$SIMPLIFIER_MD" "^name: simplifier$"
-    assert_file_contains "simplifier.md has model: sonnet" "$SIMPLIFIER_MD" "^model: sonnet$"
-    assert_file_contains "simplifier.md has tools: field" "$SIMPLIFIER_MD" "^tools:"
-    assert_file_contains "simplifier.md tools include Read" "$SIMPLIFIER_MD" "^tools:.*Read"
-    assert_file_contains "simplifier.md tools include Edit" "$SIMPLIFIER_MD" "^tools:.*Edit"
-    assert_file_contains "simplifier.md tools include Bash" "$SIMPLIFIER_MD" "^tools:.*Bash"
-    assert_file_contains "simplifier.md tools include Glob" "$SIMPLIFIER_MD" "^tools:.*Glob"
-    assert_file_contains "simplifier.md tools include Grep" "$SIMPLIFIER_MD" "^tools:.*Grep"
-    # Scope-awareness + verdict structure
-    assert_file_contains "simplifier.md mentions Scope Guard" "$SIMPLIFIER_MD" "Scope Guard"
-    assert_file_contains "simplifier.md defines APPLIED verdict" "$SIMPLIFIER_MD" "APPLIED"
-    assert_file_contains "simplifier.md defines SKIPPED verdict" "$SIMPLIFIER_MD" "SKIPPED"
-    assert_file_contains "simplifier.md defines REVERTED verdict" "$SIMPLIFIER_MD" "REVERTED"
-fi
+# --- Test 14: Doer keeps scope-creep check via check-scope ---
+echo "=== Test 14: Doer invokes check-scope after GREEN ==="
+assert_file_contains "doer.md references check-scope helper" \
+    "$AGENTS_DIR/doer.md" "check-scope"
 
-# --- Test 12: doer.md step numbering is unique (each step 1..16 appears once) ---
-echo "=== Test 12: doer.md step numbers are unique ==="
-DOER_MD="$AGENTS_DIR/doer.md"
-if [ -f "$DOER_MD" ]; then
-    dup_count=$(grep -oE '^[0-9]+\.' "$DOER_MD" | sort | uniq -d | wc -l)
-    dup_count=$(echo "$dup_count" | tr -d '[:space:]')
-    assert_true "doer.md has no duplicate step numbers (duplicates=$dup_count)" \
-        "$([ "$dup_count" = "0" ] && echo "true" || echo "false")"
-fi
-
-# --- Test 13: doer.md references looper:simplifier (not general-purpose simplifier) ---
-echo "=== Test 13: doer.md uses looper:simplifier subagent ==="
-if [ -f "$DOER_MD" ]; then
-    assert_file_contains "doer.md spawns looper:simplifier" "$DOER_MD" 'looper:simplifier'
-    assert_file_not_contains "doer.md does not inline 'You are a code simplifier' prompt" \
-        "$DOER_MD" "You are a code simplifier"
-fi
-
-# --- Test 14: doer.md mentions check-scope helper ---
-echo "=== Test 14: doer.md invokes check-scope after GREEN ==="
-if [ -f "$DOER_MD" ]; then
-    assert_file_contains "doer.md references check-scope helper" "$DOER_MD" "check-scope"
-fi
-
-# --- Test 15: doer.md replaces '2 fix attempts' with delta-aware rule ---
-echo "=== Test 15: doer.md smarter retry policy ==="
-if [ -f "$DOER_MD" ]; then
-    assert_file_contains "doer.md mentions error delta" "$DOER_MD" "Error delta\|error delta\|error prefix\|ERROR_DELTA"
-    assert_file_contains "doer.md references per-iteration last-error scratch file" \
-        "$DOER_MD" 'last-error-\${ITERATION}'
-    assert_file_not_contains "doer.md no longer uses 'after 2 fix attempts' language" \
-        "$DOER_MD" "after 2 fix attempts"
-fi
+# --- Test 15: Step numbers in doer.md are unique ---
+echo "=== Test 15: doer.md step numbers are unique ==="
+dup_count=$(grep -oE '^[0-9]+\.' "$AGENTS_DIR/doer.md" | sort | uniq -d | wc -l)
+dup_count=$(echo "$dup_count" | tr -d '[:space:]')
+assert_true "doer.md has no duplicate step numbers (duplicates=$dup_count)" \
+    "$([ "$dup_count" = "0" ] && echo "true" || echo "false")"
 
 # --- Test 16: parallel fan-out instructions require run_in_background=true ---
 # Foreground `wait` for parallel claude-spawn-agent calls is SIGKILLed by the
 # Bash tool's 10-min timeout (default 2 min). Reviewer subagents routinely
 # take 5–10+ min, so the parallel-fanout pattern MUST be invoked with
-# run_in_background=true.
-#
-# Lexical regression: the docs must (a) include a fan-out-specific call-out
-# requiring run_in_background=true (NOT just the single-spawn preamble
-# example, which mentions it for a different reason), and (b) NOT preserve
-# the old "no polling, the response arrives directly" framing that described
-# the broken foreground pattern.
-echo "=== Test 16: parallel fan-out docs require run_in_background=true at the block ==="
+# run_in_background=true. (Inherited from #109; survives the collapse since
+# planner + doer still fan out Explore subagents and Checker still spawns
+# gh-issue-creator fire-and-forget.)
+echo "=== Test 16: parallel fan-out docs require run_in_background=true ==="
 SUBAGENTS_SKILL_MD="$REPO_ROOT/plugins/looper/skills/subagents/SKILL.md"
-for doc in "$PLANNER_MD" "$CHECKER_MD" "$DOER_MD" "$SUBAGENTS_SKILL_MD"; do
+for doc in "$AGENTS_DIR/planner.md" "$AGENTS_DIR/checker.md" "$AGENTS_DIR/doer.md" "$SUBAGENTS_SKILL_MD"; do
     basename_doc="$(basename "$doc")"
-    # Fan-out call-out must explicitly reference Bash(run_in_background=true).
-    assert_file_contains "$basename_doc fan-out call-out references Bash(run_in_background=true)" \
+    assert_file_contains "$basename_doc references Bash(run_in_background=true)" \
         "$doc" 'Bash(run_in_background=true)'
-    # The old "no polling, the response arrives directly" framing must be gone.
     assert_file_not_contains "$basename_doc no longer claims 'no polling, the response arrives directly'" \
         "$doc" "no polling, the response arrives directly"
 done
 
 # --- Test 17: spawn-agent captures stderr instead of suppressing it ---
-# Suppressing claude's stderr with `2>/dev/null` hides why a child session
-# failed, making parallel fan-out failures impossible to diagnose. spawn-agent
-# must capture claude's stderr to a file and surface it when JSON output is
-# missing. Behavioral coverage lives in test-spawn-agent-canonical.sh Case 10;
-# this is the lexical/structural pin.
 echo "=== Test 17: spawn-agent captures stderr for diagnostics ==="
 SPAWN_AGENT="$REPO_ROOT/plugins/looper/skills/subagents/scripts/spawn-agent"
 assert_file_exists "spawn-agent script exists" "$SPAWN_AGENT"
