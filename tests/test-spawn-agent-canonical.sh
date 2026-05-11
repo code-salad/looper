@@ -197,6 +197,61 @@ chmod +x "$SHIMDIR/claude"
 extra_stdout=$(PATH="$SHIMDIR:$PATH" bash "$SPAWN_AGENT" "Explore" "do stuff" --max-turns 3 2>/dev/null || true)
 assert_contains "extra flags: --max-turns appears in forwarded argv" "$extra_stdout" "--max-turns"
 
+# ── Case 10: stderr from a failing child is captured and surfaced ───────────────
+#
+# Previously `claude -p` stderr was redirected to /dev/null, so silent child
+# failures inside a parallel fan-out (auth error, agent typo, rate limit) had
+# no diagnostic trail. spawn-agent must now capture child stderr and print it
+# on the wrapper's stderr when no JSON output came back.
+
+echo ""
+echo "=== Case 10: child stderr surfaces when claude exits without JSON ==="
+make_shimdir
+cat > "$SHIMDIR/claude" << 'EOF'
+#!/usr/bin/env bash
+# Shim: writes a diagnostic to stderr, no stdout, exits non-zero
+echo "API key invalid" >&2
+exit 1
+EOF
+chmod +x "$SHIMDIR/claude"
+
+stderr_c10=$(PATH="$SHIMDIR:$PATH" bash "$SPAWN_AGENT" "Explore" "fail" 2>&1 >/dev/null || true)
+
+assert_contains "stderr capture: child diagnostic appears on wrapper stderr" \
+    "$stderr_c10" "API key invalid"
+assert_contains "stderr capture: includes '--- claude stderr ---' header" \
+    "$stderr_c10" "--- claude stderr ---"
+assert_contains "stderr capture: includes 'end stderr' footer" \
+    "$stderr_c10" "end stderr"
+assert_contains "stderr capture: includes 'no output' marker" \
+    "$stderr_c10" "no output"
+
+# ── Case 11: child stderr on successful run is NOT surfaced (no false alarms) ──
+#
+# claude may write progress/warning noise to stderr while still producing valid
+# JSON on stdout. spawn-agent must only surface child stderr when OUTFILE is
+# empty — successful runs stay quiet.
+
+echo ""
+echo "=== Case 11: child stderr is silent when claude exits with valid JSON ==="
+make_shimdir
+cat > "$SHIMDIR/claude" << 'EOF'
+#!/usr/bin/env bash
+echo "noisy progress line on stderr" >&2
+printf '{"result":"hello","is_error":false}'
+exit 0
+EOF
+chmod +x "$SHIMDIR/claude"
+
+c11_stderr=$(PATH="$SHIMDIR:$PATH" bash "$SPAWN_AGENT" "Explore" "ok" 2>&1 >/dev/null || true)
+c11_stdout=$(PATH="$SHIMDIR:$PATH" bash "$SPAWN_AGENT" "Explore" "ok" 2>/dev/null || true)
+
+assert_contains "successful run: stdout has the .result text" "$c11_stdout" "hello"
+assert_not_contains "successful run: stderr does NOT contain child's noise" \
+    "$c11_stderr" "noisy progress line on stderr"
+assert_not_contains "successful run: stderr does NOT contain stderr-capture header" \
+    "$c11_stderr" "--- claude stderr ---"
+
 # ────────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

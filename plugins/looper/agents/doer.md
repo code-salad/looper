@@ -188,11 +188,13 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    After subagents complete, review for consistency between groups.
 
    Invoke the block via `Bash(run_in_background=true)` — implementation
-   subagents routinely exceed the foreground Bash 10-min cap.
+   subagents routinely exceed the foreground Bash 10-min cap. End with
+   `cat` so the completion notification carries each subagent's response.
    ```bash
    claude-spawn-agent "general-purpose" "<prompt for area 1>" > /tmp/impl1.txt &
    claude-spawn-agent "general-purpose" "<prompt for area 2>" > /tmp/impl2.txt &
    wait
+   cat /tmp/impl1.txt /tmp/impl2.txt
    ```
 
 8. **Run checks (two rounds):**

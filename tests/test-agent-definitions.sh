@@ -274,30 +274,40 @@ fi
 # Foreground `wait` for parallel claude-spawn-agent calls is SIGKILLed by the
 # Bash tool's 10-min timeout (default 2 min). Reviewer subagents routinely
 # take 5–10+ min, so the parallel-fanout pattern MUST be invoked with
-# run_in_background=true. Regression test for that guidance.
-echo "=== Test 16: parallel fan-out docs mention run_in_background=true ==="
+# run_in_background=true.
+#
+# Lexical regression: the docs must (a) include a fan-out-specific call-out
+# requiring run_in_background=true (NOT just the single-spawn preamble
+# example, which mentions it for a different reason), and (b) NOT preserve
+# the old "no polling, the response arrives directly" framing that described
+# the broken foreground pattern.
+echo "=== Test 16: parallel fan-out docs require run_in_background=true at the block ==="
 SUBAGENTS_SKILL_MD="$REPO_ROOT/plugins/looper/skills/subagents/SKILL.md"
 for doc in "$PLANNER_MD" "$CHECKER_MD" "$DOER_MD" "$SUBAGENTS_SKILL_MD"; do
     basename_doc="$(basename "$doc")"
-    assert_file_contains "$basename_doc parallel-fanout docs reference run_in_background=true" \
-        "$doc" "run_in_background=true"
+    # Fan-out call-out must explicitly reference Bash(run_in_background=true).
+    assert_file_contains "$basename_doc fan-out call-out references Bash(run_in_background=true)" \
+        "$doc" 'Bash(run_in_background=true)'
+    # The old "no polling, the response arrives directly" framing must be gone.
+    assert_file_not_contains "$basename_doc no longer claims 'no polling, the response arrives directly'" \
+        "$doc" "no polling, the response arrives directly"
 done
 
 # --- Test 17: spawn-agent captures stderr instead of suppressing it ---
 # Suppressing claude's stderr with `2>/dev/null` hides why a child session
 # failed, making parallel fan-out failures impossible to diagnose. spawn-agent
 # must capture claude's stderr to a file and surface it when JSON output is
-# missing.
+# missing. Behavioral coverage lives in test-spawn-agent-canonical.sh Case 10;
+# this is the lexical/structural pin.
 echo "=== Test 17: spawn-agent captures stderr for diagnostics ==="
 SPAWN_AGENT="$REPO_ROOT/plugins/looper/skills/subagents/scripts/spawn-agent"
-if [ -f "$SPAWN_AGENT" ]; then
-    assert_file_contains "spawn-agent captures claude stderr to ERRFILE" \
-        "$SPAWN_AGENT" 'ERRFILE'
-    assert_file_contains "spawn-agent redirects claude stderr to ERRFILE" \
-        "$SPAWN_AGENT" '2>"\$ERRFILE"'
-    assert_file_contains "spawn-agent surfaces stderr on missing JSON output" \
-        "$SPAWN_AGENT" 'claude stderr'
-fi
+assert_file_exists "spawn-agent script exists" "$SPAWN_AGENT"
+assert_file_contains "spawn-agent captures claude stderr to ERRFILE" \
+    "$SPAWN_AGENT" 'ERRFILE'
+assert_file_contains "spawn-agent redirects claude stderr to ERRFILE" \
+    "$SPAWN_AGENT" '2>"\$ERRFILE"'
+assert_file_contains "spawn-agent surfaces stderr on missing JSON output" \
+    "$SPAWN_AGENT" 'claude stderr'
 
 # --- Summary ---
 echo ""
