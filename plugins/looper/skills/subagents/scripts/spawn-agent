@@ -37,8 +37,9 @@ case "$AGENT" in
 esac
 
 OUTFILE="$(mktemp -t subagent-result-XXXXXX.json)"
-# Ensure the temp JSON is always cleaned up, even on error.
-trap 'rm -f "$OUTFILE"' EXIT
+ERRFILE="$(mktemp -t subagent-err-XXXXXX.log)"
+# Ensure both temp files are cleaned up, even on error.
+trap 'rm -f "$OUTFILE" "$ERRFILE"' EXIT
 
 rc=0
 env -u CLAUDECODE -u CLAUDE_CODE claude -p \
@@ -47,15 +48,21 @@ env -u CLAUDECODE -u CLAUDE_CODE claude -p \
   --dangerously-skip-permissions \
   "$PROMPT" \
   "$@" \
-  >"$OUTFILE" 2>/dev/null || rc=$?
+  >"$OUTFILE" 2>"$ERRFILE" || rc=$?
 
 if [ -s "$OUTFILE" ]; then
   # Print .result directly to stdout. If .result is missing/empty, emit the
   # raw JSON so the caller has something to inspect.
   jq -r '.result // empty' "$OUTFILE" 2>/dev/null || cat "$OUTFILE"
 else
-  # claude exited without writing JSON — surface that instead of empty output.
+  # claude exited without writing JSON — surface exit code and stderr so the
+  # caller can diagnose the failure instead of seeing empty output.
   echo "claude-spawn-agent error: claude exited with code $rc (no output)" >&2
+  if [ -s "$ERRFILE" ]; then
+    echo "--- claude stderr ---" >&2
+    cat "$ERRFILE" >&2
+    echo "--- end stderr ---" >&2
+  fi
 fi
 
 exit $rc

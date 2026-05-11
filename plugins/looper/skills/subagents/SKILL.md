@@ -101,7 +101,13 @@ echo "$RESPONSE"
 ### Parallel fan-out
 
 For parallel fan-out, redirect each subagent's stdout to a temp file, run
-them in the background, then `wait`:
+them in the background, then `wait` — and invoke the whole block through
+`Bash(run_in_background=true)`. The Bash tool returns immediately and a
+single completion notification fires with the `cat` output when the block
+exits. **Do NOT call the block in the foreground** — the Bash tool caps
+foreground commands at 10 min (default 2 min) while parallel subagents
+often need 5–10+ min, so foreground `wait` is SIGKILLed before all of
+them finish.
 
 ```bash
 claude-spawn-agent "looper:planner" "Plan rate limiting" > /tmp/p1.txt &

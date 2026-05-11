@@ -42,8 +42,14 @@ trail and is strictly worse than not running at all.
    `Bash(command="claude-spawn-agent X Y", run_in_background=true)` — the
    Bash tool returns immediately; the completion notification fires on
    subprocess exit and its output contains the response text inline. For
-   parallel fan-out, redirect each subagent's stdout to a temp file and
-   `&`/`wait` — no polling, the response arrives directly.
+   parallel fan-out, run the `&`/`wait` shell block via
+   `Bash(run_in_background=true)` — each subagent's stdout goes to a temp
+   file inside the block, end with `cat` to collect responses, and a single
+   completion notification with the full output fires when the whole block
+   exits. **Do NOT call the `&`/`wait` block in the foreground** — the Bash
+   tool caps foreground commands at 10 min (default 2 min) while subagents
+   routinely take 5–10+ min, so foreground `wait` is SIGKILLed before it
+   returns.
 
    **Delta-mode pointer resolution.** On iter > 1 the Planner may emit
    sections or list items as `(unchanged from iteration N-1 — see <hash>)`.
@@ -82,6 +88,8 @@ trail and is strictly worse than not running at all.
    Skip this step if the plan only touches 1-2 small files (direct Read is
    faster than subagent overhead).
 
+   Invoke the block via `Bash(run_in_background=true)` — the completion
+   notification carries the `cat` output.
    ```bash
    claude-spawn-agent "Explore" "<prompt for source files>" > /tmp/explore-src.txt &
    claude-spawn-agent "Explore" "<prompt for test files>" > /tmp/explore-tests.txt &
@@ -179,6 +187,8 @@ If it exists, skip Phase 1 entirely and proceed to Phase 2 (GREEN).
    - Instructions to write/edit only source files in their group
    After subagents complete, review for consistency between groups.
 
+   Invoke the block via `Bash(run_in_background=true)` — implementation
+   subagents routinely exceed the foreground Bash 10-min cap.
    ```bash
    claude-spawn-agent "general-purpose" "<prompt for area 1>" > /tmp/impl1.txt &
    claude-spawn-agent "general-purpose" "<prompt for area 2>" > /tmp/impl2.txt &
