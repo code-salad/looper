@@ -3,8 +3,13 @@ set -euo pipefail
 
 # git-commit-loop — Create a conventional commit with loop trailers
 # Usage: git-commit-loop --type <type> --scope <scope> --message <msg>
-#        --body <body> --phase <plan|do|do-red|do-green|do-simplify|do-integration|check>
+#        --body <body> --phase <plan|do|do-red|do-green|check>
 #        --iteration <N> [--verdict <PASS|FAIL>]
+#
+# Note: the legacy do-simplify / do-integration phases were removed when
+# Simplify was folded into the Doer's GREEN commit and the separate
+# integration-tests phase was dropped. The whitelist intentionally rejects
+# them to surface stale agent prompts.
 
 TYPE=""
 SCOPE=""
@@ -35,8 +40,8 @@ if [ -z "$TYPE" ] || [ -z "$SCOPE" ] || [ -z "$MESSAGE" ] || [ -z "$PHASE" ] || 
 fi
 
 # Validate phase
-if [[ "$PHASE" != "plan" && "$PHASE" != "do" && "$PHASE" != "check" && "$PHASE" != "do-red" && "$PHASE" != "do-green" && "$PHASE" != "do-simplify" && "$PHASE" != "do-integration" ]]; then
-    echo "Error: --phase must be plan, do, do-red, do-green, do-simplify, do-integration, or check" >&2
+if [[ "$PHASE" != "plan" && "$PHASE" != "do" && "$PHASE" != "check" && "$PHASE" != "do-red" && "$PHASE" != "do-green" ]]; then
+    echo "Error: --phase must be plan, do, do-red, do-green, or check" >&2
     exit 1
 fi
 

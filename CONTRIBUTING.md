@@ -130,9 +130,9 @@ Every agent's frontmatter MUST specify an explicit `model:` value. The policy:
 
 | Tier | Used for |
 |------|----------|
-| `opus` (strongest) | Planner, Checker, Adversarial reviewer, Debugger — highest reasoning load; plan quality and verification compound downstream. |
-| `sonnet` (strong / mid) | Doer, mid-tier reviewers (`check-code`, `check-runtime`, `plan-feasibility`, `plan-completeness`, `plan-scope`) — strong coding and review capability without the full reasoning budget. |
-| `haiku` (cheapest) | Mechanical reviewers (`check-build`, `check-tests`), issue creator (`gh-issue-creator`) — pass/fail checks and rote formatting. |
+| `opus` (strongest) | Planner, Debugger — highest reasoning load; plan quality and root-cause analysis compound downstream. |
+| `sonnet` (strong / mid) | Doer, Checker — strong coding and review capability without the full reasoning budget. The Checker runs all mechanical checks plus a two-pass review (attack → verify → optional runtime) inline; there are no fan-out sub-reviewers anymore. |
+| `haiku` (cheapest) | Issue creator (`gh-issue-creator`) and similar rote / formatting agents. |
 
 When adding a new agent, classify its reasoning load against this table and pick
 the matching tier. Do not default to `sonnet` by omission.

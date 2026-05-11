@@ -1,20 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test-delta-mode-prompts.sh — Verify that agent prompt files contain the
-# delta-mode planning instructions added for issue #90.
-#
-# Acceptance criteria (from #90):
-#   - planner.md step 4 has a dedicated subsection for iter > 1 behavior
-#     with the "(unchanged from iteration N-1 — see <commit-hash>)" pattern
-#   - planner.md bans "improving" sections the Checker didn't flag (no-drift)
-#   - planner.md includes a partial-revision example
-#   - planner.md flags Tech Stack Constraints as almost always (unchanged)
-#   - planner.md has a fallback path for missing prior commit
-#   - doer.md has a pointer-resolution rule
-#   - checker.md has a pointer-resolution rule
-#   - sub-checkers (check-tests, check-code, check-adversarial, plan-*)
-#     each have a pointer-resolution note
+# test-delta-mode-prompts.sh — Verify delta-mode planning instructions remain
+# wired up after the agent collapse. The 5 check-* and 3 plan-* fan-out
+# subagents have been removed; the surviving consumers are planner, doer,
+# and checker, which all need the pointer-resolution wiring.
 
 AGENTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../plugins/looper/agents" && pwd)"
 
@@ -69,7 +59,7 @@ check "planner.md: mentions resolve-plan-pointers helper" \
 echo "=== Consumer prompt pointer-resolution rules ==="
 check "doer.md: pointer-resolution rule present" \
     "$AGENTS_DIR/doer.md" \
-    "[Dd]elta-mode pointer resolution|resolve-plan-pointers"
+    "[Dd]elta-mode pointer|resolve-plan-pointers"
 
 check "doer.md: instructs resolving pointers before acting on the plan" \
     "$AGENTS_DIR/doer.md" \
@@ -77,19 +67,15 @@ check "doer.md: instructs resolving pointers before acting on the plan" \
 
 check "checker.md: pointer-resolution rule present" \
     "$AGENTS_DIR/checker.md" \
-    "[Dd]elta-mode pointer resolution|resolve-plan-pointers"
+    "[Dd]elta-mode pointer|resolve-plan-pointers"
 
-check "checker.md: passes expanded plan to sub-checkers" \
+check "checker.md: expands pointers before reviewing" \
     "$AGENTS_DIR/checker.md" \
-    "fully-expanded plan|expand every pointer"
+    "Expand before reviewing|expanded plan|resolve-plan-pointers"
 
-# --- Sub-checker prompts ---
-echo "=== Sub-checker pointer-resolution notes ==="
-for sub in check-tests check-code check-adversarial plan-completeness plan-feasibility; do
-    check "$sub.md: mentions delta-mode pointers" \
-        "$AGENTS_DIR/$sub.md" \
-        "[Dd]elta-mode pointers|unchanged from iteration"
-done
+# (The pre-collapse "sub-checker pointer-resolution notes" tests are
+#  removed: those subagents no longer exist. Checker handles all review
+#  work inline, so the single pointer-resolution rule above is sufficient.)
 
 # --- Summary ---
 echo ""
