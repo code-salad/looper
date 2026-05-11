@@ -96,10 +96,29 @@ if [ -d "$WORKTREE_DIR" ]; then
     # Unpushed file must not exist in worktree
     check "UNPUSHED.md does not exist in worktree" \
         "$([ ! -f "$WORKTREE_DIR/UNPUSHED.md" ] && echo true || echo false)"
+
+    # New behavior: the loop branch must be pushed to origin so it's visible
+    # from other machines. Querying the bare origin directly avoids any local
+    # cache of remote refs.
+    ORIGIN_HAS_BRANCH=$(git --git-dir="$ORIGIN_DIR" show-ref --quiet "refs/heads/loop/test-task" && echo true || echo false)
+    check "loop/test-task branch was pushed to origin" "$ORIGIN_HAS_BRANCH"
+
+    if [ "$ORIGIN_HAS_BRANCH" = "true" ]; then
+        ORIGIN_BRANCH_SHA=$(git --git-dir="$ORIGIN_DIR" rev-parse "refs/heads/loop/test-task")
+        check "origin loop/test-task points at pushed default-branch SHA" \
+            "$([ "$ORIGIN_BRANCH_SHA" = "$PUSHED_SHA" ] && echo true || echo false)"
+    fi
+
+    # Upstream tracking should be configured so subsequent pushes don't need -u.
+    UPSTREAM=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo "")
+    check "worktree branch tracks origin/loop/test-task" \
+        "$([ "$UPSTREAM" = "origin/loop/test-task" ] && echo true || echo false)"
 else
     check "worktree HEAD equals pushed (remote) SHA" "false"
     check "worktree HEAD does not equal local (unpushed) HEAD SHA" "false"
     check "UNPUSHED.md does not exist in worktree" "false"
+    check "loop/test-task branch was pushed to origin" "false"
+    check "worktree branch tracks origin/loop/test-task" "false"
 fi
 
 # --- C) Sync scenario: works when local and remote are in sync ---

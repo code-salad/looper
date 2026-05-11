@@ -266,6 +266,22 @@ VERDICT=$(git log --grep="Loop-Verdict:" -1 --format="%B" \
 - **PASS:** Break out of the loop, proceed to step 7.
 - **FAIL** (or no verdict): Report and continue to next iteration.
 
+#### 6e2. Push iteration progress to remote
+
+After every iteration (PASS or FAIL), push the loop branch so the latest
+plan/do/check commits are visible from other machines. Use `--force-with-lease`
+because a later `sync-with-remote` may rebase the branch — fast-forward-only
+pushes would then be rejected.
+
+```bash
+if git remote get-url origin >/dev/null 2>&1; then
+    git push --force-with-lease origin HEAD 2>&1 || \
+        echo "[looper] Warning: failed to push iteration $ITERATION to origin (continuing)" >&2
+fi
+```
+
+This is best-effort: a push failure does not abort the loop.
+
 ### 6f. Sync with remote before PR
 
 After the loop completes with PASS, sync one more time to ensure the PR will have
