@@ -100,5 +100,19 @@ if [ -n "$(git -C "$WORKTREE_DIR" status --porcelain 2>/dev/null)" ]; then
     echo "[setup-worktree] Warning: worktree has uncommitted changes" >&2
 fi
 
+# Push the loop branch to origin so it's visible from other machines and serves
+# as the upstream for incremental progress pushes during the loop. Only attempt
+# when an origin remote is configured; a push failure (auth, network, etc.) is
+# logged as a warning — the loop can still proceed locally.
+if git -C "$WORKTREE_DIR" remote get-url origin >/dev/null 2>&1; then
+    PUSH_OUTPUT=$(git -C "$WORKTREE_DIR" push -u origin "$BRANCH" 2>&1) && PUSH_OK=true || PUSH_OK=false
+    if [ "$PUSH_OK" = "true" ]; then
+        echo "[setup-worktree] Pushed branch $BRANCH to origin (visible from other machines)" >&2
+    else
+        echo "[setup-worktree] Warning: failed to push $BRANCH to origin — continuing locally:" >&2
+        echo "$PUSH_OUTPUT" >&2
+    fi
+fi
+
 # Output the path for the caller to cd into
 echo "$WORKTREE_DIR"

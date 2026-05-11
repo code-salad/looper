@@ -259,10 +259,16 @@ Commit message `<type>` should be one of: `feat`, `fix`, `refactor`, `test`, `do
 ### 3b. Push
 
 ```bash
-git push -u origin $CURRENT_BRANCH
+# Use --force-with-lease because looper pushes the branch up-front (in
+# setup-worktree) and after every iteration; a final sync-with-remote rebase
+# would otherwise make a plain push non-fast-forward. --force-with-lease still
+# refuses to clobber unexpected remote work.
+git push --force-with-lease -u origin $CURRENT_BRANCH
 ```
 
-If the push is rejected (e.g., diverged history), inform the user and ask how to proceed. Do NOT force push.
+If the push is rejected because the remote was updated by someone else (lease
+check failed), inform the user and ask how to proceed. Do NOT use plain
+`--force`.
 
 ---
 
